@@ -48,3 +48,41 @@ export async function refreshStravaToken(refreshToken: string): Promise<StravaTo
 
   return response.json();
 }
+
+export interface StravaActivity {
+  id: number;
+  name: string;
+  type: string;
+  start_date: string;
+  distance: number; // meters
+  moving_time: number; // seconds
+  total_elevation_gain: number; // meters
+  average_watts?: number;
+  max_watts?: number;
+  weighted_average_watts?: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  average_cadence?: number;
+}
+
+// Pobiera aktywności z konta Stravy (sekcja 15)
+export async function fetchStravaActivities(
+  accessToken: string,
+  after: number
+): Promise<StravaActivity[]> {
+  const params = new URLSearchParams({
+    after: String(after),
+    per_page: '100',
+  });
+
+  const response = await fetch(
+    `https://www.strava.com/api/v3/athlete/activities?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Strava activities fetch failed: ${response.status}`);
+  }
+
+  return response.json();
+}
