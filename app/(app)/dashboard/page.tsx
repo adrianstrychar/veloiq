@@ -43,11 +43,12 @@ export default async function DashboardPage() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, name')
+    .select('id, name, strava_id')
     .eq('user_id', user?.id ?? '')
     .single();
 
   const athleteId = athlete?.id;
+  const stravaConnected = !!athlete?.strava_id;
 
   const [{ data: metrics }, { data: weeklyPlan }, { data: race }, { data: lastActivity }] =
     await Promise.all([
@@ -103,6 +104,15 @@ export default async function DashboardPage() {
           Cześć, {athlete?.name ?? 'Zawodniku'} 👋
         </span>
       </header>
+
+      {!stravaConnected && (
+        <a
+          href="/api/strava/auth"
+          className="rounded-xl bg-accent text-background text-center text-sm font-semibold py-3"
+        >
+          🔗 Połącz Stravę
+        </a>
+      )}
 
       <div className="grid grid-cols-3 gap-3">
         <MetricCard title="Forma" value={Math.round(ctl)} label="CTL" color="#4ECDC4" progress={(ctl / 150) * 100} />
