@@ -27,8 +27,10 @@ function computeTSS(
   if (ftpWatts && activity.weighted_average_watts) {
     return calculateTSSfromPower(activity.moving_time, activity.weighted_average_watts, ftpWatts);
   }
-  if (hrmax && activity.average_heartrate) {
-    return calculateTSSfromHR(activity.moving_time, activity.average_heartrate, hrmax);
+  // Brak hrmax w profilu — przybliż go z max_heartrate tej aktywności (sekcja 11)
+  const effectiveHrmax = hrmax ?? activity.max_heartrate;
+  if (effectiveHrmax && activity.average_heartrate) {
+    return calculateTSSfromHR(activity.moving_time, activity.average_heartrate, effectiveHrmax);
   }
   return 0;
 }
