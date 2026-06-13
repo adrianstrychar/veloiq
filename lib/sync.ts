@@ -75,9 +75,8 @@ export async function syncStravaActivities(
       .eq('id', athlete.id);
   }
 
-  const after = lastActivity?.activity_date
-    ? Math.floor(new Date(lastActivity.activity_date).getTime() / 1000)
-    : Math.floor(Date.now() / 1000) - DEFAULT_LOOKBACK_DAYS * 24 * 3600;
+  // Zawsze pobieraj pełne okno 90 dni, żeby CTL/ATL liczyły się od początku okresu (sekcja 11)
+  const after = Math.floor(Date.now() / 1000) - DEFAULT_LOOKBACK_DAYS * 24 * 3600;
 
   const activities = await fetchStravaActivities(accessToken, after);
 
