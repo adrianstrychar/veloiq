@@ -1,39 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { interpretTSB } from '@/lib/fitness';
-import { MetricCard } from '@/components/dashboard/MetricCard';
-import { NextSession } from '@/components/dashboard/NextSession';
-import { RaceCountdown } from '@/components/dashboard/RaceCountdown';
-import { LastActivity } from '@/components/dashboard/LastActivity';
 import { RawMetrics, type PmcRow } from '@/components/veloiq/RawMetrics';
-
-const DAY_NAMES_PL: Record<number, string> = {
-  0: 'sunday',
-  1: 'monday',
-  2: 'tuesday',
-  3: 'wednesday',
-  4: 'thursday',
-  5: 'friday',
-  6: 'saturday',
-};
-
-const DAY_LABELS_PL: Record<string, string> = {
-  monday: 'Poniedziałek',
-  tuesday: 'Wtorek',
-  wednesday: 'Środa',
-  thursday: 'Czwartek',
-  friday: 'Piątek',
-  saturday: 'Sobota',
-  sunday: 'Niedziela',
-};
-
-interface PlanDay {
-  day: string;
-  date: string;
-  type: string;
-  title: string;
-  duration_minutes: number;
-  tss_target: number;
-}
+import { C } from '@/lib/theme';
 
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
@@ -51,67 +18,47 @@ export default async function DashboardPage() {
   const athleteId = athlete?.id;
   const stravaConnected = !!athlete?.strava_id;
 
-  const [{ data: metrics }, { data: pmcRows }, { data: weeklyPlan }, { data: race }, { data: lastActivity }] =
-    await Promise.all([
-      supabase
-        .from('fitness_metrics')
-        .select('ctl, atl, tsb')
-        .eq('athlete_id', athleteId)
-        .order('date', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from('fitness_metrics')
-        .select('date, ctl, atl, tsb')
-        .eq('athlete_id', athleteId)
-        .order('date', { ascending: false })
-        .limit(65),
-      supabase
-        .from('weekly_plans')
-        .select('plan_json')
-        .eq('athlete_id', athleteId)
-        .order('week_start', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from('race_calendar')
-        .select('name, date')
-        .eq('athlete_id', athleteId)
-        .eq('priority', 'A')
-        .gte('date', new Date().toISOString().slice(0, 10))
-        .order('date', { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from('strava_activities')
-        .select('activity_date, distance_km, avg_hr, avg_watts, tss')
-        .eq('athlete_id', athleteId)
-        .order('activity_date', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
+  const [{ data: pmcRows }, { data: lastActivity }] = await Promise.all([
+    supabase
+      .from('fitness_metrics')
+      .select('date, ctl, atl, tsb')
+      .eq('athlete_id', athleteId)
+      .order('date', { ascending: false })
+      .limit(65),
+    supabase
+      .from('strava_activities')
+      .select('activity_date, distance_km, avg_hr, avg_watts, tss')
+      .eq('athlete_id', athleteId)
+      .order('activity_date', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
-  // Mapuj wiersze PMC na kształt oczekiwany przez RawMetrics (rosnąco, label DD.M)
   const pmc: PmcRow[] = (pmcRows ?? [])
     .slice()
     .reverse()
     .map((r) => {
       const d = new Date(r.date as string);
       const label = `${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
-      return { date: r.date as string, label, ctl: Number(r.ctl), atl: Number(r.atl), tsb: Number(r.tsb) };
+      return {
+        date: r.date as string,
+        label,
+        ctl: Number(r.ctl),
+        atl: Number(r.atl),
+        tsb: Number(r.tsb),
+      };
     });
 
-  const ctl = metrics?.ctl ?? 0;
-  const atl = metrics?.atl ?? 0;
-  const tsb = metrics?.tsb ?? 0;
-  const tsbInfo = interpretTSB(tsb);
-
-  const todayKey = DAY_NAMES_PL[new Date().getDay()];
-  const planDays = (weeklyPlan?.plan_json?.days ?? []) as PlanDay[];
-  const todaySession = planDays.find((d) => d.day === todayKey && d.type !== 'rest');
-
-  // TSB zwykle mieści się w zakresie -30..+30 — przeskaluj do paska 0-100
-  const tsbProgress = ((tsb + 30) / 60) * 100;
+  const formattedDate = lastActivity?.activity_date
+    ? new Date(lastActivity.activity_date).toLocaleDateString('pl-PL', {
+        weekday: 'short', day: '2-digit', month: '2-digit',
+      })
+    : null;
+  const intensity = lastActivity?.avg_watts
+    ? `${lastActivity.avg_watts}W avg`
+    : lastActivity?.avg_hr
+    ? `HR avg ${lastActivity.avg_hr}`
+    : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -122,8 +69,6 @@ export default async function DashboardPage() {
         </span>
       </header>
 
-      <RawMetrics pmc={pmc} />
-
       {!stravaConnected && (
         <a
           href="/api/strava/auth"
@@ -133,41 +78,29 @@ export default async function DashboardPage() {
         </a>
       )}
 
-      <div className="grid grid-cols-3 gap-3">
-        <MetricCard title="Forma" value={Math.round(ctl)} label="CTL" color="#4ECDC4" progress={(ctl / 150) * 100} />
-        <MetricCard title="Zmęczenie" value={Math.round(atl)} label="ATL" color="#FF8C42" progress={(atl / 150) * 100} />
-        <MetricCard title="Świeżość" value={Math.round(tsb)} label="TSB" color={tsbInfo.color} progress={tsbProgress} stateLabel={tsbInfo.label} />
-      </div>
+      {/* RawMetrics: 3 kafle CTL/ATL/TSB + wykres PMC */}
+      <RawMetrics pmc={pmc} />
 
-      {todaySession && (
-        <NextSession
-          day={DAY_LABELS_PL[todaySession.day] ?? todaySession.day}
-          title={todaySession.title}
-          durationMinutes={todaySession.duration_minutes}
-          tssTarget={todaySession.tss_target}
-        />
-      )}
-
-      {race && (
-        <RaceCountdown
-          name={race.name}
-          date={race.date}
-          formLabel={tsbInfo.label}
-          formProgress={tsbProgress}
-          formColor={tsbInfo.color}
-        />
-      )}
-
+      {/* Ostatnia aktywność */}
       {lastActivity && (
-        <LastActivity
-          date={lastActivity.activity_date}
-          distanceKm={lastActivity.distance_km}
-          avgHr={lastActivity.avg_hr}
-          avgWatts={lastActivity.avg_watts}
-          tss={lastActivity.tss}
-        />
+        <div style={{
+          background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
+          padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4,
+        }}>
+          <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            Ostatnia aktywność
+          </div>
+          <div style={{ fontSize: 13, color: C.text }}>
+            {formattedDate}{lastActivity.distance_km ? ` · ${lastActivity.distance_km} km` : ''}
+            {intensity ? ` · ${intensity}` : ''}
+          </div>
+          <div style={{ fontSize: 12, color: C.muted }}>
+            TSS {Math.round(lastActivity.tss ?? 0)}
+          </div>
+        </div>
       )}
 
+      {/* Nawigacja */}
       <div className="grid grid-cols-2 gap-3">
         <a href="/chat" className="rounded-xl bg-card border border-border text-center text-sm font-semibold py-3">
           💬 Chat z trenerem
