@@ -1,8 +1,8 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { RawMetrics, type PmcRow } from '@/components/veloiq/RawMetrics';
 import { EngineCards } from '@/components/veloiq/EngineCards';
+import { LastActivityCard, type LastActivityRow } from '@/components/veloiq/LastActivityCard';
 import { ftpDisplay, deriveFtpSource } from '@/lib/ftp';
-import { C } from '@/lib/theme';
 
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
@@ -27,12 +27,13 @@ export default async function DashboardPage() {
       .eq('athlete_id', athleteId)
       .order('date', { ascending: false })
       .limit(65),
+    // TODO TEMP: na czas testów struktury lapów wymuszamy jazdę interwałową z 13.05
+    //            (19 lapów). Przywrócić order+limit(1) po zakończeniu testów 6b/6c.
     supabase
       .from('strava_activities')
-      .select('activity_date, distance_km, avg_hr, avg_watts, tss')
+      .select('strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at')
       .eq('athlete_id', athleteId)
-      .order('activity_date', { ascending: false })
-      .limit(1)
+      .eq('strava_activity_id', 18491356555)
       .maybeSingle(),
     // sprawdź czy są aktywności z tętnem (potrzebne do deriveFtpSource)
     supabase
@@ -73,17 +74,6 @@ export default async function DashboardPage() {
       };
     });
 
-  const formattedDate = lastActivity?.activity_date
-    ? new Date(lastActivity.activity_date).toLocaleDateString('pl-PL', {
-        weekday: 'short', day: '2-digit', month: '2-digit',
-      })
-    : null;
-  const intensity = lastActivity?.avg_watts
-    ? `${lastActivity.avg_watts}W avg`
-    : lastActivity?.avg_hr
-    ? `HR avg ${lastActivity.avg_hr}`
-    : null;
-
   return (
     <div className="flex flex-col gap-4">
       <header className="flex items-center justify-between py-2">
@@ -108,23 +98,12 @@ export default async function DashboardPage() {
       {/* RawMetrics: 3 kafle CTL/ATL/TSB + wykres PMC */}
       <RawMetrics pmc={pmc} />
 
-      {/* Ostatnia aktywność */}
+      {/* Ostatnia aktywność — klikalna, otwiera RideAnalysis */}
       {lastActivity && (
-        <div style={{
-          background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
-          padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4,
-        }}>
-          <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            Ostatnia aktywność
-          </div>
-          <div style={{ fontSize: 13, color: C.text }}>
-            {formattedDate}{lastActivity.distance_km ? ` · ${lastActivity.distance_km} km` : ''}
-            {intensity ? ` · ${intensity}` : ''}
-          </div>
-          <div style={{ fontSize: 12, color: C.muted }}>
-            TSS {Math.round(lastActivity.tss ?? 0)}
-          </div>
-        </div>
+        <LastActivityCard
+          activity={lastActivity as unknown as LastActivityRow}
+          ftp={(athlete as any)?.ftp_watts ?? null}
+        />
       )}
 
       {/* Nawigacja */}
