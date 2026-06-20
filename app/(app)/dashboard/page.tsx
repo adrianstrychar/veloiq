@@ -1,5 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { RawMetrics, type PmcRow } from '@/components/veloiq/RawMetrics';
+import { EngineCards } from '@/components/veloiq/EngineCards';
+import { ftpDisplay, deriveFtpSource } from '@/lib/ftp';
 import { C } from '@/lib/theme';
 
 export default async function DashboardPage() {
@@ -11,14 +13,14 @@ export default async function DashboardPage() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, name, strava_id')
+    .select('id, name, strava_id, ftp_watts, has_power_meter, weight_kg, vo2max, training_mode')
     .eq('user_id', user?.id ?? '')
     .single();
 
   const athleteId = athlete?.id;
   const stravaConnected = !!athlete?.strava_id;
 
-  const [{ data: pmcRows }, { data: lastActivity }] = await Promise.all([
+  const [{ data: pmcRows }, { data: lastActivity }, { data: hrCheck }] = await Promise.all([
     supabase
       .from('fitness_metrics')
       .select('date, ctl, atl, tsb')
@@ -32,7 +34,29 @@ export default async function DashboardPage() {
       .order('activity_date', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // sprawdź czy są aktywności z tętnem (potrzebne do deriveFtpSource)
+    supabase
+      .from('strava_activities')
+      .select('id')
+      .eq('athlete_id', athleteId)
+      .not('avg_hr', 'is', null)
+      .limit(1)
+      .maybeSingle(),
   ]);
+
+  // Wyprowadź source FTP i zbuduj display object
+  const ftpSource = deriveFtpSource(
+    (athlete as any)?.training_mode ?? null,
+    (athlete as any)?.has_power_meter ?? false,
+    (athlete as any)?.ftp_watts ?? null,
+    !!hrCheck
+  );
+  const ftpData = ftpDisplay(
+    ftpSource,
+    (athlete as any)?.ftp_watts ?? null,
+    null, // ftpEst — brak kalkulatora estymaty w tym etapie
+    (athlete as any)?.weight_kg ?? null
+  );
 
   const pmc: PmcRow[] = (pmcRows ?? [])
     .slice()
@@ -77,6 +101,9 @@ export default async function DashboardPage() {
           🔗 Połącz Stravę
         </a>
       )}
+
+      {/* EngineCards: FTP + VO2max */}
+      <EngineCards ftp={ftpData} vo2max={(athlete as any)?.vo2max ?? null} />
 
       {/* RawMetrics: 3 kafle CTL/ATL/TSB + wykres PMC */}
       <RawMetrics pmc={pmc} />
