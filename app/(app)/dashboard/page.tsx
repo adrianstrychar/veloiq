@@ -4,6 +4,7 @@ import { MetricCard } from '@/components/dashboard/MetricCard';
 import { NextSession } from '@/components/dashboard/NextSession';
 import { RaceCountdown } from '@/components/dashboard/RaceCountdown';
 import { LastActivity } from '@/components/dashboard/LastActivity';
+import { RawMetrics, type PmcRow } from '@/components/veloiq/RawMetrics';
 
 const DAY_NAMES_PL: Record<number, string> = {
   0: 'sunday',
@@ -50,7 +51,7 @@ export default async function DashboardPage() {
   const athleteId = athlete?.id;
   const stravaConnected = !!athlete?.strava_id;
 
-  const [{ data: metrics }, { data: weeklyPlan }, { data: race }, { data: lastActivity }] =
+  const [{ data: metrics }, { data: pmcRows }, { data: weeklyPlan }, { data: race }, { data: lastActivity }] =
     await Promise.all([
       supabase
         .from('fitness_metrics')
@@ -59,6 +60,12 @@ export default async function DashboardPage() {
         .order('date', { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase
+        .from('fitness_metrics')
+        .select('date, ctl, atl, tsb')
+        .eq('athlete_id', athleteId)
+        .order('date', { ascending: false })
+        .limit(65),
       supabase
         .from('weekly_plans')
         .select('plan_json')
@@ -84,6 +91,16 @@ export default async function DashboardPage() {
         .maybeSingle(),
     ]);
 
+  // Mapuj wiersze PMC na kształt oczekiwany przez RawMetrics (rosnąco, label DD.M)
+  const pmc: PmcRow[] = (pmcRows ?? [])
+    .slice()
+    .reverse()
+    .map((r) => {
+      const d = new Date(r.date as string);
+      const label = `${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
+      return { date: r.date as string, label, ctl: Number(r.ctl), atl: Number(r.atl), tsb: Number(r.tsb) };
+    });
+
   const ctl = metrics?.ctl ?? 0;
   const atl = metrics?.atl ?? 0;
   const tsb = metrics?.tsb ?? 0;
@@ -104,6 +121,8 @@ export default async function DashboardPage() {
           Cześć, {athlete?.name ?? 'Zawodniku'} 👋
         </span>
       </header>
+
+      <RawMetrics pmc={pmc} />
 
       {!stravaConnected && (
         <a
