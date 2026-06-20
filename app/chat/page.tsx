@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -74,13 +75,13 @@ export default function ChatPage() {
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap ${
+            className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
               m.role === 'user'
-                ? 'self-end bg-accent text-background'
-                : 'self-start bg-card border border-border text-foreground'
+                ? 'self-end bg-accent text-background whitespace-pre-wrap'
+                : 'self-start bg-card border border-border text-foreground prose prose-invert prose-sm max-w-none'
             }`}
           >
-            {m.content}
+            {m.role === 'user' ? m.content : <ReactMarkdown>{m.content}</ReactMarkdown>}
           </div>
         ))}
 
