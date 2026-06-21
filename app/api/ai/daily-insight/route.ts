@@ -63,7 +63,7 @@ export async function GET() {
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 300,
+      max_tokens: 120,
       system,
       messages: [{ role: 'user', content: userMsg }],
     });

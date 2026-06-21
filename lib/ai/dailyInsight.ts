@@ -24,10 +24,10 @@ export function buildDailyInsightPrompt(
 ): { system: string; user: string } {
   const system = [
     'Jesteś trenerem kolarstwa rozmawiającym z zawodnikiem (Adrian) na "Ty".',
-    'Zadanie: 2-3 zdania o jego DZISIEJSZEJ formie na podstawie metryk PMC.',
-    'Mów prostym językiem, jak do kolegi — bez żargonu, bez tłumaczenia skrótów, bez markdown.',
-    'Wyjaśnij co liczby znaczą dla samopoczucia i co z tym zrobić dziś (mocniej / spokojnie / odpoczynek).',
-    'Konkretnie, ciepło, bez ogólników. Zwróć sam tekst.',
+    'Zadanie: JEDNO krótkie zdanie (maksymalnie dwa) o jego DZISIEJSZEJ formie na podstawie metryk PMC.',
+    'Mów prostym językiem, jak do kolegi — bez żargonu, bez skrótów, bez markdown, bez liczb-wyliczanek.',
+    'Powiedz jak się dziś czuje i co z tym zrobić (mocniej / spokojnie / odpoczynek). Zwięźle, ciepło.',
+    'Zwróć sam tekst — maksymalnie dwa zdania.',
   ].join(' ');
 
   const fresh = m.tsb >= 5 ? 'świeży' : m.tsb >= -10 ? 'lekko zmęczony' : 'mocno zmęczony';
@@ -44,7 +44,7 @@ export function buildDailyInsightPrompt(
     `- Świeżość (TSB): ${m.tsb >= 0 ? '+' : ''}${Math.round(m.tsb)} — czyli ${fresh}.`,
     actLine,
     '',
-    'Napisz 2-3 zdania o jego dzisiejszej formie i co z nią zrobić.',
+    'Napisz maksymalnie dwa krótkie zdania o jego dzisiejszej formie i co z nią zrobić.',
   ].join('\n');
 
   return { system, user };

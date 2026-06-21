@@ -43,22 +43,23 @@ export function computeReadiness(rows: MetricRow[]): Readiness | null {
   let state: string;
   let color: Readiness['color'];
   let advice: string;
+  // Teksty 1:1 z mockupu (docs/veloiq-mockup.jsx, computeReadiness 270-273).
   if (now.tsb > 15) {
     state = 'Wypoczęty';
     color = 'green';
-    advice = 'Jesteś świeży i wypoczęty — idealny moment na mocny trening albo start. Forma czeka, żeby ją wykorzystać.';
+    advice = 'Nogi świeże i pełne energii. Świetny dzień na mocniejszy trening.';
   } else if (now.tsb >= 5) {
     state = 'Gotowy';
     color = 'green';
-    advice = 'Dobra równowaga między formą a zmęczeniem. Możesz spokojnie wejść w mocniejszą sesję lub wyścig.';
+    advice = 'Forma w równowadze — możesz spokojnie realizować plan.';
   } else if (now.tsb >= -10) {
     state = 'Lekko zmęczony';
     color = 'yellow';
-    advice = 'Nosisz trochę zmęczenia z ostatnich treningów. Trzymaj intensywność w ryzach albo wpleć dzień luźniejszy.';
+    advice = 'Nogi trochę zmęczone po treningach — to normalne, tak rośnie forma. Zadbaj o sen.';
   } else {
     state = 'Mocno zmęczony';
     color = 'red';
-    advice = 'Duże zmęczenie — organizm potrzebuje regeneracji. Odpuść mocne akcenty, postaw na sen i spokojną jazdę.';
+    advice = 'Duże zmęczenie. Lepiej dziś odpocząć albo pojechać lekko, zanim przesadzisz.';
   }
 
   return {

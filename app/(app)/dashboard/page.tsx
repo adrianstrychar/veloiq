@@ -7,6 +7,7 @@ import { Progress } from '@/components/veloiq/Progress';
 import { LastActivityCard, type LastActivityRow } from '@/components/veloiq/LastActivityCard';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { computeProgressStats, type ActivityStatRow } from '@/lib/progressStats';
+import { type FtpPoint } from '@/components/veloiq/Progress';
 import { ftpDisplay, deriveFtpSource } from '@/lib/ftp';
 
 export default async function DashboardPage() {
@@ -18,14 +19,14 @@ export default async function DashboardPage() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, name, strava_id, ftp_watts, has_power_meter, weight_kg, vo2max, training_mode')
+    .select('id, name, strava_id, ftp_watts, has_power_meter, weight_kg, vo2max, training_mode, season_km_goal')
     .eq('user_id', user?.id ?? '')
     .single();
 
   const athleteId = athlete?.id;
   const stravaConnected = !!athlete?.strava_id;
 
-  const [{ data: pmcRows }, { data: lastActivity }, { data: hrCheck }, { data: season2026 }] = await Promise.all([
+  const [{ data: pmcRows }, { data: lastActivity }, { data: hrCheck }, { data: season2026 }, { data: ftpHistory }] = await Promise.all([
     // Pełna historia sezonu — potrzebna do gotowości (szczyt CTL, rampa) i progresu.
     supabase
       .from('fitness_metrics')
@@ -55,6 +56,12 @@ export default async function DashboardPage() {
       .eq('athlete_id', athleteId)
       .gte('activity_date', '2026-01-01')
       .order('activity_date', { ascending: true }),
+    // historia FTP — do FTP hero z wykresem
+    supabase
+      .from('ftp_history')
+      .select('date, ftp_watts')
+      .eq('athlete_id', athleteId)
+      .order('date', { ascending: true }),
   ]);
 
   // Wyprowadź source FTP i zbuduj display object
@@ -86,9 +93,6 @@ export default async function DashboardPage() {
     const label = `${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
     return { date: r.date, label, ctl: r.ctl, atl: r.atl, tsb: r.tsb };
   });
-
-  const seasonStart = metricRows[0] ?? null;
-  const seasonNow = metricRows[metricRows.length - 1] ?? null;
 
   const progressStats = computeProgressStats((season2026 ?? []) as ActivityStatRow[]);
 
@@ -127,16 +131,13 @@ export default async function DashboardPage() {
         />
       )}
 
-      {/* 5. Progress: rozwój formy (CTL teraz vs start sezonu) */}
-      {seasonStart && seasonNow && (
-        <Progress
-          seasonStartCtl={seasonStart.ctl}
-          seasonStartDate={seasonStart.date}
-          nowCtl={seasonNow.ctl}
-          nowDate={seasonNow.date}
-          stats={progressStats}
-        />
-      )}
+      {/* 5. Progress: FTP hero + statystyki + cel sezonu */}
+      <Progress
+        stats={progressStats}
+        ftpHistory={(ftpHistory ?? []) as FtpPoint[]}
+        weightKg={(athlete as any)?.weight_kg ?? null}
+        seasonGoalKm={(athlete as any)?.season_km_goal ?? null}
+      />
 
       {/* Nawigacja */}
       <div className="grid grid-cols-2 gap-3">

@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { C } from '@/lib/theme';
 import { createBrowserSupabaseClient } from '@/lib/supabase-browser';
 import { RideAnalysis, type RideActivity } from './RideAnalysis';
-import { formatDuration } from '@/lib/format';
 
 // Pełny wiersz jazdy potrzebny do analizy + identyfikacja do sync-details
 export interface LastActivityRow extends RideActivity {
@@ -27,16 +26,15 @@ export function LastActivityCard({ activity, ftp }: LastActivityCardProps) {
   const [hover, setHover] = useState(false);
   const [data, setData] = useState<LastActivityRow>(activity);
 
+  // "czw. 18.06.2026" — jak w mockupie
   const formattedDate = data.activity_date
-    ? new Date(data.activity_date).toLocaleDateString('pl-PL', {
-        weekday: 'short', day: '2-digit', month: '2-digit',
-      })
-    : null;
-
-  const intensity = data.avg_watts
-    ? `${data.avg_watts}W avg`
-    : data.avg_hr
-    ? `HR avg ${data.avg_hr}`
+    ? (() => {
+        const d = new Date(data.activity_date);
+        const wd = d.toLocaleDateString('pl-PL', { weekday: 'short' });
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        return `${wd} ${dd}.${mm}.${d.getFullYear()}`;
+      })()
     : null;
 
   async function handleOpen() {
@@ -80,27 +78,41 @@ export function LastActivityCard({ activity, ftp }: LastActivityCardProps) {
         style={{
           background: C.card,
           border: `1px solid ${hover ? C.cyan : C.border}`,
-          borderRadius: 8, padding: '10px 12px',
-          display: 'flex', flexDirection: 'column', gap: 4,
+          borderRadius: 10, padding: '14px 16px',
+          display: 'flex', flexDirection: 'column', gap: 12,
           cursor: 'pointer', transition: 'border-color 120ms',
         }}
       >
+        {/* Label sekcji + data */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
             Ostatnia aktywność
           </div>
-          <div style={{ fontSize: 10, color: C.cyan, fontWeight: 600 }}>
-            {loading ? 'Pobieram szczegóły…' : 'Analiza ›'}
+          {formattedDate && <div style={{ fontSize: 11, color: C.muted }}>{formattedDate}</div>}
+        </div>
+
+        {/* Badge + nazwa + Analiza › */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <SportBadge type={data.type} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 15, fontWeight: 600, color: C.text,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
+              {data.name ?? 'Jazda'}
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: C.cyan, fontWeight: 600, flexShrink: 0 }}>
+            {loading ? 'Pobieram…' : 'Analiza ›'}
           </div>
         </div>
-        <div style={{ fontSize: 13, color: C.text }}>
-          {data.name ? `${data.name} · ` : ''}{formattedDate}
-          {data.distance_km ? ` · ${data.distance_km} km` : ''}
-          {intensity ? ` · ${intensity}` : ''}
-        </div>
-        <div style={{ fontSize: 12, color: C.muted }}>
-          TSS {Math.round(data.tss ?? 0)}
-          {data.duration_seconds ? ` · ${formatDuration(data.duration_seconds)}` : ''}
+
+        {/* Siatka 4 metryk */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+          <Metric label="Dystans" value={data.distance_km != null ? `${Math.round(data.distance_km)}` : '—'} unit="km" color={C.cyan} />
+          <Metric label="Wznosy" value={data.elevation_m != null ? `${data.elevation_m}` : '—'} unit="m" color={C.text} />
+          <Metric label="Czas" value={data.duration_seconds != null ? hhmm(data.duration_seconds) : '—'} unit="" color={C.text} />
+          <Metric label="Obciążenie" value={data.tss != null ? `${Math.round(data.tss)}` : '—'} unit="TSS" color={C.yellow} />
         </div>
       </div>
 
@@ -108,5 +120,40 @@ export function LastActivityCard({ activity, ftp }: LastActivityCardProps) {
         <RideAnalysis activity={data} activityId={data.strava_activity_id} ftp={ftp} onClose={() => setOpen(false)} />
       )}
     </>
+  );
+}
+
+// Kompaktowy czas h:mm do ciasnej siatki metryk.
+function hhmm(seconds: number): string {
+  const t = Math.round(seconds);
+  const h = Math.floor(t / 3600);
+  const m = Math.round((t % 3600) / 60);
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+
+// Ikona dyscypliny w kolorowym kwadraciku (SportBadge z mockupu).
+function SportBadge({ type }: { type: string | null }) {
+  const t = (type ?? '').toLowerCase();
+  const icon = t.includes('run') ? '🏃' : t.includes('gravel') ? '🚵' : t.includes('virtual') ? '🖥️' : '🚴';
+  return (
+    <div style={{
+      width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+      background: C.cyan + '1A', border: `1.5px solid ${C.cyan}44`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
+    }}>
+      {icon}
+    </div>
+  );
+}
+
+// Pojedyncza metryka: label 8px uppercase + wartość 16px + jednostka.
+function Metric({ label, value, unit, color }: { label: string; value: string; unit: string; color: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color, lineHeight: 1 }}>
+        {value}{unit && <span style={{ fontSize: 10, color: C.muted, fontWeight: 400 }}> {unit}</span>}
+      </div>
+    </div>
   );
 }

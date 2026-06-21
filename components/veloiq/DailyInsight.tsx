@@ -24,27 +24,27 @@ export function DailyInsight() {
 
   if (error) return null; // cicho — nie zaśmiecamy dashboardu gdy AI niedostępne
 
+  // Styl 1:1 z mockupu (Dashboard 942-945): lewa cyjanowa krawędź, prawy zaokrąglony róg.
   return (
     <div
       style={{
         background: C.card,
-        borderLeft: `3px solid ${C.cyan}`,
         border: `1px solid ${C.border}`,
-        borderLeftWidth: 3,
-        borderLeftColor: C.cyan,
-        borderRadius: 8,
-        padding: '12px 14px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6,
+        borderLeft: `3px solid ${C.cyan}`,
+        borderRadius: '0 12px 12px 0',
+        paddingLeft: 14,
+        padding: '12px 14px 12px 14px',
+        marginBottom: 10,
       }}
     >
-      <div style={{ fontSize: 9, color: C.cyan, textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 600 }}>
-        Trener AI · forma na dziś
+      <div style={{ fontSize: 9, color: C.cyan, letterSpacing: '0.12em', fontWeight: 600, marginBottom: 7 }}>
+        AI INSIGHT
       </div>
-      <div style={{ fontSize: 13, color: text ? C.text : C.muted, lineHeight: 1.45 }}>
-        {text ?? 'Analizuję Twoją formę…'}
-      </div>
+      {text ? (
+        <div style={{ fontSize: 13, lineHeight: 1.65, color: C.text }}>{text}</div>
+      ) : (
+        <div style={{ color: C.muted, fontSize: 13, fontStyle: 'italic' }}>Analizuję dane Strava...</div>
+      )}
     </div>
   );
 }
