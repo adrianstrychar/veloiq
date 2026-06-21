@@ -1,38 +1,8 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { interpretTSB } from '@/lib/fitness';
-import { MetricCard } from '@/components/dashboard/MetricCard';
-import { NextSession } from '@/components/dashboard/NextSession';
-import { RaceCountdown } from '@/components/dashboard/RaceCountdown';
-import { LastActivity } from '@/components/dashboard/LastActivity';
-
-const DAY_NAMES_PL: Record<number, string> = {
-  0: 'sunday',
-  1: 'monday',
-  2: 'tuesday',
-  3: 'wednesday',
-  4: 'thursday',
-  5: 'friday',
-  6: 'saturday',
-};
-
-const DAY_LABELS_PL: Record<string, string> = {
-  monday: 'Poniedziałek',
-  tuesday: 'Wtorek',
-  wednesday: 'Środa',
-  thursday: 'Czwartek',
-  friday: 'Piątek',
-  saturday: 'Sobota',
-  sunday: 'Niedziela',
-};
-
-interface PlanDay {
-  day: string;
-  date: string;
-  type: string;
-  title: string;
-  duration_minutes: number;
-  tss_target: number;
-}
+import { RawMetrics, type PmcRow } from '@/components/veloiq/RawMetrics';
+import { EngineCards } from '@/components/veloiq/EngineCards';
+import { LastActivityCard, type LastActivityRow } from '@/components/veloiq/LastActivityCard';
+import { ftpDisplay, deriveFtpSource } from '@/lib/ftp';
 
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
@@ -43,58 +13,66 @@ export default async function DashboardPage() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, name, strava_id')
+    .select('id, name, strava_id, ftp_watts, has_power_meter, weight_kg, vo2max, training_mode')
     .eq('user_id', user?.id ?? '')
     .single();
 
   const athleteId = athlete?.id;
   const stravaConnected = !!athlete?.strava_id;
 
-  const [{ data: metrics }, { data: weeklyPlan }, { data: race }, { data: lastActivity }] =
-    await Promise.all([
-      supabase
-        .from('fitness_metrics')
-        .select('ctl, atl, tsb')
-        .eq('athlete_id', athleteId)
-        .order('date', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from('weekly_plans')
-        .select('plan_json')
-        .eq('athlete_id', athleteId)
-        .order('week_start', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from('race_calendar')
-        .select('name, date')
-        .eq('athlete_id', athleteId)
-        .eq('priority', 'A')
-        .gte('date', new Date().toISOString().slice(0, 10))
-        .order('date', { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from('strava_activities')
-        .select('activity_date, distance_km, avg_hr, avg_watts, tss')
-        .eq('athlete_id', athleteId)
-        .order('activity_date', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
+  const [{ data: pmcRows }, { data: lastActivity }, { data: hrCheck }] = await Promise.all([
+    supabase
+      .from('fitness_metrics')
+      .select('date, ctl, atl, tsb')
+      .eq('athlete_id', athleteId)
+      .order('date', { ascending: false })
+      .limit(65),
+    // TODO TEMP: na czas testów struktury lapów wymuszamy jazdę interwałową z 13.05
+    //            (19 lapów). Przywrócić order+limit(1) po zakończeniu testów 6b/6c.
+    supabase
+      .from('strava_activities')
+      .select('strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at')
+      .eq('athlete_id', athleteId)
+      .eq('strava_activity_id', 18491356555)
+      .maybeSingle(),
+    // sprawdź czy są aktywności z tętnem (potrzebne do deriveFtpSource)
+    supabase
+      .from('strava_activities')
+      .select('id')
+      .eq('athlete_id', athleteId)
+      .not('avg_hr', 'is', null)
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
-  const ctl = metrics?.ctl ?? 0;
-  const atl = metrics?.atl ?? 0;
-  const tsb = metrics?.tsb ?? 0;
-  const tsbInfo = interpretTSB(tsb);
+  // Wyprowadź source FTP i zbuduj display object
+  const ftpSource = deriveFtpSource(
+    (athlete as any)?.training_mode ?? null,
+    (athlete as any)?.has_power_meter ?? false,
+    (athlete as any)?.ftp_watts ?? null,
+    !!hrCheck
+  );
+  const ftpData = ftpDisplay(
+    ftpSource,
+    (athlete as any)?.ftp_watts ?? null,
+    null, // ftpEst — brak kalkulatora estymaty w tym etapie
+    (athlete as any)?.weight_kg ?? null
+  );
 
-  const todayKey = DAY_NAMES_PL[new Date().getDay()];
-  const planDays = (weeklyPlan?.plan_json?.days ?? []) as PlanDay[];
-  const todaySession = planDays.find((d) => d.day === todayKey && d.type !== 'rest');
-
-  // TSB zwykle mieści się w zakresie -30..+30 — przeskaluj do paska 0-100
-  const tsbProgress = ((tsb + 30) / 60) * 100;
+  const pmc: PmcRow[] = (pmcRows ?? [])
+    .slice()
+    .reverse()
+    .map((r) => {
+      const d = new Date(r.date as string);
+      const label = `${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
+      return {
+        date: r.date as string,
+        label,
+        ctl: Number(r.ctl),
+        atl: Number(r.atl),
+        tsb: Number(r.tsb),
+      };
+    });
 
   return (
     <div className="flex flex-col gap-4">
@@ -114,41 +92,21 @@ export default async function DashboardPage() {
         </a>
       )}
 
-      <div className="grid grid-cols-3 gap-3">
-        <MetricCard title="Forma" value={Math.round(ctl)} label="CTL" color="#4ECDC4" progress={(ctl / 150) * 100} />
-        <MetricCard title="Zmęczenie" value={Math.round(atl)} label="ATL" color="#FF8C42" progress={(atl / 150) * 100} />
-        <MetricCard title="Świeżość" value={Math.round(tsb)} label="TSB" color={tsbInfo.color} progress={tsbProgress} stateLabel={tsbInfo.label} />
-      </div>
+      {/* EngineCards: FTP + VO2max */}
+      <EngineCards ftp={ftpData} vo2max={(athlete as any)?.vo2max ?? null} />
 
-      {todaySession && (
-        <NextSession
-          day={DAY_LABELS_PL[todaySession.day] ?? todaySession.day}
-          title={todaySession.title}
-          durationMinutes={todaySession.duration_minutes}
-          tssTarget={todaySession.tss_target}
-        />
-      )}
+      {/* RawMetrics: 3 kafle CTL/ATL/TSB + wykres PMC */}
+      <RawMetrics pmc={pmc} />
 
-      {race && (
-        <RaceCountdown
-          name={race.name}
-          date={race.date}
-          formLabel={tsbInfo.label}
-          formProgress={tsbProgress}
-          formColor={tsbInfo.color}
-        />
-      )}
-
+      {/* Ostatnia aktywność — klikalna, otwiera RideAnalysis */}
       {lastActivity && (
-        <LastActivity
-          date={lastActivity.activity_date}
-          distanceKm={lastActivity.distance_km}
-          avgHr={lastActivity.avg_hr}
-          avgWatts={lastActivity.avg_watts}
-          tss={lastActivity.tss}
+        <LastActivityCard
+          activity={lastActivity as unknown as LastActivityRow}
+          ftp={(athlete as any)?.ftp_watts ?? null}
         />
       )}
 
+      {/* Nawigacja */}
       <div className="grid grid-cols-2 gap-3">
         <a href="/chat" className="rounded-xl bg-card border border-border text-center text-sm font-semibold py-3">
           💬 Chat z trenerem
