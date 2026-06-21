@@ -33,13 +33,13 @@ export default async function DashboardPage() {
       .select('date, ctl, atl, tsb')
       .eq('athlete_id', athleteId)
       .order('date', { ascending: true }),
-    // TODO TEMP: na czas testów struktury lapów wymuszamy jazdę interwałową z 13.05
-    //            (19 lapów). Przywrócić order+limit(1) po zakończeniu testów 6b/6c.
+    // Najnowsza jazda — po dacie aktywności malejąco.
     supabase
       .from('strava_activities')
       .select('strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at')
       .eq('athlete_id', athleteId)
-      .eq('strava_activity_id', 18491356555)
+      .order('activity_date', { ascending: false })
+      .limit(1)
       .maybeSingle(),
     // sprawdź czy są aktywności z tętnem (potrzebne do deriveFtpSource)
     supabase
