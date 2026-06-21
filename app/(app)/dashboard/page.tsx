@@ -1,7 +1,13 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { RawMetrics, type PmcRow } from '@/components/veloiq/RawMetrics';
+import { type PmcRow } from '@/components/veloiq/RawMetrics';
 import { EngineCards } from '@/components/veloiq/EngineCards';
+import { ReadinessModule } from '@/components/veloiq/ReadinessModule';
+import { DailyInsight } from '@/components/veloiq/DailyInsight';
+import { Progress } from '@/components/veloiq/Progress';
 import { LastActivityCard, type LastActivityRow } from '@/components/veloiq/LastActivityCard';
+import { computeReadiness, type MetricRow } from '@/lib/readiness';
+import { computeProgressStats, type ActivityStatRow } from '@/lib/progressStats';
+import { type FtpPoint } from '@/components/veloiq/Progress';
 import { ftpDisplay, deriveFtpSource } from '@/lib/ftp';
 
 export default async function DashboardPage() {
@@ -13,20 +19,20 @@ export default async function DashboardPage() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, name, strava_id, ftp_watts, has_power_meter, weight_kg, vo2max, training_mode')
+    .select('id, name, strava_id, ftp_watts, has_power_meter, weight_kg, vo2max, training_mode, season_km_goal')
     .eq('user_id', user?.id ?? '')
     .single();
 
   const athleteId = athlete?.id;
   const stravaConnected = !!athlete?.strava_id;
 
-  const [{ data: pmcRows }, { data: lastActivity }, { data: hrCheck }] = await Promise.all([
+  const [{ data: pmcRows }, { data: lastActivity }, { data: hrCheck }, { data: season2026 }, { data: ftpHistory }] = await Promise.all([
+    // Pełna historia sezonu — potrzebna do gotowości (szczyt CTL, rampa) i progresu.
     supabase
       .from('fitness_metrics')
       .select('date, ctl, atl, tsb')
       .eq('athlete_id', athleteId)
-      .order('date', { ascending: false })
-      .limit(65),
+      .order('date', { ascending: true }),
     // TODO TEMP: na czas testów struktury lapów wymuszamy jazdę interwałową z 13.05
     //            (19 lapów). Przywrócić order+limit(1) po zakończeniu testów 6b/6c.
     supabase
@@ -43,6 +49,19 @@ export default async function DashboardPage() {
       .not('avg_hr', 'is', null)
       .limit(1)
       .maybeSingle(),
+    // wszystkie jazdy sezonu 2026 — do statystyk rozwoju (streak, najdłuższa, suma km)
+    supabase
+      .from('strava_activities')
+      .select('activity_date, distance_km, name')
+      .eq('athlete_id', athleteId)
+      .gte('activity_date', '2026-01-01')
+      .order('activity_date', { ascending: true }),
+    // historia FTP — do FTP hero z wykresem
+    supabase
+      .from('ftp_history')
+      .select('date, ftp_watts')
+      .eq('athlete_id', athleteId)
+      .order('date', { ascending: true }),
   ]);
 
   // Wyprowadź source FTP i zbuduj display object
@@ -59,20 +78,23 @@ export default async function DashboardPage() {
     (athlete as any)?.weight_kg ?? null
   );
 
-  const pmc: PmcRow[] = (pmcRows ?? [])
-    .slice()
-    .reverse()
-    .map((r) => {
-      const d = new Date(r.date as string);
-      const label = `${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
-      return {
-        date: r.date as string,
-        label,
-        ctl: Number(r.ctl),
-        atl: Number(r.atl),
-        tsb: Number(r.tsb),
-      };
-    });
+  // pmcRows przychodzi już rosnąco po dacie.
+  const metricRows: MetricRow[] = (pmcRows ?? []).map((r) => ({
+    date: r.date as string,
+    ctl: Number(r.ctl),
+    atl: Number(r.atl),
+    tsb: Number(r.tsb),
+  }));
+
+  const readiness = computeReadiness(metricRows);
+
+  const pmc: PmcRow[] = metricRows.map((r) => {
+    const d = new Date(r.date);
+    const label = `${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
+    return { date: r.date, label, ctl: r.ctl, atl: r.atl, tsb: r.tsb };
+  });
+
+  const progressStats = computeProgressStats((season2026 ?? []) as ActivityStatRow[]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -92,19 +114,30 @@ export default async function DashboardPage() {
         </a>
       )}
 
-      {/* EngineCards: FTP + VO2max */}
+      {/* 1. EngineCards: FTP + VO2max */}
       <EngineCards ftp={ftpData} vo2max={(athlete as any)?.vo2max ?? null} />
 
-      {/* RawMetrics: 3 kafle CTL/ATL/TSB + wykres PMC */}
-      <RawMetrics pmc={pmc} />
+      {/* 2. ReadinessModule: gotowość z TSB + rozwijany RawMetrics (CTL/ATL/TSB) */}
+      {readiness && <ReadinessModule readiness={readiness} pmc={pmc} />}
 
-      {/* Ostatnia aktywność — klikalna, otwiera RideAnalysis */}
+      {/* 3. AI Insight: forma na dziś */}
+      {readiness && <DailyInsight />}
+
+      {/* 4. Ostatnia aktywność — klikalna, otwiera RideAnalysis */}
       {lastActivity && (
         <LastActivityCard
           activity={lastActivity as unknown as LastActivityRow}
           ftp={(athlete as any)?.ftp_watts ?? null}
         />
       )}
+
+      {/* 5. Progress: FTP hero + statystyki + cel sezonu */}
+      <Progress
+        stats={progressStats}
+        ftpHistory={(ftpHistory ?? []) as FtpPoint[]}
+        weightKg={(athlete as any)?.weight_kg ?? null}
+        seasonGoalKm={(athlete as any)?.season_km_goal ?? null}
+      />
 
       {/* Nawigacja */}
       <div className="grid grid-cols-2 gap-3">
