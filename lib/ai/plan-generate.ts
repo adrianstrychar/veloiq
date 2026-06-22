@@ -78,6 +78,11 @@ export function buildTwoWeekPrompt(inp: GeneratorInputs): { system: string; user
     'Typy: OFF=wolne, Z1=regeneracja, Z2=endurance, SST=sweet spot, THR=threshold, OU=over-under, VO2=vo2max, LONG=długa.',
     'TYDZIEŃ ZARYSU (next): podaj TYLKO type + label + orientacyjny tss + przybliżony dur_min.',
     'NIE podawaj watt/hr/zones dla zarysu (zostaw puste — zostaną znormalizowane). To kierunek, nie rozpiska.',
+    'FORMAT LABELA (oba tygodnie): krótka nazwa sesji = typ + opcjonalnie struktura interwałów, MAX ~3 słowa.',
+    'ŻADNEGO opisu po myślniku, żadnych zdań — opis "dlaczego/po co" idzie WYŁĄCZNIE do insight, nie do label.',
+    'Przykłady poprawnych labeli: "Threshold 2×15min", "Sweet Spot 3×15min", "Over-Under 3×12min", "VO2max 5×5min", "Long gravel", "Endurance", "Regeneracja aktywna", "Odpoczynek".',
+    'INSIGHT (oba tygodnie): MAX 1-2 zdania, prosty codzienny język. Krótko: co to za tydzień i na co zwrócić uwagę.',
+    'NIE tłumacz każdej sesji po kolei, nie pisz o TSS ani szczegółów — to ma być zwięzła myśl, nie rozprawka.',
     'Zwróć WYŁĄCZNIE poprawny JSON (bez markdown, bez tekstu przed/po).',
   ].join(' ');
 

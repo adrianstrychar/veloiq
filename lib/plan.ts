@@ -58,6 +58,22 @@ export function dateLabel(iso: string): string {
   return `${dd}.${mm}`;
 }
 
+// weekStart przesunięty o n tygodni (ISO).
+export function addWeeks(weekStart: string, n: number): string {
+  const u = new Date(weekStart + 'T12:00:00Z');
+  u.setUTCDate(u.getUTCDate() + n * 7);
+  return u.toISOString().slice(0, 10);
+}
+
+export type WeekKind = 'past' | 'current' | 'future';
+
+// past/current/future z porównania week_start vs bieżący tydzień (ISO porównywalne leksykalnie).
+export function weekKind(weekStart: string, currentWeekStart: string): WeekKind {
+  if (weekStart < currentWeekStart) return 'past';
+  if (weekStart > currentWeekStart) return 'future';
+  return 'current';
+}
+
 // weekStart ISO → "22–28.06" (lub "29.06–5.07" gdy różne miesiące)
 export function weekRangeLabel(weekStart: string): string {
   const start = new Date(weekStart + 'T12:00:00Z');
