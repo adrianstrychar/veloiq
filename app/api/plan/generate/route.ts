@@ -3,9 +3,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
-  buildPlanPrompt,
-  validatePlan,
+  buildTwoWeekPrompt,
+  validateTwoWeekPlan,
   mondayOf,
+  nextWeekStart,
   type GeneratorInputs,
   type PlanDay,
 } from '@/lib/ai/plan-generate';
@@ -95,11 +96,12 @@ export async function POST(req: NextRequest) {
     weeklyTssTarget,
   };
 
-  const { system, user } = buildPlanPrompt(inputs);
+  const nextWeek = nextWeekStart(weekStart);
+  const { system, user } = buildTwoWeekPrompt(inputs);
 
-  // ── Wywołanie AI z 1 retry przy błędzie walidacji ──
-  let days: PlanDay[] | undefined;
-  let insight = '';
+  // ── Wywołanie AI (jedno, zwraca oba tygodnie) z 1 retry przy błędzie walidacji ──
+  let current: { days: PlanDay[]; insight: string } | undefined;
+  let next: { days: PlanDay[]; insight: string } | undefined;
   let lastErr = '';
   let tokensUsed = 0;
   let aiModel = 'claude-sonnet-4-6';
@@ -108,17 +110,17 @@ export async function POST(req: NextRequest) {
     try {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
+        max_tokens: 3000,
         system,
         messages: [{ role: 'user', content: user }],
       });
       aiModel = response.model;
       tokensUsed = (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0);
       const txt = response.content[0]?.type === 'text' ? response.content[0].text : '';
-      const v = validatePlan(txt, weekStart);
-      if (v.ok && v.days) {
-        days = v.days;
-        insight = v.insight ?? '';
+      const v = validateTwoWeekPlan(txt, weekStart, nextWeek);
+      if (v.ok && v.current && v.next) {
+        current = v.current;
+        next = v.next;
         break;
       }
       lastErr = v.error ?? 'walidacja nieudana';
@@ -127,48 +129,52 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (!days) {
+  if (!current || !next) {
     return NextResponse.json({ error: `generowanie nieudane: ${lastErr}` }, { status: 502 });
   }
 
-  // ── Ręczny upsert do weekly_plans (działa bez unique constraintu) ──
-  const totalTss = days.reduce((a, d) => a + d.tss, 0);
-  const row = {
-    athlete_id: athleteId,
-    week_start: weekStart,
-    plan_json: { days, insight },
-    ctl_at_generation: inputs.ctl,
-    atl_at_generation: inputs.atl,
-    tsb_at_generation: inputs.tsb,
-    weekly_tss_target: totalTss,
-    generated_by: 'manual' as const,
-    ai_model: aiModel,
-    tokens_used: tokensUsed,
-  };
-
-  const { data: existing } = await supabase
-    .from('weekly_plans')
-    .select('id')
-    .eq('athlete_id', athleteId)
-    .eq('week_start', weekStart)
-    .maybeSingle();
-
-  let saveErr;
-  if (existing) {
-    ({ error: saveErr } = await supabase.from('weekly_plans').update(row).eq('id', existing.id));
-  } else {
-    ({ error: saveErr } = await supabase.from('weekly_plans').insert(row));
+  // ── Ręczny upsert tygodnia do weekly_plans (działa bez unique constraintu) ──
+  async function upsertWeek(ws: string, days: PlanDay[], insight: string) {
+    const row = {
+      athlete_id: athleteId,
+      week_start: ws,
+      plan_json: { days, insight },
+      ctl_at_generation: inputs.ctl,
+      atl_at_generation: inputs.atl,
+      tsb_at_generation: inputs.tsb,
+      weekly_tss_target: days.reduce((a, d) => a + d.tss, 0),
+      generated_by: 'manual' as const,
+      ai_model: aiModel,
+      tokens_used: tokensUsed,
+    };
+    const { data: existing } = await supabase
+      .from('weekly_plans')
+      .select('id')
+      .eq('athlete_id', athleteId)
+      .eq('week_start', ws)
+      .maybeSingle();
+    if (existing) {
+      return supabase.from('weekly_plans').update(row).eq('id', existing.id);
+    }
+    return supabase.from('weekly_plans').insert(row);
   }
 
+  const [curRes, nextRes] = await Promise.all([
+    upsertWeek(weekStart, current.days, current.insight),
+    upsertWeek(nextWeek, next.days, next.insight),
+  ]);
+  const saveErr = curRes.error || nextRes.error;
   if (saveErr) {
     return NextResponse.json({ error: `zapis nieudany: ${saveErr.message}` }, { status: 500 });
   }
 
+  const summary = (w: { days: PlanDay[] }) => w.days.map((d) => ({
+    dow: d.dow, date: d.date, type: d.type, tss: d.tss, dur_min: d.dur_min, outline: d.outline,
+  }));
+
   return NextResponse.json({
     ok: true,
-    week_start: weekStart,
-    total_tss: totalTss,
-    insight,
-    days: days.map((d) => ({ dow: d.dow, date: d.date, type: d.type, label: d.label, tss: d.tss, dur_min: d.dur_min })),
+    current: { week_start: weekStart, total_tss: current.days.reduce((a, d) => a + d.tss, 0), insight: current.insight, days: summary(current) },
+    next: { week_start: nextWeek, total_tss: next.days.reduce((a, d) => a + d.tss, 0), insight: next.insight, days: summary(next) },
   });
 }

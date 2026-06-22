@@ -1,4 +1,4 @@
-// Generator planu tygodniowego (ETAP 5.1) — budowa promptu + walidacja JSON.
+// Generator planu (ETAP 5.1b) — dwa tygodnie naraz: bieżący SZCZEGÓŁ + następny ZARYS.
 
 export const WORKOUT_TYPES = ['OFF', 'Z1', 'Z2', 'SST', 'THR', 'OU', 'VO2', 'LONG'] as const;
 export type WorkoutType = (typeof WORKOUT_TYPES)[number];
@@ -13,10 +13,11 @@ export interface PlanDay {
   watt: string;       // "255–275W" lub "–"
   hr: string;         // "155–168" lub "–"
   zones: number[];    // [Z1,Z2,Z3,Z4,Z5] %
+  outline: boolean;   // true = zarys (tylko type+label+~tss+~dur)
 }
 
 export interface GeneratorInputs {
-  weekStart: string;          // ISO poniedziałek
+  weekStart: string;          // ISO poniedziałek (tydzień bieżący)
   ftp: number;
   mass: number | null;
   vo2max: number | null;
@@ -47,43 +48,55 @@ export function dateForDow(weekStart: string, dow: number): string {
   return u.toISOString().slice(0, 10);
 }
 
-// ── Prompt ────────────────────────────────────────────────────────────────────
+// Poniedziałek następnego tygodnia.
+export function nextWeekStart(weekStart: string): string {
+  const u = new Date(weekStart + 'T00:00:00Z');
+  u.setUTCDate(u.getUTCDate() + 7);
+  return u.toISOString().slice(0, 10);
+}
 
-export function buildPlanPrompt(inp: GeneratorInputs): { system: string; user: string } {
+// ── Prompt (dwa tygodnie) ─────────────────────────────────────────────────────
+
+export function buildTwoWeekPrompt(inp: GeneratorInputs): { system: string; user: string } {
   const system = [
-    'Jesteś doświadczonym trenerem kolarstwa budującym plan na JEDEN tydzień (Pn–Nd).',
+    'Jesteś doświadczonym trenerem kolarstwa. Budujesz horyzont DWÓCH tygodni:',
+    'BIEŻĄCY tydzień w pełnym SZCZEGÓLE oraz NASTĘPNY tydzień jako ZARYS (kierunek, dopnie się po sesjach).',
     'Zawodnik: Adrian — puncheur. GŁÓWNA SŁABOŚĆ: próg utrzymany 20–60 min. To priorytet rozwojowy:',
-    'zaplanuj min. 2 sesje jakościowe (THR/SST/OU) celujące w utrzymany wysiłek progowy 20–60 min.',
+    'w BIEŻĄCYM tygodniu zaplanuj min. 2 sesje jakościowe (THR/SST/OU) celujące w utrzymany wysiłek progowy 20–60 min.',
     'ZASADY ROZGRZEWKI (wlicz w dur_min i w rozkład stref): min 20 min spokojnej rozgrzewki przed Z2/SST,',
     'min 25 min przed THR/OU/VO2. Każda jakościowa sesja ma rozgrzewkę + część główną + schłodzenie.',
-    'TWARDA REGUŁA dla zones[]: rozgrzewka i schłodzenie MUSZĄ być widoczne w rozkładzie stref.',
-    'Dla THR/OU/VO2 udział Z1+Z2 (zones[0]+zones[1]) musi wynosić CO NAJMNIEJ tyle, ile odpowiada 25 min,',
-    'czyli >= round(25 / dur_min * 100)%. Dla Z2/SST udział Z1+Z2 >= round(20 / dur_min * 100)%.',
-    'Przykład: THR o dur_min=90 → Z1+Z2 >= 28%. Resztę procentów rozłóż na strefy pracy (Z3/Z4/Z5).',
-    'Buduj progresywnie względem aktualnej formy (CTL). Zostaw regenerację: dni OFF/Z1 i jedną długą LONG w weekend.',
-    'Nie przekraczaj rozsądnego tygodniowego obciążenia względem celu TSS.',
-    'Typy: OFF=wolne, Z1=regeneracja aktywna, Z2=endurance, SST=sweet spot, THR=threshold, OU=over-under, VO2=vo2max, LONG=długa.',
+    'TWARDA REGUŁA dla zones[] (tylko tydzień bieżący): rozgrzewka i schłodzenie MUSZĄ być widoczne w strefach.',
+    'Dla THR/OU/VO2 udział Z1+Z2 (zones[0]+zones[1]) >= round(25 / dur_min * 100)%.',
+    'Dla Z2/SST udział Z1+Z2 >= round(20 / dur_min * 100)%. Przykład: THR 90 min → Z1+Z2 >= 28%.',
+    'Buduj progresywnie względem CTL. Zostaw regenerację: dni OFF/Z1 i jedną długą LONG w weekend.',
+    'Typy: OFF=wolne, Z1=regeneracja, Z2=endurance, SST=sweet spot, THR=threshold, OU=over-under, VO2=vo2max, LONG=długa.',
+    'TYDZIEŃ ZARYSU (next): podaj TYLKO type + label + orientacyjny tss + przybliżony dur_min.',
+    'NIE podawaj watt/hr/zones dla zarysu (zostaw puste — zostaną znormalizowane). To kierunek, nie rozpiska.',
     'Zwróć WYŁĄCZNIE poprawny JSON (bez markdown, bez tekstu przed/po).',
   ].join(' ');
 
   const raceLine = inp.raceName && inp.daysToRace != null
-    ? `Najbliższy wyścig: ${inp.raceName} za ${inp.daysToRace} dni (${inp.raceDate}). Jesteśmy w fazie budowania.`
-    : 'Brak nadchodzącego wyścigu — utrzymanie/budowanie ogólnej formy.';
+    ? `Najbliższy wyścig: ${inp.raceName} za ${inp.daysToRace} dni (${inp.raceDate}). Faza budowania.`
+    : 'Brak nadchodzącego wyścigu — budowanie ogólnej formy.';
 
   const user = [
     `Profil: FTP ${inp.ftp}W, masa ${inp.mass ?? '—'} kg, VO2max ${inp.vo2max ?? '—'}.`,
     `Forma: CTL ${inp.ctl ?? '—'}, ATL ${inp.atl ?? '—'}, TSB ${inp.tsb ?? '—'}.`,
     raceLine,
-    `Cel tygodniowy ~${inp.weeklyTssTarget} TSS (orientacyjnie, rozłóż sensownie).`,
-    `Tydzień zaczyna się w poniedziałek ${inp.weekStart}.`,
+    `Cel TSS bieżącego tygodnia ~${inp.weeklyTssTarget} (orientacyjnie). Następny tydzień: podobny rząd wielkości.`,
+    `Bieżący tydzień zaczyna się w poniedziałek ${inp.weekStart}, następny tydzień tydzień później.`,
     '',
     'Zwróć JSON w formacie:',
-    '{"days":[{"dow":1,"type":"OFF|Z1|Z2|SST|THR|OU|VO2|LONG","label":"krótka nazwa",' +
-      '"tss":0,"dur_min":0,"watt":"255–275W lub –","hr":"155–168 lub –","zones":[Z1,Z2,Z3,Z4,Z5]}, ...dokładnie 7 dni dow 1..7...],' +
-      '"insight":"1-2 zdania PO POLSKU co zaplanowałeś i dlaczego","weekly_tss_target":' + inp.weeklyTssTarget + '}',
+    '{',
+    '  "current": {"days":[{"dow":1,"type":"OFF|Z1|Z2|SST|THR|OU|VO2|LONG","label":"...",' +
+      '"tss":0,"dur_min":0,"watt":"255–275W lub –","hr":"155–168 lub –","zones":[Z1,Z2,Z3,Z4,Z5]}, ...7 dni dow 1..7...],' +
+      '"insight":"1-2 zdania co zaplanowałeś i dlaczego"},',
+    '  "next": {"days":[{"dow":1,"type":"...","label":"...","tss":0,"dur_min":0}, ...7 dni dow 1..7...],' +
+      '"insight":"1 zdanie o kierunku następnego tygodnia"}',
+    '}',
     '',
-    'Wymogi: dokładnie 7 dni (dow 1..7 rosnąco). Dla OFF: tss 0, dur_min 0, watt "–", hr "–", zones [0,0,0,0,0].',
-    'zones to % czasu w strefach Z1–Z5, suma ~100. Nie dodawaj pola date — zostanie doliczone.',
+    'Wymogi: każdy tydzień dokładnie 7 dni (dow 1..7 rosnąco). Dla OFF: tss 0, dur_min 0.',
+    'Bieżący: zones to % w Z1–Z5, suma ~100. Nie dodawaj pola date — zostanie doliczone.',
   ].join('\n');
 
   return { system, user };
@@ -91,30 +104,33 @@ export function buildPlanPrompt(inp: GeneratorInputs): { system: string; user: s
 
 // ── Walidacja ────────────────────────────────────────────────────────────────
 
-export interface ValidationResult {
+export interface WeekValidation {
   ok: boolean;
   days?: PlanDay[];
   insight?: string;
   error?: string;
 }
 
-export function validatePlan(rawText: string, weekStart: string): ValidationResult {
-  let parsed: unknown;
-  try {
-    const cleaned = rawText.replace(/```json|```/g, '').trim();
-    parsed = JSON.parse(cleaned);
-  } catch {
-    return { ok: false, error: 'JSON parse failed' };
-  }
+export interface TwoWeekValidation {
+  ok: boolean;
+  current?: { days: PlanDay[]; insight: string };
+  next?: { days: PlanDay[]; insight: string };
+  error?: string;
+}
 
-  const obj = parsed as { days?: unknown; insight?: unknown };
-  if (!Array.isArray(obj.days) || obj.days.length !== 7) {
-    return { ok: false, error: `oczekiwano 7 dni, otrzymano ${Array.isArray(obj.days) ? obj.days.length : 'brak'}` };
+// Waliduje tablicę dni jednego tygodnia. outline=true → tryb zarysu (luźniejszy).
+export function validateWeek(
+  rawDays: unknown,
+  weekStart: string,
+  opts: { outline: boolean }
+): WeekValidation {
+  if (!Array.isArray(rawDays) || rawDays.length !== 7) {
+    return { ok: false, error: `oczekiwano 7 dni, otrzymano ${Array.isArray(rawDays) ? rawDays.length : 'brak'}` };
   }
 
   const days: PlanDay[] = [];
   for (let i = 0; i < 7; i++) {
-    const d = obj.days[i] as Record<string, unknown>;
+    const d = rawDays[i] as Record<string, unknown>;
     const dow = i + 1;
 
     const type = String(d.type ?? '') as WorkoutType;
@@ -122,23 +138,25 @@ export function validatePlan(rawText: string, weekStart: string): ValidationResu
       return { ok: false, error: `dzień ${dow}: nieznany typ "${d.type}"` };
     }
 
-    let zones = Array.isArray(d.zones) ? d.zones.map((z) => Math.round(Number(z) || 0)) : [];
-    if (zones.length !== 5) zones = [0, 0, 0, 0, 0];
-    zones = zones.map((z) => Math.max(0, Math.min(100, z)));
-
     let tss = Math.max(0, Math.round(Number(d.tss) || 0));
     let durMin = Math.max(0, Math.round(Number(d.dur_min) || 0));
     let watt = typeof d.watt === 'string' && d.watt.trim() ? d.watt.trim() : '–';
     let hr = typeof d.hr === 'string' && d.hr.trim() ? d.hr.trim() : '–';
+    let zones = Array.isArray(d.zones) ? d.zones.map((z) => Math.round(Number(z) || 0)) : [];
+    if (zones.length !== 5) zones = [0, 0, 0, 0, 0];
+    zones = zones.map((z) => Math.max(0, Math.min(100, z)));
 
-    // Normalizacja dnia wolnego
-    if (type === 'OFF') {
+    if (opts.outline) {
+      // ZARYS: tylko type + label + tss + ~dur. Reszta pusta. Bez kontroli stref.
+      watt = '–'; hr = '–'; zones = [0, 0, 0, 0, 0];
+      if (type === 'OFF') { tss = 0; durMin = 0; }
+    } else if (type === 'OFF') {
       tss = 0; durMin = 0; watt = '–'; hr = '–'; zones = [0, 0, 0, 0, 0];
     } else {
-      // dni z treningiem: walidacja sumy stref (tolerancja 90–110)
+      // SZCZEGÓŁ, dzień z treningiem: walidacja sumy stref (tolerancja 90–110)
       const zsum = zones.reduce((a, b) => a + b, 0);
       if (zsum < 90 || zsum > 110) {
-        return { ok: false, error: `dzień ${dow} (${type}): strefy sumują się do ${zsum}%, poza zakresem 90–110` };
+        return { ok: false, error: `dzień ${dow} (${type}): strefy sumują się do ${zsum}%, poza 90–110` };
       }
     }
 
@@ -152,12 +170,44 @@ export function validatePlan(rawText: string, weekStart: string): ValidationResu
       watt,
       hr,
       zones,
+      outline: opts.outline,
     });
   }
 
+  return { ok: true, days };
+}
+
+// Waliduje odpowiedź {current, next}.
+export function validateTwoWeekPlan(
+  rawText: string,
+  currentWeekStart: string,
+  nextWeek: string
+): TwoWeekValidation {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+  } catch {
+    return { ok: false, error: 'JSON parse failed' };
+  }
+
+  const obj = parsed as {
+    current?: { days?: unknown; insight?: unknown };
+    next?: { days?: unknown; insight?: unknown };
+  };
+
+  if (!obj.current || !obj.next) {
+    return { ok: false, error: 'brak klucza current lub next' };
+  }
+
+  const cur = validateWeek(obj.current.days, currentWeekStart, { outline: false });
+  if (!cur.ok || !cur.days) return { ok: false, error: `bieżący: ${cur.error}` };
+
+  const nxt = validateWeek(obj.next.days, nextWeek, { outline: true });
+  if (!nxt.ok || !nxt.days) return { ok: false, error: `następny: ${nxt.error}` };
+
   return {
     ok: true,
-    days,
-    insight: typeof obj.insight === 'string' ? obj.insight.trim() : '',
+    current: { days: cur.days, insight: typeof obj.current.insight === 'string' ? obj.current.insight.trim() : '' },
+    next: { days: nxt.days, insight: typeof obj.next.insight === 'string' ? obj.next.insight.trim() : '' },
   };
 }
