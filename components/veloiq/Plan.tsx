@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { C } from '@/lib/theme';
 import { ZoneBar } from './ZoneBar';
 import { WorkoutDetail } from './WorkoutDetail';
+import { RideAnalysis, type RideActivity } from './RideAnalysis';
+import { createBrowserSupabaseClient } from '@/lib/supabase-browser';
 import { typeColor, fmtDur, dowLabel, dateLabel, weekRangeLabel, type WeekKind } from '@/lib/plan';
 
 export interface PlanDayView {
@@ -19,6 +21,12 @@ export interface PlanDayView {
   outline?: boolean;
 }
 
+// Wykonana jazda dla dnia planu — kształt wymagany przez RideAnalysis + sync-details.
+export interface PlanActivityRow extends RideActivity {
+  strava_activity_id: number;
+  details_synced_at: string | null;
+}
+
 export interface WeekSlot {
   weekStart: string;
   kind: WeekKind;
@@ -31,6 +39,7 @@ interface PlanProps {
   currentIdx: number;
   todayISO: string;
   ftp: number;
+  activitiesByDate: Record<string, PlanActivityRow>;
 }
 
 const card: React.CSSProperties = {
@@ -58,7 +67,7 @@ function Cell({ label, value, color }: { label: string; value: string; color?: s
   );
 }
 
-function DayCard({ d, isToday, onClick }: { d: PlanDayView; isToday: boolean; onClick?: () => void }) {
+function DayCard({ d, isToday, done, loading, onClick }: { d: PlanDayView; isToday: boolean; done: boolean; loading: boolean; onClick?: () => void }) {
   const tc = typeColor(d.type);
   const isOff = d.type === 'OFF';
   const isOutline = !!d.outline;
@@ -73,14 +82,14 @@ function DayCard({ d, isToday, onClick }: { d: PlanDayView; isToday: boolean; on
       style={{
         ...card, padding: '12px 14px', position: 'relative',
         border: `1px solid ${isToday ? C.cyan : hover ? tc + '88' : C.border}`,
-        opacity: isOutline ? 0.6 : 1,
+        opacity: isOutline ? 0.6 : (done && !isToday ? 0.55 : 1),
         cursor: clickable ? 'pointer' : 'default',
         transition: 'border-color 0.15s',
       }}
     >
       {isToday && (
         <div style={{ position: 'absolute', top: -8, left: 14, background: C.cyan, color: C.bg, fontSize: 8, fontWeight: 600, padding: '2px 8px', borderRadius: 4, letterSpacing: '0.1em' }}>
-          DZIŚ
+          {done ? 'DZIŚ · ZROBIONE ✓' : 'DZIŚ'}
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -115,7 +124,9 @@ function DayCard({ d, isToday, onClick }: { d: PlanDayView; isToday: boolean; on
         )}
       </div>
       {clickable && (
-        <div style={{ fontSize: 9, color: tc, fontWeight: 600, marginTop: 8, opacity: 0.8 }}>Pełna rozpiska →</div>
+        <div style={{ fontSize: 9, color: tc, fontWeight: 600, marginTop: 8, opacity: 0.8 }}>
+          {loading ? 'Pobieram szczegóły…' : done ? 'Analiza wykonania →' : 'Pełna rozpiska treningu →'}
+        </div>
       )}
     </div>
   );
@@ -123,9 +134,46 @@ function DayCard({ d, isToday, onClick }: { d: PlanDayView; isToday: boolean; on
 
 // ── Plan ──────────────────────────────────────────────────────────────────────
 
-export function Plan({ weeks, currentIdx, todayISO, ftp }: PlanProps) {
+// Kolumny do odczytu świeżego wiersza po sync-details (jak w LastActivityCard).
+const ACTIVITY_SELECT =
+  'name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, strava_activity_id';
+
+export function Plan({ weeks, currentIdx, todayISO, ftp, activitiesByDate }: PlanProps) {
   const [idx, setIdx] = useState(currentIdx);
   const [openWorkout, setOpenWorkout] = useState<PlanDayView | null>(null);
+  const [openRide, setOpenRide] = useState<PlanActivityRow | null>(null);
+  const [loadingDate, setLoadingDate] = useState<string | null>(null);
+
+  // Klik w wykonany dzień → dociągnij szczegóły (jeśli brak) i otwórz RideAnalysis.
+  // Wzorzec 1:1 z LastActivityCard: loading podczas syncu, dopiero potem modal.
+  async function handleOpenRide(row: PlanActivityRow) {
+    if (loadingDate) return;
+    let data = row;
+    if (!data.details_synced_at) {
+      setLoadingDate(row.activity_date);
+      try {
+        const res = await fetch(`/api/activities/${row.strava_activity_id}/sync-details`, { method: 'POST' });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error ?? `sync failed (${res.status})`);
+        }
+        const supabase = createBrowserSupabaseClient();
+        const { data: fresh } = await supabase
+          .from('strava_activities')
+          .select(ACTIVITY_SELECT)
+          .eq('strava_activity_id', row.strava_activity_id)
+          .maybeSingle();
+        if (fresh) data = fresh as unknown as PlanActivityRow;
+      } catch (e) {
+        console.error('sync-details failed', e);
+        // mimo błędu otwieramy modal — pokaże fallbacki "brak danych"
+      } finally {
+        setLoadingDate(null);
+      }
+    }
+    setOpenRide(data);
+  }
+
   const week = weeks[idx];
   const isCurrent = week.kind === 'current';
   const isPast = week.kind === 'past';
@@ -205,13 +253,23 @@ export function Plan({ weeks, currentIdx, todayISO, ftp }: PlanProps) {
           {/* KARTY DNI — dni szczegółu (nie outline, nie OFF) klikalne → WorkoutDetail */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {days.map((d, i) => {
-              const clickable = !d.outline && d.type !== 'OFF';
+              const act = activitiesByDate[d.date];
+              const done = !!act;
+              // OFF nigdy nieklikalny. Done klikalny zawsze (poza OFF); planowany — gdy nie outline.
+              const clickable = d.type !== 'OFF' && (done || !d.outline);
+              const onClick = !clickable
+                ? undefined
+                : done
+                ? () => handleOpenRide(act)
+                : () => setOpenWorkout(d);
               return (
                 <DayCard
                   key={i}
                   d={d}
                   isToday={isCurrent && d.date === todayISO}
-                  onClick={clickable ? () => setOpenWorkout(d) : undefined}
+                  done={done}
+                  loading={loadingDate === d.date}
+                  onClick={onClick}
                 />
               );
             })}
@@ -232,6 +290,15 @@ export function Plan({ weeks, currentIdx, todayISO, ftp }: PlanProps) {
 
       {openWorkout && (
         <WorkoutDetail day={openWorkout} ftp={ftp} onClose={() => setOpenWorkout(null)} />
+      )}
+
+      {openRide && (
+        <RideAnalysis
+          activity={openRide}
+          activityId={openRide.strava_activity_id}
+          ftp={ftp}
+          onClose={() => setOpenRide(null)}
+        />
       )}
     </div>
   );

@@ -1,8 +1,12 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { Plan, type PlanDayView, type WeekSlot } from '@/components/veloiq/Plan';
+import { Plan, type PlanDayView, type WeekSlot, type PlanActivityRow } from '@/components/veloiq/Plan';
 import { localTodayISO, mondayOfISO, addWeeks, weekKind } from '@/lib/plan';
 
 export const dynamic = 'force-dynamic';
+
+// Kolumny jazdy potrzebne do RideAnalysis + identyfikacja/flaga details.
+const ACTIVITY_SELECT =
+  'strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at';
 
 interface PlanJson {
   days: PlanDayView[];
@@ -44,6 +48,19 @@ export default async function PlanPage() {
   const byStart = new Map<string, PlanJson>();
   for (const r of rows ?? []) byStart.set(r.week_start as string, r.plan_json as PlanJson);
 
+  // Join ze Stravą: jazdy z okna 4 tygodni → mapa date→jazda (przy >1 dziennie: max TSS).
+  const { data: actRows } = await supabase
+    .from('strava_activities')
+    .select(ACTIVITY_SELECT)
+    .eq('athlete_id', athlete?.id ?? '')
+    .gte('activity_date', weekStarts[0]);
+
+  const activitiesByDate: Record<string, PlanActivityRow> = {};
+  for (const a of (actRows ?? []) as unknown as PlanActivityRow[]) {
+    const prev = activitiesByDate[a.activity_date];
+    if (!prev || (a.tss ?? 0) > (prev.tss ?? 0)) activitiesByDate[a.activity_date] = a;
+  }
+
   const weeks: WeekSlot[] = weekStarts.map((ws) => {
     const pj = byStart.get(ws);
     return {
@@ -60,7 +77,7 @@ export default async function PlanPage() {
         <span className="text-lg font-bold">Plan tygodnia</span>
       </header>
 
-      <Plan weeks={weeks} currentIdx={CURRENT_IDX} todayISO={todayISO} ftp={ftp} />
+      <Plan weeks={weeks} currentIdx={CURRENT_IDX} todayISO={todayISO} ftp={ftp} activitiesByDate={activitiesByDate} />
     </div>
   );
 }
