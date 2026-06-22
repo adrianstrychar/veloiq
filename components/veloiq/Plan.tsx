@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { C } from '@/lib/theme';
 import { ZoneBar } from './ZoneBar';
+import { WorkoutDetail } from './WorkoutDetail';
 import { typeColor, fmtDur, dowLabel, dateLabel, weekRangeLabel, type WeekKind } from '@/lib/plan';
 
 export interface PlanDayView {
@@ -29,6 +30,7 @@ interface PlanProps {
   weeks: WeekSlot[];
   currentIdx: number;
   todayISO: string;
+  ftp: number;
 }
 
 const card: React.CSSProperties = {
@@ -56,17 +58,26 @@ function Cell({ label, value, color }: { label: string; value: string; color?: s
   );
 }
 
-function DayCard({ d, isToday }: { d: PlanDayView; isToday: boolean }) {
+function DayCard({ d, isToday, onClick }: { d: PlanDayView; isToday: boolean; onClick?: () => void }) {
   const tc = typeColor(d.type);
   const isOff = d.type === 'OFF';
   const isOutline = !!d.outline;
+  const clickable = !!onClick;
+  const [hover, setHover] = useState(false);
 
   return (
-    <div style={{
-      ...card, padding: '12px 14px', position: 'relative',
-      border: isToday ? `1px solid ${C.cyan}` : `1px solid ${C.border}`,
-      opacity: isOutline ? 0.6 : 1,
-    }}>
+    <div
+      onClick={onClick}
+      onMouseEnter={clickable ? () => setHover(true) : undefined}
+      onMouseLeave={clickable ? () => setHover(false) : undefined}
+      style={{
+        ...card, padding: '12px 14px', position: 'relative',
+        border: `1px solid ${isToday ? C.cyan : hover ? tc + '88' : C.border}`,
+        opacity: isOutline ? 0.6 : 1,
+        cursor: clickable ? 'pointer' : 'default',
+        transition: 'border-color 0.15s',
+      }}
+    >
       {isToday && (
         <div style={{ position: 'absolute', top: -8, left: 14, background: C.cyan, color: C.bg, fontSize: 8, fontWeight: 600, padding: '2px 8px', borderRadius: 4, letterSpacing: '0.1em' }}>
           DZIŚ
@@ -103,14 +114,18 @@ function DayCard({ d, isToday }: { d: PlanDayView; isToday: boolean }) {
           </div>
         )}
       </div>
+      {clickable && (
+        <div style={{ fontSize: 9, color: tc, fontWeight: 600, marginTop: 8, opacity: 0.8 }}>Pełna rozpiska →</div>
+      )}
     </div>
   );
 }
 
 // ── Plan ──────────────────────────────────────────────────────────────────────
 
-export function Plan({ weeks, currentIdx, todayISO }: PlanProps) {
+export function Plan({ weeks, currentIdx, todayISO, ftp }: PlanProps) {
   const [idx, setIdx] = useState(currentIdx);
+  const [openWorkout, setOpenWorkout] = useState<PlanDayView | null>(null);
   const week = weeks[idx];
   const isCurrent = week.kind === 'current';
   const isPast = week.kind === 'past';
@@ -187,11 +202,19 @@ export function Plan({ weeks, currentIdx, todayISO }: PlanProps) {
             ))}
           </div>
 
-          {/* KARTY DNI (5.3: nieklikalne — WorkoutDetail w 5.4) */}
+          {/* KARTY DNI — dni szczegółu (nie outline, nie OFF) klikalne → WorkoutDetail */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {days.map((d, i) => (
-              <DayCard key={i} d={d} isToday={isCurrent && d.date === todayISO} />
-            ))}
+            {days.map((d, i) => {
+              const clickable = !d.outline && d.type !== 'OFF';
+              return (
+                <DayCard
+                  key={i}
+                  d={d}
+                  isToday={isCurrent && d.date === todayISO}
+                  onClick={clickable ? () => setOpenWorkout(d) : undefined}
+                />
+              );
+            })}
           </div>
         </>
       ) : (
@@ -205,6 +228,10 @@ export function Plan({ weeks, currentIdx, todayISO }: PlanProps) {
           </div>
           {/* TODO 5.7: <GeneratePlanButton weekStart={week.weekStart} /> */}
         </div>
+      )}
+
+      {openWorkout && (
+        <WorkoutDetail day={openWorkout} ftp={ftp} onClose={() => setOpenWorkout(null)} />
       )}
     </div>
   );

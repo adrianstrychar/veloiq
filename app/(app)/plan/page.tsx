@@ -17,9 +17,11 @@ export default async function PlanPage() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id')
+    .select('id, ftp_watts')
     .eq('user_id', user?.id ?? '')
     .single();
+
+  const ftp = (athlete?.ftp_watts as number | null) ?? 250;
 
   const todayISO = localTodayISO();
   const currentWeek = mondayOfISO(todayISO);
@@ -58,7 +60,7 @@ export default async function PlanPage() {
         <span className="text-lg font-bold">Plan tygodnia</span>
       </header>
 
-      <Plan weeks={weeks} currentIdx={CURRENT_IDX} todayISO={todayISO} />
+      <Plan weeks={weeks} currentIdx={CURRENT_IDX} todayISO={todayISO} ftp={ftp} />
     </div>
   );
 }
