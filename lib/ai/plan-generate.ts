@@ -27,7 +27,13 @@ export interface GeneratorInputs {
   raceName: string | null;
   raceDate: string | null;    // ISO
   daysToRace: number | null;
-  weeklyTssTarget: number;
+  weeklyTssTarget: number;        // cel TSS tygodnia bieżącego
+  nextWeeklyTssTarget: number;    // cel TSS tygodnia zarysu (next)
+}
+
+// Przedział twardej reguły dla promptu (target ±, węższy niż walidacja serwera).
+export function tssBand(target: number, lo = 0.95, hi = 1.10): [number, number] {
+  return [Math.round(target * lo), Math.round(target * hi)];
 }
 
 // ── Daty ────────────────────────────────────────────────────────────────────
@@ -79,11 +85,17 @@ export function buildTwoWeekPrompt(inp: GeneratorInputs): { system: string; user
     ? `Najbliższy wyścig: ${inp.raceName} za ${inp.daysToRace} dni (${inp.raceDate}). Faza budowania.`
     : 'Brak nadchodzącego wyścigu — budowanie ogólnej formy.';
 
+  const [curLo, curHi] = tssBand(inp.weeklyTssTarget);
+  const [nxtLo, nxtHi] = tssBand(inp.nextWeeklyTssTarget);
+
   const user = [
     `Profil: FTP ${inp.ftp}W, masa ${inp.mass ?? '—'} kg, VO2max ${inp.vo2max ?? '—'}.`,
     `Forma: CTL ${inp.ctl ?? '—'}, ATL ${inp.atl ?? '—'}, TSB ${inp.tsb ?? '—'}.`,
     raceLine,
-    `Cel TSS bieżącego tygodnia ~${inp.weeklyTssTarget} (orientacyjnie). Następny tydzień: podobny rząd wielkości.`,
+    `TWARDA REGUŁA TSS: suma TSS BIEŻĄCEGO tygodnia MUSI mieścić się w przedziale ${curLo}–${curHi} (cel ${inp.weeklyTssTarget}). Wyjście poza ten przedział = BŁĘDNY plan, popraw rozkład.`,
+    `Suma TSS NASTĘPNEGO tygodnia (zarys) MUSI mieścić się w przedziale ${nxtLo}–${nxtHi} (cel ${inp.nextWeeklyTssTarget}). Trzymaj sensowną progresję, nie skacz.`,
+    `Aby TRAFIĆ w przedział, dobierz WIELKOŚCI sesji — typowo: 3 sesje jakościowe po ~70–90 TSS, 1 LONG ~110–140 TSS, dni Z1/Z2 ~25–65 TSS, OFF=0. Zmniejsz sesje jeśli suma za duża.`,
+    `Zsumuj TSS wszystkich 7 dni każdego tygodnia i SPRAWDŹ, że mieści się w przedziale, ZANIM zwrócisz JSON. To wymóg twardy.`,
     `Bieżący tydzień zaczyna się w poniedziałek ${inp.weekStart}, następny tydzień tydzień później.`,
     '',
     'Zwróć JSON w formacie:',
@@ -185,7 +197,13 @@ export function validateTwoWeekPlan(
 ): TwoWeekValidation {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+    // Wytnij sam obiekt JSON (od pierwszego { do ostatniego }) — odporne na ewentualny
+    // tekst/rozumowanie przed lub po JSON-ie oraz na ogrodzenia ```.
+    const cleaned = rawText.replace(/```json|```/g, '');
+    const a = cleaned.indexOf('{');
+    const b = cleaned.lastIndexOf('}');
+    if (a === -1 || b === -1 || b <= a) return { ok: false, error: 'brak obiektu JSON w odpowiedzi' };
+    parsed = JSON.parse(cleaned.slice(a, b + 1));
   } catch {
     return { ok: false, error: 'JSON parse failed' };
   }

@@ -5,6 +5,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
   buildTwoWeekPrompt,
   validateTwoWeekPlan,
+  tssBand,
   mondayOf,
   nextWeekStart,
   type GeneratorInputs,
@@ -27,6 +28,15 @@ export async function POST(req: NextRequest) {
   const isDevBypass =
     req.headers.get('x-dev-secret') === DEV_SECRET &&
     process.env.NODE_ENV !== 'production';
+
+  // Furtka na przyszłość (5.6 suwak / 5.7 czat "mocniejszy tydzień") + dry_run do
+  // bezpiecznego testu bez zapisu. Body opcjonalne.
+  const body = await req.json().catch(() => ({} as Record<string, unknown>));
+  const dryRun = (body as Record<string, unknown>)?.dry_run === true;
+  const overrideTarget = Number((body as Record<string, unknown>)?.target_tss) > 0
+    ? Math.round(Number((body as Record<string, unknown>).target_tss)) : null;
+  const intensityMul = Number((body as Record<string, unknown>)?.intensity) > 0
+    ? Number((body as Record<string, unknown>).intensity) : 1.1;
 
   let supabase: SupabaseClient;
   let athleteFilter: { col: 'user_id' | 'id'; val: string };
@@ -79,8 +89,10 @@ export async function POST(req: NextRequest) {
   const daysToRace = race?.date
     ? Math.round((new Date(race.date).getTime() - new Date(todayIso).getTime()) / 86400000)
     : null;
-  // Cel tygodniowy: CTL*7 z lekką progresją; fallback gdy brak CTL
-  const weeklyTssTarget = ctl != null ? Math.round(ctl * 7 * 1.1) : 350;
+  // Cel tygodniowy: override z body albo CTL*7*intensity (domyślnie 1.1); fallback gdy brak CTL
+  const baseTarget = ctl != null ? Math.round(ctl * 7 * intensityMul) : 350;
+  const weeklyTssTarget = overrideTarget ?? baseTarget;
+  const nextWeeklyTssTarget = Math.round(weeklyTssTarget * 1.05); // sensowna progresja, nie skok
 
   const inputs: GeneratorInputs = {
     weekStart,
@@ -94,6 +106,7 @@ export async function POST(req: NextRequest) {
     raceDate: (race?.date as string | null) ?? null,
     daysToRace,
     weeklyTssTarget,
+    nextWeeklyTssTarget,
   };
 
   const nextWeek = nextWeekStart(weekStart);
@@ -110,7 +123,7 @@ export async function POST(req: NextRequest) {
     try {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
-        max_tokens: 3000,
+        max_tokens: 3500,
         system,
         messages: [{ role: 'user', content: user }],
       });
@@ -118,12 +131,27 @@ export async function POST(req: NextRequest) {
       tokensUsed = (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0);
       const txt = response.content[0]?.type === 'text' ? response.content[0].text : '';
       const v = validateTwoWeekPlan(txt, weekStart, nextWeek);
-      if (v.ok && v.current && v.next) {
-        current = v.current;
-        next = v.next;
-        break;
+      if (!v.ok || !v.current || !v.next) {
+        lastErr = v.error ?? 'walidacja nieudana';
+        continue;
       }
-      lastErr = v.error ?? 'walidacja nieudana';
+      // Walidacja przedziału TSS — bezpieczny bufor ±10/+15% (szerszy niż prompt),
+      // ale blokuje rozjazd typu +36%. Poza przedziałem → retry jak błąd struktury.
+      const sumCur = v.current.days.reduce((a, d) => a + d.tss, 0);
+      const sumNext = v.next.days.reduce((a, d) => a + d.tss, 0);
+      const [curLo, curHi] = tssBand(weeklyTssTarget, 0.90, 1.15);
+      const [nxtLo, nxtHi] = tssBand(nextWeeklyTssTarget, 0.90, 1.15);
+      if (sumCur < curLo || sumCur > curHi) {
+        lastErr = `bieżący TSS ${sumCur} poza przedziałem ${curLo}–${curHi}`;
+        continue;
+      }
+      if (sumNext < nxtLo || sumNext > nxtHi) {
+        lastErr = `następny TSS ${sumNext} poza przedziałem ${nxtLo}–${nxtHi}`;
+        continue;
+      }
+      current = v.current;
+      next = v.next;
+      break;
     } catch (err: unknown) {
       lastErr = err instanceof Error ? err.message : String(err);
     }
@@ -131,6 +159,17 @@ export async function POST(req: NextRequest) {
 
   if (!current || !next) {
     return NextResponse.json({ error: `generowanie nieudane: ${lastErr}` }, { status: 502 });
+  }
+
+  const summary = (w: { days: PlanDay[] }) => w.days.map((d) => ({
+    dow: d.dow, date: d.date, type: d.type, tss: d.tss, dur_min: d.dur_min, outline: d.outline,
+  }));
+  const curPayload = { week_start: weekStart, total_tss: current.days.reduce((a, d) => a + d.tss, 0), insight: current.insight, days: summary(current) };
+  const nextPayload = { week_start: nextWeek, total_tss: next.days.reduce((a, d) => a + d.tss, 0), insight: next.insight, days: summary(next) };
+
+  // dry_run: zwróć wynik BEZ zapisu (test bez nadpisywania istniejącego planu)
+  if (dryRun) {
+    return NextResponse.json({ ok: true, dry_run: true, target: weeklyTssTarget, next_target: nextWeeklyTssTarget, current: curPayload, next: nextPayload });
   }
 
   // ── Ręczny upsert tygodnia do weekly_plans (działa bez unique constraintu) ──
@@ -168,13 +207,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `zapis nieudany: ${saveErr.message}` }, { status: 500 });
   }
 
-  const summary = (w: { days: PlanDay[] }) => w.days.map((d) => ({
-    dow: d.dow, date: d.date, type: d.type, tss: d.tss, dur_min: d.dur_min, outline: d.outline,
-  }));
-
-  return NextResponse.json({
-    ok: true,
-    current: { week_start: weekStart, total_tss: current.days.reduce((a, d) => a + d.tss, 0), insight: current.insight, days: summary(current) },
-    next: { week_start: nextWeek, total_tss: next.days.reduce((a, d) => a + d.tss, 0), insight: next.insight, days: summary(next) },
-  });
+  return NextResponse.json({ ok: true, current: curPayload, next: nextPayload });
 }
