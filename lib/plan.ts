@@ -111,6 +111,7 @@ export interface ScalableDay {
 const REMOVE_ORDER_LOW = ['LONG', 'Z1', 'Z2', 'SST', 'THR', 'OU', 'VO2'];  // target < 6h: LONG pierwszy
 const REMOVE_ORDER_HIGH = ['Z1', 'Z2', 'LONG', 'SST', 'THR', 'OU', 'VO2']; // target >= 6h: LONG wcześnie
 const LOW_BUDGET_MIN = 360; // 6h
+const MIN_SESSION_MIN = 45; // sesja krótsza niż 45 min nie ma sensu — usuwamy ją zamiast zostawiać stub
 // Priorytet ocalałego (gdy zostaje 1 sesja): VO2 najcenniejszy, LONG/Z1 najmniej.
 const SURVIVOR_PRIORITY = ['VO2', 'OU', 'THR', 'SST', 'Z2', 'LONG', 'Z1'];
 
@@ -178,18 +179,32 @@ export function scaleWeek<T extends ScalableDay>(
       const take = Math.min(need, x.w - ss.warmupMin);
       x.w -= take; need -= take;
     }
+    // Wspólne helpery dla usuwania (faza 2.5 i 3): aktywne, chroniony survivor, kolejność.
+    const active = () => scalable.filter((x) => !x.removed);
+    const protectedIdx = (() => {
+      const a = active();
+      for (const t of SURVIVOR_PRIORITY) {
+        const hit = a.find((x) => x.type === t);
+        if (hit) return hit.idx;
+      }
+      return a[0]?.idx;
+    })();
+    const removeOrder = targetDurMin < LOW_BUDGET_MIN ? REMOVE_ORDER_LOW : REMOVE_ORDER_HIGH;
+
+    // faza 2.5: sesje, które po skróceniu warmup/cooldown spadły poniżej 45 min — usuń w całości
+    // (lepiej OFF niż 35-minutowy trening). Ta sama kolejność i ochrona survivora.
+    for (const t of removeOrder) {
+      for (const x of scalable) {
+        if (x.removed || x.type !== t || x.idx === protectedIdx) continue;
+        if (active().length <= 1) break;
+        if (x.w + x.core + x.c < MIN_SESSION_MIN) {
+          need -= x.w + x.core + x.c; x.removed = true;
+        }
+      }
+    }
+
     // faza 3: usuń całe sesje (kolejność zależna od budżetu), chroniąc ostatnią wg SURVIVOR_PRIORITY.
     if (need > 0) {
-      const active = () => scalable.filter((x) => !x.removed);
-      const protectedIdx = (() => {
-        const a = active();
-        for (const t of SURVIVOR_PRIORITY) {
-          const hit = a.find((x) => x.type === t);
-          if (hit) return hit.idx;
-        }
-        return a[0]?.idx;
-      })();
-      const removeOrder = targetDurMin < LOW_BUDGET_MIN ? REMOVE_ORDER_LOW : REMOVE_ORDER_HIGH;
       for (const t of removeOrder) {
         if (need <= 0) break;
         for (const x of scalable) {
@@ -224,7 +239,7 @@ export function scaleWeek<T extends ScalableDay>(
       // Limit konwersji OFF→Z1: przy target ≤10h zostaw min. 1 dzień wolny (konwertuj max 1).
       let convCount = 0;
       for (const idx of offIdxs) {
-        if (fill <= 0) break;
+        if (fill < MIN_SESSION_MIN) break; // <45 min nie tworzymy karłowatej sesji — zostaw wolne minuty
         if (targetDurMin <= 600 && convCount >= 1) break;
         const add = Math.min(fill, 60);
         converted.set(idx, { dur: add }); fill -= add; convCount++;

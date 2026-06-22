@@ -84,7 +84,11 @@ export async function POST(req: NextRequest) {
       .maybeSingle(),
   ]);
 
-  const weekStart = mondayOf(new Date());
+  // Anchor: week_start z body (przycisk "Wygeneruj" dla konkretnego tygodnia) albo bieżący tydzień.
+  const weekStartParam = typeof (body as Record<string, unknown>)?.week_start === 'string'
+    ? String((body as Record<string, unknown>).week_start)
+    : null;
+  const weekStart = weekStartParam ? mondayOf(new Date(weekStartParam)) : mondayOf(new Date());
   const ctl = fm?.ctl != null ? Number(fm.ctl) : null;
   const daysToRace = race?.date
     ? Math.round((new Date(race.date).getTime() - new Date(todayIso).getTime()) / 86400000)

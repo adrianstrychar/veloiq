@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { C } from '@/lib/theme';
 import { ZoneBar } from './ZoneBar';
 import { WorkoutDetail } from './WorkoutDetail';
@@ -167,6 +168,42 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
     computeBaseHours(weeks[currentIdx]?.days ?? null, activitiesByDate)
   );
 
+  // 5.7: lokalny override planu per tydzień (po modyfikacji czatem) + stan czatu.
+  const [override, setOverride] = useState<Record<string, PlanDayView[]>>({});
+  const [overrideInsight, setOverrideInsight] = useState<Record<string, string>>({});
+  type ChatMsg = { role: 'user' | 'ai'; text: string };
+  const [chat, setChat] = useState<ChatMsg[]>([]);
+  const [input, setInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const [genLoading, setGenLoading] = useState(false);
+
+  // 5.7: wygeneruj plan dla pustego slotu (anchor week_start) → odśwież dane z bazy.
+  async function generatePlan(weekStart: string) {
+    if (genLoading) return;
+    setGenLoading(true);
+    try {
+      const res = await fetch('/api/plan/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ week_start: weekStart }),
+      });
+      if (!res.ok) throw new Error('generate failed');
+      router.refresh();
+    } catch (e) {
+      console.error('generate failed', e);
+    } finally {
+      setGenLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chat, chatLoading]);
+
+  const QUICK_MODS = ['Piątek potrzebuję wolny', 'Jestem świeży — mocniejsza końcówka', 'Skróć weekend, mam wyjazd'];
+
   // Klik w wykonany dzień → dociągnij szczegóły (jeśli brak) i otwórz RideAnalysis.
   // Wzorzec 1:1 z LastActivityCard: loading podczas syncu, dopiero potem modal.
   async function handleOpenRide(row: PlanActivityRow) {
@@ -202,7 +239,34 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
   const isPast = week.kind === 'past';
   const isFuture = week.kind === 'future';
 
-  const days = week.days;
+  // 5.7: czat modyfikacji planu — aktualizuje override (UI od razu) + zapisuje w bazie.
+  async function sendMod(text?: string) {
+    const q = (text ?? input).trim();
+    if (!q || chatLoading) return;
+    const weekStart = week.weekStart;
+    setChat((c) => [...c, { role: 'user', text: q }]);
+    setInput('');
+    setChatLoading(true);
+    try {
+      const res = await fetch('/api/plan/modify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: q, weekStart }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.ok) throw new Error(d.error ?? 'modify failed');
+      setOverride((o) => ({ ...o, [weekStart]: d.days as PlanDayView[] }));
+      if (d.insight) setOverrideInsight((o) => ({ ...o, [weekStart]: d.insight as string }));
+      setChat((c) => [...c, { role: 'ai', text: (d.insight as string) ?? 'Plan zaktualizowany.' }]);
+    } catch {
+      setChat((c) => [...c, { role: 'ai', text: 'Nie mogę teraz zmodyfikować planu. Spróbuj jeszcze raz.' }]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  // Plan dnia: override po modyfikacji czatem albo wersja z bazy (props).
+  const days = override[week.weekStart] ?? week.days;
   const isOutlineWeek = !!days && days.some((d) => d.outline);
 
   // Suwak działa TYLKO na bieżącym tygodniu. Hierarchiczne skalowanie (scaleWeek):
@@ -328,13 +392,13 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
 
       {days ? (
         <>
-          {/* AI INSIGHT */}
-          {week.insight && (
+          {/* AI INSIGHT (override po modyfikacji czatem, inaczej z bazy) */}
+          {(overrideInsight[week.weekStart] ?? week.insight) && (
             <div style={{ ...card, borderLeft: `3px solid ${C.cyan}`, borderRadius: '0 12px 12px 0', paddingLeft: 14 }}>
               <div style={{ fontSize: 9, color: C.cyan, letterSpacing: '0.12em', fontWeight: 600, marginBottom: 7 }}>
                 AI INSIGHT — {isPast ? 'PODSUMOWANIE TYGODNIA' : isFuture ? 'ZARYS TYGODNIA' : 'PLAN TYGODNIA'}
               </div>
-              <div style={{ fontSize: 13, lineHeight: 1.6, color: C.text }}>{week.insight}</div>
+              <div style={{ fontSize: 13, lineHeight: 1.6, color: C.text }}>{overrideInsight[week.weekStart] ?? week.insight}</div>
             </div>
           )}
 
@@ -377,6 +441,62 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
               );
             })}
           </div>
+
+          {/* 5.7: CZAT MODYFIKACJI PLANU — tylko bieżący tydzień */}
+          {isCurrent && (
+            <div style={{ ...card }}>
+              <div style={{ fontSize: 9, color: C.green, letterSpacing: '0.12em', fontWeight: 600, marginBottom: 10 }}>
+                ZMIEŃ PLAN — napisz, czego potrzebujesz
+              </div>
+
+              {chat.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12, maxHeight: 240, overflowY: 'auto' }}>
+                  {chat.map((m, i) => (
+                    <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                      <div style={{
+                        background: m.role === 'user' ? C.cyan : C.bg,
+                        color: m.role === 'user' ? '#000' : C.text,
+                        border: m.role === 'user' ? 'none' : `1px solid ${C.border}`,
+                        borderRadius: 12, padding: '9px 13px', fontSize: 12.5, lineHeight: 1.55,
+                      }}>
+                        {m.text}
+                      </div>
+                    </div>
+                  ))}
+                  {chatLoading && (
+                    <div style={{ alignSelf: 'flex-start', color: C.muted, fontSize: 12, fontStyle: 'italic' }}>Trener pisze…</div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+              )}
+
+              {chat.length === 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                  {QUICK_MODS.map((s) => (
+                    <button key={s} onClick={() => sendMod(s)} disabled={chatLoading}
+                      style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.green, borderRadius: 14, padding: '6px 12px', fontSize: 11, cursor: 'pointer' }}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && sendMod()}
+                  placeholder="np. piątek potrzebuję wolny, weekend mocniej…"
+                  disabled={chatLoading}
+                  style={{ flex: 1, background: C.bg, border: `1px solid ${C.green}55`, borderRadius: 10, padding: '11px 14px', color: C.text, fontSize: 13, outline: 'none' }}
+                />
+                <button onClick={() => sendMod()} disabled={chatLoading}
+                  style={{ background: C.green, border: 'none', borderRadius: 10, padding: '0 18px', color: C.bg, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                  ↑
+                </button>
+              </div>
+            </div>
+          )}
         </>
       ) : (
         // Stan pusty — brak planu dla tego tygodnia.
@@ -387,7 +507,13 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
           <div style={{ fontSize: 12, color: C.muted, maxWidth: 280, lineHeight: 1.5 }}>
             Plan dla tego tygodnia nie został jeszcze wygenerowany.
           </div>
-          {/* TODO 5.7: <GeneratePlanButton weekStart={week.weekStart} /> */}
+          <button
+            onClick={() => generatePlan(week.weekStart)}
+            disabled={genLoading}
+            style={{ marginTop: 4, background: C.cyan, border: 'none', borderRadius: 10, padding: '10px 18px', color: C.bg, fontWeight: 600, fontSize: 13, cursor: genLoading ? 'default' : 'pointer', opacity: genLoading ? 0.6 : 1 }}
+          >
+            {genLoading ? 'Generuję…' : '⚡ Wygeneruj plan'}
+          </button>
         </div>
       )}
 

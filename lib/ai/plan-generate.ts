@@ -75,6 +75,8 @@ export function buildTwoWeekPrompt(inp: GeneratorInputs): { system: string; user
     'Dla THR/OU/VO2 udział Z1+Z2 (zones[0]+zones[1]) >= round(25 / dur_min * 100)%.',
     'Dla Z2/SST udział Z1+Z2 >= round(20 / dur_min * 100)%. Przykład: THR 90 min → Z1+Z2 >= 28%.',
     'Buduj progresywnie względem CTL. Zostaw regenerację: dni OFF/Z1 i jedną długą LONG w weekend.',
+    'OBOWIĄZKOWO 2 dni OFF w tygodniu. Jeden zwykle w poniedziałek (regeneracja po weekendzie), drugi w środku tygodnia (czwartek lub piątek — przed lub po sesji jakościowej). Nigdy dwa OFF z rzędu. Sesje jakościowe (THR/OU/VO2) nigdy bezpośrednio obok siebie — zawsze Z1/Z2/OFF między nimi.',
+    'MINIMALNY czas sesji to 45 min (dur_min >= 45). Sesje poniżej 45 min nie mają sensu treningowego — jeśli budżet jest za mały, lepiej dać OFF niż krótką sesję. Nie planuj Z1/Z2/regeneracji poniżej 45 min.',
     'Typy: OFF=wolne, Z1=regeneracja, Z2=endurance, SST=sweet spot, THR=threshold, OU=over-under, VO2=vo2max, LONG=długa.',
     'TYDZIEŃ ZARYSU (next): podaj TYLKO type + label + orientacyjny tss + przybliżony dur_min.',
     'NIE podawaj watt/hr/zones dla zarysu (zostaw puste — zostaną znormalizowane). To kierunek, nie rozpiska.',
@@ -114,6 +116,56 @@ export function buildTwoWeekPrompt(inp: GeneratorInputs): { system: string; user
     '',
     'Wymogi: każdy tydzień dokładnie 7 dni (dow 1..7 rosnąco). Dla OFF: tss 0, dur_min 0.',
     'Bieżący: zones to % w Z1–Z5, suma ~100. Nie dodawaj pola date — zostanie doliczone.',
+  ].join('\n');
+
+  return { system, user };
+}
+
+// ── Prompt modyfikacji (ETAP 5.7: czat) ───────────────────────────────────────
+
+export interface ModifyContext {
+  ftp: number;
+  ctl: number | null;
+  raceName: string | null;
+  daysToRace: number | null;
+}
+
+// Modyfikuje ISTNIEJĄCY plan tygodnia wg prośby użytkownika (nie generuje od zera).
+export function buildModifyPrompt(
+  currentDays: PlanDay[],
+  ctx: ModifyContext,
+  message: string
+): { system: string; user: string } {
+  const planJson = JSON.stringify(
+    currentDays.map((d) => ({
+      dow: d.dow, type: d.type, label: d.label, tss: d.tss, dur_min: d.dur_min, watt: d.watt, hr: d.hr, zones: d.zones,
+    }))
+  );
+
+  const system = [
+    'Jesteś trenerem kolarstwa VeloIQ modyfikującym istniejący plan tygodniowy zawodnika.',
+    `Zawodnik: Adrian — puncheur, FTP ${ctx.ftp}W${ctx.ctl != null ? `, CTL ${Math.round(ctx.ctl)}` : ''}.`,
+    'GŁÓWNA SŁABOŚĆ: próg utrzymany 20–60 min — CHROŃ sesje THR/OU, nie usuwaj ich bez wyraźnej prośby.',
+    ctx.raceName && ctx.daysToRace != null
+      ? `Najbliższy wyścig: ${ctx.raceName} za ${ctx.daysToRace} dni — trzymaj kierunek budowania formy.`
+      : 'Brak najbliższego wyścigu w kalendarzu.',
+    'Modyfikuj PODANY plan zgodnie z prośbą — zachowaj sens treningowy, nie generuj od zera.',
+    'ZASADY (twarde): dokładnie 7 dni Pn–Nd (dow 1..7). Typy: OFF/Z1/Z2/SST/THR/OU/VO2/LONG.',
+    'Jeśli user chce wolny dzień → type OFF (tss 0, dur_min 0, watt/hr "–", zones [0,0,0,0,0]); obciążenie rozłóż na inne dni.',
+    'OBOWIĄZKOWO 2 dni OFF w tygodniu, nigdy dwa OFF z rzędu. Sesje jakościowe (THR/OU/VO2) nigdy obok siebie.',
+    'MINIMALNY czas sesji 45 min (dur_min >= 45) — krótszej nie planuj, daj OFF.',
+    'Rozgrzewka min 20 min przed Z2/SST, 25 min przed THR/OU/VO2. zones to % czasu w Z1–Z5, suma ~100.',
+    'Label: krótka nazwa (typ + ewentualnie struktura), MAX ~3 słowa, bez zdań.',
+    'insight: 1–2 zdania PO POLSKU co zmieniłeś i dlaczego — MUSI zgadzać się z nowym planem.',
+    'Zwróć WYŁĄCZNIE JSON (bez markdown, bez tekstu przed/po): {"days":[{...7 dni dow 1..7...}],"insight":"..."}.',
+  ].join(' ');
+
+  const user = [
+    `Aktualny plan (JSON): ${planJson}`,
+    '',
+    `Prośba zawodnika: "${message}"`,
+    '',
+    'Zwróć zmodyfikowany plan jako JSON {days, insight}. Nie dodawaj pola date.',
   ].join('\n');
 
   return { system, user };
