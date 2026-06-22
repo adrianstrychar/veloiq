@@ -23,7 +23,7 @@ function SectionTitle({ color, children }: { color: string; children: string }) 
 
 export function WorkoutDetail({ day, ftp, onClose }: WorkoutDetailProps) {
   const tc = typeColor(day.type);
-  const wk = buildWorkout({ type: day.type, label: day.label, dur_min: day.dur_min }, ftp);
+  const wk = buildWorkout({ type: day.type, label: day.label, dur_min: day.dur_min, warmup: day.warmup, cooldown: day.cooldown }, ftp);
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: C.bg, overflowY: 'auto', color: C.text }}>

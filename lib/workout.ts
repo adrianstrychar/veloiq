@@ -56,9 +56,12 @@ const REPS_GROUP_THRESHOLD = 8;
 function buildExpanded(d: WorkoutInput, struct: { reps: number; minutes: number } | null): ExpandedSeg[] {
   const T = d.type;
   const dur = d.dur_min;
+  const ss = sessionStructure(T);
+  const wUsed = d.warmup ?? ss.warmupDefault;
+  const cUsed = d.cooldown ?? ss.cooldownDefault;
   const segs: ExpandedSeg[] = [];
   const warmup = (min: number, pct: number) => segs.push({ kind: 'warmup', min, pctFtp: pct, color: PC.gray });
-  const cooldown = () => segs.push({ kind: 'cooldown', min: 10, pctFtp: 50, color: PC.gray });
+  const cooldown = () => segs.push({ kind: 'cooldown', min: cUsed, pctFtp: 50, color: PC.gray });
   const rest = (min: number) => segs.push({ kind: 'rest', min, pctFtp: 50, color: PC.gray });
 
   if (T === 'OFF') return [];
@@ -67,14 +70,14 @@ function buildExpanded(d: WorkoutInput, struct: { reps: number; minutes: number 
     return segs;
   }
   if (T === 'Z2') {
-    warmup(15, 55);
-    segs.push({ kind: 'steady', min: Math.max(10, dur - 25), pctFtp: 65, color: PC.z2 });
+    warmup(wUsed, 55);
+    segs.push({ kind: 'steady', min: Math.max(10, dur - wUsed - cUsed), pctFtp: 65, color: PC.z2 });
     cooldown();
     return segs;
   }
   if (T === 'LONG') {
-    warmup(20, 52);
-    segs.push({ kind: 'steady', min: Math.max(20, dur - 50), pctFtp: 64, color: PC.z2 });
+    warmup(wUsed, 52);
+    segs.push({ kind: 'steady', min: Math.max(20, dur - wUsed - cUsed - 20), pctFtp: 64, color: PC.z2 });
     segs.push({ kind: 'steady', min: 20, pctFtp: 80, color: PC.yellow }); // opcjonalny akcent Z3
     cooldown();
     return segs;
@@ -82,7 +85,7 @@ function buildExpanded(d: WorkoutInput, struct: { reps: number; minutes: number 
 
   // Typy interwałowe — fallback struktury gdy label bez N×M
   const s = struct ?? { reps: 3, minutes: T === 'VO2' ? 4 : 12 };
-  warmup(T === 'SST' ? 20 : 25, 58);
+  warmup(wUsed, 58);
 
   if (T === 'OU') {
     // ZAŁOŻENIE: 1 cykl OU = 3 min under + 1 min over (4 min), więc P = round(M/4).
@@ -127,6 +130,31 @@ export interface WorkoutInput {
   type: string;
   label: string;
   dur_min: number;
+  warmup?: number;   // nadpisanie rozgrzewki (min) — z suwaka godzin (scaleWeek)
+  cooldown?: number; // nadpisanie schłodzenia (min)
+}
+
+// Zakresy i domyślne rozgrzewki/schłodzenia per typ (minuty). Domyślne = obecne
+// stałe z buildWorkout/buildExpanded, więc bez suwaka nic się nie zmienia.
+export interface SessionStructure {
+  warmupMin: number; warmupMax: number; warmupDefault: number;
+  cooldownMin: number; cooldownMax: number; cooldownDefault: number;
+}
+const SESSION_STRUCT: Record<string, SessionStructure> = {
+  OFF:  { warmupMin: 0,  warmupMax: 0,  warmupDefault: 0,  cooldownMin: 0,  cooldownMax: 0,  cooldownDefault: 0 },
+  Z1:   { warmupMin: 0,  warmupMax: 0,  warmupDefault: 0,  cooldownMin: 0,  cooldownMax: 0,  cooldownDefault: 0 },
+  Z2:   { warmupMin: 10, warmupMax: 25, warmupDefault: 15, cooldownMin: 5,  cooldownMax: 15, cooldownDefault: 10 },
+  SST:  { warmupMin: 10, warmupMax: 25, warmupDefault: 20, cooldownMin: 5,  cooldownMax: 15, cooldownDefault: 10 },
+  THR:  { warmupMin: 15, warmupMax: 30, warmupDefault: 25, cooldownMin: 5,  cooldownMax: 15, cooldownDefault: 10 },
+  OU:   { warmupMin: 15, warmupMax: 30, warmupDefault: 25, cooldownMin: 5,  cooldownMax: 15, cooldownDefault: 10 },
+  VO2:  { warmupMin: 15, warmupMax: 30, warmupDefault: 25, cooldownMin: 5,  cooldownMax: 15, cooldownDefault: 10 },
+  LONG: { warmupMin: 15, warmupMax: 30, warmupDefault: 20, cooldownMin: 10, cooldownMax: 20, cooldownDefault: 10 },
+};
+const DEFAULT_SESSION_STRUCT: SessionStructure =
+  { warmupMin: 15, warmupMax: 30, warmupDefault: 20, cooldownMin: 5, cooldownMax: 15, cooldownDefault: 10 };
+
+export function sessionStructure(type: string): SessionStructure {
+  return SESSION_STRUCT[type] ?? DEFAULT_SESSION_STRUCT;
 }
 
 // Wyciąga "N×Mmin" z labela → { reps, minutes }. Null gdy brak struktury.
@@ -148,6 +176,9 @@ export function buildWorkout(d: WorkoutInput, ftp: number): Workout {
   const wr = (a: number, b: number) => `${w(a)}–${w(b)}W`;
   const T = d.type;
   const dur = d.dur_min;
+  const ss = sessionStructure(T);
+  const wUsed = d.warmup ?? ss.warmupDefault;     // rozgrzewka (z suwaka lub domyślna)
+  const cUsed = d.cooldown ?? ss.cooldownDefault; // schłodzenie
   const struct = parseStructure(d.label) ?? DEFAULT_STRUCT[T] ?? null;
   const ivT = struct ? `${struct.reps}×${struct.minutes} min` : '';
 
@@ -160,42 +191,42 @@ export function buildWorkout(d: WorkoutInput, ftp: number): Workout {
     goal = 'Regeneracja aktywna — rozruszanie nóg, przepływ krwi. Zero pracy na mocy.';
     tips = ['Jeśli czujesz pokusę „docisnąć" — nie rób tego, dziś chodzi o odbudowę.', 'Płaski teren, równe tempo.'];
   } else if (T === 'Z2') {
-    const main = dur - 25;
-    segs.push({ k: 'Rozgrzewka', t: '15 min', w: wr(50, 60), hr: '120–135', c: C.green, note: 'narastająco' });
+    const main = Math.max(10, dur - wUsed - cUsed);
+    segs.push({ k: 'Rozgrzewka', t: `${wUsed} min`, w: wr(50, 60), hr: '120–135', c: C.green, note: 'narastająco' });
     segs.push({ k: 'Część główna', t: `${main} min`, w: wr(56, 75), hr: '128–145', c: C.cyan, note: 'stałe tempo, kadencja 90+' });
-    segs.push({ k: 'Schłodzenie', t: '10 min', w: wr(45, 55), hr: '<125', c: C.muted });
+    segs.push({ k: 'Schłodzenie', t: `${cUsed} min`, w: wr(45, 55), hr: '<125', c: C.muted });
     goal = 'Baza tlenowa i ekonomia. Trzymaj równe Z2 — nie wpadaj w Z3.';
     tips = ['Oddech swobodny, powinieneś móc rozmawiać.', 'Trzymaj równe tempo — to nie wyścig, buduj bazę.'];
   } else if (T === 'SST') {
-    segs.push({ k: 'Rozgrzewka', t: '20 min', w: wr(50, 65), hr: '120–140', c: C.green, note: '+ 3×30s narastająco' });
+    segs.push({ k: 'Rozgrzewka', t: `${wUsed} min`, w: wr(50, 65), hr: '120–140', c: C.green, note: '+ 3×30s narastająco' });
     segs.push({ k: 'Interwały', t: ivT, w: wr(88, 94), hr: '155–168', c: C.yellow, note: 'sweet spot · przerwy 5 min Z1', reps: true });
-    segs.push({ k: 'Schłodzenie', t: '10 min', w: wr(45, 55), hr: '<125', c: C.muted });
+    segs.push({ k: 'Schłodzenie', t: `${cUsed} min`, w: wr(45, 55), hr: '<125', c: C.muted });
     goal = 'Próg bez nadmiernego zmęczenia — najlepszy stosunek bodziec/koszt.';
     tips = ['Kadencja 85–90.', 'Moc równa przez cały interwał, nie zaczynaj za mocno.'];
   } else if (T === 'THR') {
-    segs.push({ k: 'Rozgrzewka', t: '25 min', w: wr(50, 65), hr: '120–145', c: C.green, note: '+ 3×(10s @110% openery)' });
+    segs.push({ k: 'Rozgrzewka', t: `${wUsed} min`, w: wr(50, 65), hr: '120–145', c: C.green, note: '+ 3×(10s @110% openery)' });
     segs.push({ k: 'Interwały', t: ivT, w: wr(95, 102), hr: '162–174', c: C.yellow, note: 'próg · przerwy 6 min Z1', reps: true });
-    segs.push({ k: 'Schłodzenie', t: '10 min', w: wr(45, 55), hr: '<125', c: C.muted });
+    segs.push({ k: 'Schłodzenie', t: `${cUsed} min`, w: wr(45, 55), hr: '<125', c: C.muted });
     goal = 'Podniesienie FTP — to Twoja luka. Trzymaj moc równo aż do końca każdego bloku.';
     tips = ['Ostatnie 3 min są najważniejsze — nie odpuszczaj.', 'Jeśli moc spada >5% w 2. bloku, skróć ostatni interwał.'];
   } else if (T === 'OU') {
-    segs.push({ k: 'Rozgrzewka', t: '25 min', w: wr(50, 65), hr: '120–145', c: C.green, note: '+ 3×(10s @110% openery)' });
+    segs.push({ k: 'Rozgrzewka', t: `${wUsed} min`, w: wr(50, 65), hr: '120–145', c: C.green, note: '+ 3×(10s @110% openery)' });
     segs.push({ k: 'Interwały', t: ivT, w: `${w(95)}/${w(110)}W`, hr: '155–177', c: '#C68A4E', note: 'under 95% / over 110% · przerwy 5 min Z1', reps: true });
-    segs.push({ k: 'Schłodzenie', t: '10 min', w: wr(45, 55), hr: '<125', c: C.muted });
+    segs.push({ k: 'Schłodzenie', t: `${cUsed} min`, w: wr(45, 55), hr: '<125', c: C.muted });
     goal = 'Tolerancja mleczanu i moc progowa. „Over" boli, ale „under" to Twój aktywny odpoczynek.';
     tips = ['Nie zwalniaj na under — to ma być wciąż 95% FTP.', 'Jeśli over przestaje być osiągalny, zakończ blok wcześniej.'];
   } else if (T === 'VO2') {
-    segs.push({ k: 'Rozgrzewka', t: '25 min', w: wr(50, 65), hr: '120–150', c: C.green, note: '+ 3×(15s @120% openery)' });
+    segs.push({ k: 'Rozgrzewka', t: `${wUsed} min`, w: wr(50, 65), hr: '120–150', c: C.green, note: '+ 3×(15s @120% openery)' });
     segs.push({ k: 'Interwały', t: ivT, w: wr(110, 120), hr: '175–186', c: C.red, note: 'VO2max · przerwy równe (1:1) Z1', reps: true });
-    segs.push({ k: 'Schłodzenie', t: '10 min', w: wr(45, 55), hr: '<125', c: C.muted });
+    segs.push({ k: 'Schłodzenie', t: `${cUsed} min`, w: wr(45, 55), hr: '<125', c: C.muted });
     goal = 'Pułap tlenowy. Pierwsze 2 powtórzenia mają wydawać się „za łatwe".';
     tips = ['Buduj moc przez pierwsze 30s, potem trzymaj.', 'Jeśli ostatnie powtórzenie się sypie, zrób jedno mniej — jakość > ilość.'];
   } else if (T === 'LONG') {
-    const main = dur - 30;
-    segs.push({ k: 'Rozgrzewka', t: '20 min', w: wr(45, 60), hr: '115–135', c: C.green, note: 'Z1→Z2' });
+    const main = Math.max(20, dur - wUsed - cUsed - 20);
+    segs.push({ k: 'Rozgrzewka', t: `${wUsed} min`, w: wr(45, 60), hr: '115–135', c: C.green, note: 'Z1→Z2' });
     segs.push({ k: 'Część główna', t: `${main} min`, w: wr(56, 72), hr: '130–148', c: C.cyan, note: 'Z2 z naturalnymi podjazdami' });
     segs.push({ k: 'Opcja (jeśli świeży)', t: '2×20 min', w: wr(76, 85), hr: '148–160', c: C.yellow, note: 'Z3 w środku jazdy' });
-    segs.push({ k: 'Schłodzenie', t: '10 min', w: wr(45, 55), hr: '<125', c: C.muted });
+    segs.push({ k: 'Schłodzenie', t: `${cUsed} min`, w: wr(45, 55), hr: '<125', c: C.muted });
     goal = 'Wytrzymałość i ekonomia tłuszczowa. Długo i równo, kontrolowane tempo.';
     tips = ['Ostatnia godzina ma być tak samo mocna jak pierwsza.', 'Nie zaczynaj za szybko — rozłóż siły na cały dystans.'];
   }

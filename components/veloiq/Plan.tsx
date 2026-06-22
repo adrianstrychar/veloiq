@@ -6,7 +6,7 @@ import { ZoneBar } from './ZoneBar';
 import { WorkoutDetail } from './WorkoutDetail';
 import { RideAnalysis, type RideActivity } from './RideAnalysis';
 import { createBrowserSupabaseClient } from '@/lib/supabase-browser';
-import { typeColor, fmtDur, dowLabel, dateLabel, weekRangeLabel, type WeekKind } from '@/lib/plan';
+import { typeColor, fmtDur, dowLabel, dateLabel, weekRangeLabel, scaleWeek, type WeekKind } from '@/lib/plan';
 
 export interface PlanDayView {
   dow: number;
@@ -19,6 +19,9 @@ export interface PlanDayView {
   hr: string;
   zones: number[];
   outline?: boolean;
+  warmup?: number;    // 5.6: rozgrzewka/schłodzenie po skalowaniu suwakiem (→ buildWorkout)
+  cooldown?: number;
+  removed?: boolean;  // 5.6: sesja usunięta przez skalowanie w dół (pokazana jako OFF)
 }
 
 // Wykonana jazda dla dnia planu — kształt wymagany przez RideAnalysis + sync-details.
@@ -39,6 +42,7 @@ interface PlanProps {
   currentIdx: number;
   todayISO: string;
   ftp: number;
+  ctl: number;
   activitiesByDate: Record<string, PlanActivityRow>;
 }
 
@@ -68,8 +72,10 @@ function Cell({ label, value, color }: { label: string; value: string; color?: s
 }
 
 function DayCard({ d, isToday, done, loading, onClick }: { d: PlanDayView; isToday: boolean; done: boolean; loading: boolean; onClick?: () => void }) {
-  const tc = typeColor(d.type);
+  const isRemoved = !!d.removed;
   const isOff = d.type === 'OFF';
+  const offLike = isOff || isRemoved; // usunięta sesja renderuje się jak OFF (szara)
+  const tc = isRemoved ? C.muted : typeColor(d.type);
   const isOutline = !!d.outline;
   const clickable = !!onClick;
   const [hover, setHover] = useState(false);
@@ -82,7 +88,7 @@ function DayCard({ d, isToday, done, loading, onClick }: { d: PlanDayView; isTod
       style={{
         ...card, padding: '12px 14px', position: 'relative',
         border: `1px solid ${isToday ? C.cyan : hover ? tc + '88' : C.border}`,
-        opacity: isOutline ? 0.6 : (done && !isToday ? 0.55 : 1),
+        opacity: isRemoved ? 0.5 : isOutline ? 0.6 : (done && !isToday ? 0.55 : 1),
         cursor: clickable ? 'pointer' : 'default',
         transition: 'border-color 0.15s',
       }}
@@ -99,14 +105,18 @@ function DayCard({ d, isToday, done, loading, onClick }: { d: PlanDayView; isTod
         </div>
         <div style={{ width: 50 }}>
           <span style={{ background: tc + '22', color: tc, border: `1px solid ${tc}55`, borderRadius: 4, padding: '2px 7px', fontSize: 9, fontWeight: 600 }}>
-            {d.type}
+            {isRemoved ? 'OFF' : d.type}
           </span>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: C.text }}>{d.label}</div>
-          {!isOff && <ZoneBar zones={d.zones} />}
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: C.text }}>
+            {isRemoved ? 'Dzień wolny' : d.label}
+          </div>
+          {!offLike && <ZoneBar zones={d.zones} />}
         </div>
-        {isOff ? (
+        {isRemoved ? (
+          <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>Dzień wolny — obciążenie zredukowane</div>
+        ) : isOff ? (
           <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>Pełna regeneracja</div>
         ) : isOutline ? (
           // ZARYS: bez watt/hr (są "–"), tylko orientacyjny czas + ~TSS
@@ -138,11 +148,24 @@ function DayCard({ d, isToday, done, loading, onClick }: { d: PlanDayView; isTod
 const ACTIVITY_SELECT =
   'name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, strava_activity_id';
 
-export function Plan({ weeks, currentIdx, todayISO, ftp, activitiesByDate }: PlanProps) {
+// baseHours = Σ dur_min dni NOT done i NOT OFF / 60 (zaokrąglone). done = istnienie jazdy.
+function computeBaseHours(days: PlanDayView[] | null, acts: Record<string, PlanActivityRow>): number {
+  if (!days) return 1;
+  const min = days
+    .filter((d) => d.type !== 'OFF' && !acts[d.date])
+    .reduce((a, d) => a + d.dur_min, 0);
+  return Math.round(min / 60) || 1;
+}
+
+export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }: PlanProps) {
   const [idx, setIdx] = useState(currentIdx);
   const [openWorkout, setOpenWorkout] = useState<PlanDayView | null>(null);
   const [openRide, setOpenRide] = useState<PlanActivityRow | null>(null);
   const [loadingDate, setLoadingDate] = useState<string | null>(null);
+  // hours init = baseHours bieżącego tygodnia (nie rekomendacji — user sam decyduje).
+  const [hours, setHours] = useState(() =>
+    computeBaseHours(weeks[currentIdx]?.days ?? null, activitiesByDate)
+  );
 
   // Klik w wykonany dzień → dociągnij szczegóły (jeśli brak) i otwórz RideAnalysis.
   // Wzorzec 1:1 z LastActivityCard: loading podczas syncu, dopiero potem modal.
@@ -181,9 +204,35 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, activitiesByDate }: Pla
 
   const days = week.days;
   const isOutlineWeek = !!days && days.some((d) => d.outline);
-  const sessions = days ? days.filter((d) => d.type !== 'OFF').length : 0;
-  const totalDur = days ? days.reduce((a, d) => a + d.dur_min, 0) : 0;
-  const totalTss = days ? days.reduce((a, d) => a + d.tss, 0) : 0;
+
+  // Suwak działa TYLKO na bieżącym tygodniu. Hierarchiczne skalowanie (scaleWeek):
+  // ruszamy warmup/cooldown w zakresach, przy dużych cięciach usuwamy całe sesje.
+  const baseHours = computeBaseHours(days, activitiesByDate);
+  const scaledDays: PlanDayView[] | null = days
+    ? isCurrent
+      ? scaleWeek(days, hours * 60, (date) => !!activitiesByDate[date])
+      : days
+    : null;
+
+  // Statsy z przeskalowanych dni (live przy każdym ruchu suwaka). Usunięte sesje nie liczą się.
+  const sessions = scaledDays ? scaledDays.filter((d) => d.type !== 'OFF' && !d.removed).length : 0;
+  const totalDur = scaledDays ? scaledDays.reduce((a, d) => a + d.dur_min, 0) : 0;
+  const totalTss = scaledDays ? scaledDays.reduce((a, d) => a + d.tss, 0) : 0;
+  // CZAS rzadko trafia dokładnie w hours×60 (interwały chronione) — pokaż ~ gdy różnica >10 min.
+  const durApprox = isCurrent && Math.abs(totalDur - hours * 60) > 10;
+
+  // Rekomendacja AI godzin (tylko bieżący tydzień).
+  const doneTSS = days ? days.filter((d) => activitiesByDate[d.date]).reduce((a, d) => a + d.tss, 0) : 0;
+  const futureBaseTSS = days ? days.filter((d) => !activitiesByDate[d.date] && d.type !== 'OFF').reduce((a, d) => a + d.tss, 0) : 0;
+  const futureBaseDur = days ? days.filter((d) => !activitiesByDate[d.date] && d.type !== 'OFF').reduce((a, d) => a + d.dur_min, 0) : 0;
+  const tssPerH = futureBaseDur > 0 ? futureBaseTSS / (futureBaseDur / 60) : 42;
+  const targetWeeklyTSS = ctl * 7 * 1.15;
+  // Fallback: brak CTL (pusta baza fitness_metrics) → rekomendacja = baseHours (marker pokrywa suwak).
+  const recHours =
+    ctl > 0
+      ? Math.max(2, Math.min(16, Math.round((targetWeeklyTSS - doneTSS) / tssPerH)))
+      : Math.max(2, Math.min(16, baseHours));
+  const atRec = hours === recHours;
 
   return (
     <div className="flex flex-col gap-3">
@@ -223,6 +272,60 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, activitiesByDate }: Pla
         </div>
       )}
 
+      {/* SUWAK GODZIN — tylko bieżący tydzień */}
+      {isCurrent && days && (
+        <div style={{ ...card }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Pozostały czas w tygodniu</span>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+              <span style={{ fontSize: 24, fontWeight: 600, color: C.cyan }}>{hours}</span>
+              <span style={{ fontSize: 13, color: C.muted }}>h</span>
+            </div>
+          </div>
+
+          {/* track z markerem rekomendacji AI */}
+          <div style={{ position: 'relative' }}>
+            <input
+              type="range" min={2} max={16} step={1} value={hours}
+              onChange={(e) => setHours(+e.target.value)}
+              style={{ width: '100%', accentColor: C.cyan, cursor: 'pointer', display: 'block' }}
+            />
+            <div style={{ position: 'absolute', top: -3, left: `${((recHours - 2) / (16 - 2)) * 100}%`, transform: 'translateX(-50%)', pointerEvents: 'none' }}>
+              <div style={{ width: 2, height: 22, background: C.green, borderRadius: 1, margin: '0 auto' }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: C.muted, marginTop: 4 }}>
+            <span>2h</span><span>8h</span><span>16h</span>
+          </div>
+
+          {/* Rekomendacja AI */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, padding: '10px 12px', background: C.green + '0E', border: `1px solid ${C.green}30`, borderRadius: 10 }}>
+            <div style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 8, background: C.green + '1E', border: `1px solid ${C.green}44`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill={C.green}><path d="M12 2l2.4 6.5L21 9l-5 4.5L17.5 21 12 17l-5.5 4L8 13.5 3 9l6.6-.5z" /></svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 9, color: C.green, letterSpacing: '0.1em', fontWeight: 600, marginBottom: 2 }}>REKOMENDACJA AI · {recHours}h</div>
+              <div style={{ fontSize: 11, color: C.text, lineHeight: 1.4 }}>
+                {atRec
+                  ? 'Optymalny punkt dla Twojej formy — najlepszy postęp przy zdrowej regeneracji.'
+                  : hours > recHours
+                  ? 'Powyżej rekomendacji — większy bodziec, ale i większe obciążenie. Świadomy wybór, jeśli czujesz się dobrze.'
+                  : 'Poniżej rekomendacji — bezpieczniej, wolniejszy przyrost formy. Dołóż, jeśli chcesz szybciej budować.'}
+              </div>
+            </div>
+            {!atRec && (
+              <button onClick={() => setHours(recHours)} style={{ flexShrink: 0, background: C.green + '1E', color: C.green, border: `1px solid ${C.green}55`, borderRadius: 7, padding: '7px 11px', fontSize: 10.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                Użyj {recHours}h
+              </button>
+            )}
+          </div>
+
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>
+            Skaluje tylko <b style={{ color: C.text }}>nadchodzące</b> sesje — wykonane treningi i dzisiejsza jazda zostają bez zmian.
+          </div>
+        </div>
+      )}
+
       {days ? (
         <>
           {/* AI INSIGHT */}
@@ -239,7 +342,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, activitiesByDate }: Pla
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
             {([
               ['SESJE', String(sessions), 'jednostki'],
-              ['CZAS', `${isOutlineWeek ? '~' : ''}${fmtDur(totalDur)}`, 'łącznie'],
+              ['CZAS', `${isOutlineWeek || durApprox ? '~' : ''}${fmtDur(totalDur)}`, 'łącznie'],
               ['LOAD', `${isOutlineWeek ? '~' : ''}${totalTss}`, isOutlineWeek ? 'TSS · zarys' : 'TSS'],
             ] as const).map(([l, v, s]) => (
               <div key={l} style={{ ...card, textAlign: 'center' }}>
@@ -252,11 +355,11 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, activitiesByDate }: Pla
 
           {/* KARTY DNI — dni szczegółu (nie outline, nie OFF) klikalne → WorkoutDetail */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {days.map((d, i) => {
+            {(scaledDays ?? []).map((d, i) => {
               const act = activitiesByDate[d.date];
               const done = !!act;
-              // OFF nigdy nieklikalny. Done klikalny zawsze (poza OFF); planowany — gdy nie outline.
-              const clickable = d.type !== 'OFF' && (done || !d.outline);
+              // OFF i usunięte (removed) nieklikalne. Done klikalny; planowany — gdy nie outline.
+              const clickable = d.type !== 'OFF' && !d.removed && (done || !d.outline);
               const onClick = !clickable
                 ? undefined
                 : done

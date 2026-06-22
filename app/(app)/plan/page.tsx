@@ -27,6 +27,16 @@ export default async function PlanPage() {
 
   const ftp = (athlete?.ftp_watts as number | null) ?? 250;
 
+  // Ostatni CTL — do rekomendacji godzin (targetWeeklyTSS = ctl*7*1.15).
+  const { data: ctlRow } = await supabase
+    .from('fitness_metrics')
+    .select('ctl')
+    .eq('athlete_id', athlete?.id ?? '')
+    .order('date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const ctl = (ctlRow?.ctl as number | null) ?? 0;
+
   const todayISO = localTodayISO();
   const currentWeek = mondayOfISO(todayISO);
 
@@ -77,7 +87,7 @@ export default async function PlanPage() {
         <span className="text-lg font-bold">Plan tygodnia</span>
       </header>
 
-      <Plan weeks={weeks} currentIdx={CURRENT_IDX} todayISO={todayISO} ftp={ftp} activitiesByDate={activitiesByDate} />
+      <Plan weeks={weeks} currentIdx={CURRENT_IDX} todayISO={todayISO} ftp={ftp} ctl={ctl} activitiesByDate={activitiesByDate} />
     </div>
   );
 }
