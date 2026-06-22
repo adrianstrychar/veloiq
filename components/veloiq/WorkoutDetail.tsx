@@ -2,6 +2,7 @@
 
 import { C } from '@/lib/theme';
 import { ZoneBar } from './ZoneBar';
+import { WorkoutProfile } from './WorkoutProfile';
 import { typeColor, fmtDur, dowLabel, dateLabel, ZONE_COLORS } from '@/lib/plan';
 import { buildWorkout } from '@/lib/workout';
 import type { PlanDayView } from './Plan';
@@ -60,6 +61,16 @@ export function WorkoutDetail({ day, ftp, onClose }: WorkoutDetailProps) {
             <p style={{ fontSize: 12.5, color: '#C2C7CF', lineHeight: 1.6 }}>{wk.goal}</p>
           </div>
         </div>
+
+        {/* Profil sesji — wizualny wykres mocy w czasie */}
+        {wk.expanded.length > 0 && (
+          <>
+            <SectionTitle color={tc}>Profil sesji</SectionTitle>
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 14px 10px', marginBottom: 16 }}>
+              <WorkoutProfile expanded={wk.expanded} ftp={ftp} />
+            </div>
+          </>
+        )}
 
         {/* Struktura sesji */}
         <SectionTitle color={tc}>Struktura sesji</SectionTitle>

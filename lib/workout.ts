@@ -21,11 +21,106 @@ export interface Nutrition {
   short?: boolean;
 }
 
+// Atomowy segment profilu wizualnego (ETAP 5.4b). Profil rysuje z `expanded`,
+// lista tekstowa nadal z `segs`. `color` ustawia buildWorkout (zna typ).
+export interface ExpandedSeg {
+  kind: 'warmup' | 'cooldown' | 'rest' | 'work' | 'under' | 'over' | 'steady';
+  min: number;      // czas → SZEROKOŚĆ
+  pctFtp: number;   // średnia moc %FTP → WYSOKOŚĆ
+  color: string;
+  label?: string;   // tylko dla zgrupowanego bloku, np. "10×1min"
+}
+
 export interface Workout {
   segs: WorkoutSegment[];
   goal: string;
   tips: string[];
   nutrition: Nutrition | null;
+  expanded: ExpandedSeg[];
+}
+
+// Kolory profilu (lib/theme + strefowe). FTP_LINE używana też w WorkoutProfile.
+const PC = {
+  gray: '#3A4A5C',   // rozgrzewka / schłodzenie / przerwa
+  z2: '#5B9B7E',     // endurance
+  yellow: '#C99A4E', // SST / THR / OU under
+  over: '#C68A4E',   // OU over
+  vo2: '#C76B6B',    // VO2max
+};
+export const FTP_LINE_COLOR = '#4A8FC7';
+
+// Powyżej tylu powtórzeń w JEDNEJ serii → zwiń w zgrupowany blok z etykietą.
+const REPS_GROUP_THRESHOLD = 8;
+
+// Buduje atomową listę segmentów profilu per typ.
+function buildExpanded(d: WorkoutInput, struct: { reps: number; minutes: number } | null): ExpandedSeg[] {
+  const T = d.type;
+  const dur = d.dur_min;
+  const segs: ExpandedSeg[] = [];
+  const warmup = (min: number, pct: number) => segs.push({ kind: 'warmup', min, pctFtp: pct, color: PC.gray });
+  const cooldown = () => segs.push({ kind: 'cooldown', min: 10, pctFtp: 50, color: PC.gray });
+  const rest = (min: number) => segs.push({ kind: 'rest', min, pctFtp: 50, color: PC.gray });
+
+  if (T === 'OFF') return [];
+  if (T === 'Z1') {
+    segs.push({ kind: 'steady', min: dur, pctFtp: 50, color: PC.gray });
+    return segs;
+  }
+  if (T === 'Z2') {
+    warmup(15, 55);
+    segs.push({ kind: 'steady', min: Math.max(10, dur - 25), pctFtp: 65, color: PC.z2 });
+    cooldown();
+    return segs;
+  }
+  if (T === 'LONG') {
+    warmup(20, 52);
+    segs.push({ kind: 'steady', min: Math.max(20, dur - 50), pctFtp: 64, color: PC.z2 });
+    segs.push({ kind: 'steady', min: 20, pctFtp: 80, color: PC.yellow }); // opcjonalny akcent Z3
+    cooldown();
+    return segs;
+  }
+
+  // Typy interwałowe — fallback struktury gdy label bez N×M
+  const s = struct ?? { reps: 3, minutes: T === 'VO2' ? 4 : 12 };
+  warmup(T === 'SST' ? 20 : 25, 58);
+
+  if (T === 'OU') {
+    // ZAŁOŻENIE: 1 cykl OU = 3 min under + 1 min over (4 min), więc P = round(M/4).
+    // To jest zaszyte na sztywno (zgodne z obecnym generatorem 3×(3+1)). Gdyby
+    // generator kiedyś dał inny stosunek under/over, trzeba go parsować z labela.
+    const UNDER_MIN = 3, OVER_MIN = 1, CELL = UNDER_MIN + OVER_MIN;
+    for (let b = 0; b < s.reps; b++) {
+      const P = Math.max(1, Math.round(s.minutes / CELL));
+      if (P > REPS_GROUP_THRESHOLD) {
+        segs.push({ kind: 'over', min: s.minutes, pctFtp: 103, color: PC.over, label: `${P}×${UNDER_MIN}/${OVER_MIN}` });
+      } else {
+        for (let j = 0; j < P; j++) {
+          segs.push({ kind: 'under', min: UNDER_MIN, pctFtp: 95, color: PC.yellow });
+          segs.push({ kind: 'over', min: OVER_MIN, pctFtp: 110, color: PC.over });
+        }
+      }
+      if (b < s.reps - 1) rest(5);
+    }
+    cooldown();
+    return segs;
+  }
+
+  // THR / SST / VO2 — jedna seria N powtórzeń.
+  // THR=100% (próg = na linii FTP), SST=91% (wyraźnie pod), VO2=115% (wysoko nad).
+  const workPct = T === 'SST' ? 91 : T === 'VO2' ? 115 : 100;
+  const workColor = T === 'VO2' ? PC.vo2 : PC.yellow;
+  const restMin = T === 'SST' ? 5 : T === 'VO2' ? s.minutes : 6; // VO2 przerwy 1:1
+  if (s.reps > REPS_GROUP_THRESHOLD) {
+    const totalWork = s.reps * s.minutes + (s.reps - 1) * restMin;
+    segs.push({ kind: 'work', min: totalWork, pctFtp: workPct, color: workColor, label: `${s.reps}×${s.minutes}min` });
+  } else {
+    for (let i = 0; i < s.reps; i++) {
+      segs.push({ kind: 'work', min: s.minutes, pctFtp: workPct, color: workColor });
+      if (i < s.reps - 1) rest(restMin);
+    }
+  }
+  cooldown();
+  return segs;
 }
 
 export interface WorkoutInput {
@@ -133,5 +228,5 @@ export function buildWorkout(d: WorkoutInput, ftp: number): Workout {
     };
   }
 
-  return { segs, goal, tips, nutrition };
+  return { segs, goal, tips, nutrition, expanded: buildExpanded(d, struct) };
 }
