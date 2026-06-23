@@ -44,7 +44,20 @@ interface PlanProps {
   todayISO: string;
   ftp: number;
   ctl: number;
-  activitiesByDate: Record<string, PlanActivityRow>;
+  // Wszystkie jazdy danego dnia (data lokalna), posortowane malejąco po TSS.
+  activitiesByDate: Record<string, PlanActivityRow[]>;
+}
+
+// Czy dzień ma wykonaną jazdę (≥1 aktywność).
+function isDoneDate(acts: Record<string, PlanActivityRow[]>, date: string): boolean {
+  return (acts[date]?.length ?? 0) > 0;
+}
+
+// ISO data przesunięta o n dni (UTC-safe).
+function addDaysISO(iso: string, n: number): string {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
 const card: React.CSSProperties = {
@@ -143,6 +156,50 @@ function DayCard({ d, isToday, done, loading, onClick }: { d: PlanDayView; isTod
   );
 }
 
+// Jazda POZA PLANEM — aktywność Stravy bez dopasowania do zaplanowanego treningu.
+// Wizualnie odróżniona: szary akcent + badge "POZA PLANEM". Klik → RideAnalysis.
+function UnplannedCard({ activity, loading, onClick }: { activity: PlanActivityRow; loading: boolean; onClick: () => void }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        ...card, padding: '10px 14px', position: 'relative',
+        border: `1px dashed ${hover ? C.muted : C.border}`,
+        background: C.bg,
+        cursor: 'pointer', transition: 'border-color 0.15s',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ width: 42, textAlign: 'center' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.muted }}>{dowLabel(activity.activity_date)}</div>
+          <div style={{ fontSize: 9, color: C.muted }}>{dateLabel(activity.activity_date)}</div>
+        </div>
+        <div style={{ width: 50 }}>
+          <span style={{ background: C.muted + '22', color: C.muted, border: `1px solid ${C.muted}55`, borderRadius: 4, padding: '2px 6px', fontSize: 8, fontWeight: 600, letterSpacing: '0.04em' }}>
+            POZA PLANEM
+          </span>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {activity.name ?? activity.type ?? 'Jazda'}
+          </div>
+          <div style={{ fontSize: 10, color: C.muted, fontStyle: 'italic' }}>nieplanowana jazda</div>
+        </div>
+        <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center' }}>
+          {activity.distance_km != null && <Cell label="DYST" value={`${Math.round(activity.distance_km)} km`} color={C.muted} />}
+          {activity.tss != null && <Cell label="TSS" value={`${Math.round(activity.tss)}`} color={C.yellow} />}
+        </div>
+      </div>
+      <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, marginTop: 6, opacity: 0.8 }}>
+        {loading ? 'Pobieram szczegóły…' : 'Analiza wykonania →'}
+      </div>
+    </div>
+  );
+}
+
 // ── Plan ──────────────────────────────────────────────────────────────────────
 
 // Kolumny do odczytu świeżego wiersza po sync-details (jak w LastActivityCard).
@@ -150,10 +207,10 @@ const ACTIVITY_SELECT =
   'name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, strava_activity_id';
 
 // baseHours = Σ dur_min dni NOT done i NOT OFF / 60 (zaokrąglone). done = istnienie jazdy.
-function computeBaseHours(days: PlanDayView[] | null, acts: Record<string, PlanActivityRow>): number {
+function computeBaseHours(days: PlanDayView[] | null, acts: Record<string, PlanActivityRow[]>): number {
   if (!days) return 1;
   const min = days
-    .filter((d) => d.type !== 'OFF' && !acts[d.date])
+    .filter((d) => d.type !== 'OFF' && !isDoneDate(acts, d.date))
     .reduce((a, d) => a + d.dur_min, 0);
   return Math.round(min / 60) || 1;
 }
@@ -267,34 +324,45 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
 
   // Plan dnia: override po modyfikacji czatem albo wersja z bazy (props).
   const days = override[week.weekStart] ?? week.days;
-  const isOutlineWeek = !!days && days.some((d) => d.outline);
 
   // Suwak działa TYLKO na bieżącym tygodniu. Hierarchiczne skalowanie (scaleWeek):
   // ruszamy warmup/cooldown w zakresach, przy dużych cięciach usuwamy całe sesje.
   const baseHours = computeBaseHours(days, activitiesByDate);
   const scaledDays: PlanDayView[] | null = days
     ? isCurrent
-      ? scaleWeek(days, hours * 60, (date) => !!activitiesByDate[date])
+      ? scaleWeek(days, hours * 60, (date) => isDoneDate(activitiesByDate, date))
       : days
     : null;
 
-  // Statsy z przeskalowanych dni (live przy każdym ruchu suwaka). Usunięte sesje nie liczą się.
-  const sessions = scaledDays ? scaledDays.filter((d) => d.type !== 'OFF' && !d.removed).length : 0;
-  const totalDur = scaledDays ? scaledDays.reduce((a, d) => a + d.dur_min, 0) : 0;
-  const totalTss = scaledDays ? scaledDays.reduce((a, d) => a + d.tss, 0) : 0;
-  // CZAS rzadko trafia dokładnie w hours×60 (interwały chronione) — pokaż ~ gdy różnica >10 min.
-  const durApprox = isCurrent && Math.abs(totalDur - hours * 60) > 10;
+  // ── HYBRYDA (b): WYKONANE (Strava, cały tydzień, łącznie z poza planem) + POZOSTAŁO (plan) ──
+  // Daty tygodnia (pn–nd) od weekStart.
+  const weekDates = Array.from({ length: 7 }, (_, i) => addDaysISO(week.weekStart, i));
+  const weekActs = weekDates.flatMap((d) => activitiesByDate[d] ?? []);
+  // WYKONANE — z rzeczywistych jazd Stravy (czas z duration_seconds).
+  const doneSessions = weekActs.length;
+  const doneDurMin = Math.round(weekActs.reduce((a, x) => a + (x.duration_seconds ?? 0), 0) / 60);
+  const doneTss = Math.round(weekActs.reduce((a, x) => a + (x.tss ?? 0), 0));
+  // POZOSTAŁO — dni planu NIE wykonane (brak jazdy tego dnia), nie OFF, nie usunięte przez suwak.
+  // Wykluczenie isDoneDate gwarantuje, że zaplanowany trening, który już zrobiłem, NIE liczy się
+  // podwójnie (jest w "wykonane" jako jazda Stravy, a nie w "pozostało").
+  const remDays = scaledDays
+    ? scaledDays.filter((d) => d.type !== 'OFF' && !d.removed && !isDoneDate(activitiesByDate, d.date))
+    : [];
+  const remSessions = remDays.length;
+  const remDurMin = remDays.reduce((a, d) => a + d.dur_min, 0);
+  const remTss = remDays.reduce((a, d) => a + d.tss, 0);
+  // CZAS „pozostało" rzadko trafia dokładnie w hours×60 (interwały chronione) — ~ gdy różnica >10.
+  const durApprox = isCurrent && Math.abs(remDurMin - hours * 60) > 10;
 
-  // Rekomendacja AI godzin (tylko bieżący tydzień).
-  const doneTSS = days ? days.filter((d) => activitiesByDate[d.date]).reduce((a, d) => a + d.tss, 0) : 0;
-  const futureBaseTSS = days ? days.filter((d) => !activitiesByDate[d.date] && d.type !== 'OFF').reduce((a, d) => a + d.tss, 0) : 0;
-  const futureBaseDur = days ? days.filter((d) => !activitiesByDate[d.date] && d.type !== 'OFF').reduce((a, d) => a + d.dur_min, 0) : 0;
+  // Rekomendacja AI godzin: ile jeszcze do celu, licząc od FAKTYCZNIE wykonanego TSS.
+  const futureBaseTSS = remDays.reduce((a, d) => a + d.tss, 0);
+  const futureBaseDur = remDays.reduce((a, d) => a + d.dur_min, 0);
   const tssPerH = futureBaseDur > 0 ? futureBaseTSS / (futureBaseDur / 60) : 42;
   const targetWeeklyTSS = ctl * 7 * 1.15;
   // Fallback: brak CTL (pusta baza fitness_metrics) → rekomendacja = baseHours (marker pokrywa suwak).
   const recHours =
     ctl > 0
-      ? Math.max(2, Math.min(16, Math.round((targetWeeklyTSS - doneTSS) / tssPerH)))
+      ? Math.max(2, Math.min(16, Math.round((targetWeeklyTSS - doneTss) / tssPerH)))
       : Math.max(2, Math.min(16, baseHours));
   const atRec = hours === recHours;
 
@@ -402,42 +470,70 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
             </div>
           )}
 
-          {/* STATS */}
+          {/* STATS — hybryda: WYKONANE (Strava) + POZOSTAŁO (plan). Dwa segmenty, nie zlane. */}
+          {isCurrent && (
+            <div style={{ display: 'flex', gap: 12, fontSize: 9, color: C.muted, paddingLeft: 2 }}>
+              <span><span style={{ color: C.green }}>●</span> wykonane</span>
+              <span><span style={{ color: C.cyan }}>●</span> pozostało (plan)</span>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
             {([
-              ['SESJE', String(sessions), 'jednostki'],
-              ['CZAS', `${isOutlineWeek || durApprox ? '~' : ''}${fmtDur(totalDur)}`, 'łącznie'],
-              ['LOAD', `${isOutlineWeek ? '~' : ''}${totalTss}`, isOutlineWeek ? 'TSS · zarys' : 'TSS'],
-            ] as const).map(([l, v, s]) => (
+              ['SESJE', String(doneSessions), String(remSessions), `~${remSessions}`],
+              ['CZAS', fmtDur(doneDurMin), `${durApprox ? '~' : ''}${fmtDur(remDurMin)}`, `~${fmtDur(remDurMin)}`],
+              ['LOAD', String(doneTss), `${remTss}`, `~${remTss}`],
+            ] as const).map(([l, doneStr, remStr, plannedStr]) => (
               <div key={l} style={{ ...card, textAlign: 'center' }}>
                 <div style={{ fontSize: 9, color: C.muted, letterSpacing: '0.12em', fontWeight: 600, marginBottom: 4 }}>{l}</div>
-                <div style={{ fontSize: 24, fontWeight: 600, color: C.cyan }}>{v}</div>
-                <div style={{ fontSize: 9, color: C.muted }}>{s}</div>
+                {isCurrent ? (
+                  <>
+                    <div style={{ fontSize: 22, fontWeight: 600, color: C.green, lineHeight: 1.1 }}>{doneStr}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: C.cyan }}>+ {remStr}</div>
+                  </>
+                ) : isPast ? (
+                  <div style={{ fontSize: 24, fontWeight: 600, color: C.green }}>{doneStr}</div>
+                ) : (
+                  // future/outline — nic nie wykonane, pokaż plan jako orientacyjny (~)
+                  <div style={{ fontSize: 24, fontWeight: 600, color: C.cyan }}>{plannedStr}</div>
+                )}
               </div>
             ))}
           </div>
 
-          {/* KARTY DNI — dni szczegółu (nie outline, nie OFF) klikalne → WorkoutDetail */}
+          {/* KARTY DNI — zaplanowany trening + (osobno) jazdy POZA PLANEM tego dnia */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {(scaledDays ?? []).map((d, i) => {
-              const act = activitiesByDate[d.date];
-              const done = !!act;
-              // OFF i usunięte (removed) nieklikalne. Done klikalny; planowany — gdy nie outline.
+              const list = activitiesByDate[d.date] ?? [];
+              const isTraining = d.type !== 'OFF' && !d.removed;
+              // Trening planu "konsumuje" 1 jazdę (max TSS = lista[0]); reszta = poza planem.
+              // Dzień OFF/usunięty z jazdą → cała jazda poza planem.
+              const matched = isTraining ? list[0] : undefined;
+              const unplanned = isTraining ? list.slice(1) : list;
+              const done = !!matched;
               const clickable = d.type !== 'OFF' && !d.removed && (done || !d.outline);
               const onClick = !clickable
                 ? undefined
                 : done
-                ? () => handleOpenRide(act)
+                ? () => handleOpenRide(matched!)
                 : () => setOpenWorkout(d);
               return (
-                <DayCard
-                  key={i}
-                  d={d}
-                  isToday={isCurrent && d.date === todayISO}
-                  done={done}
-                  loading={loadingDate === d.date}
-                  onClick={onClick}
-                />
+                <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <DayCard
+                    d={d}
+                    isToday={isCurrent && d.date === todayISO}
+                    done={done}
+                    loading={loadingDate === d.date}
+                    onClick={onClick}
+                  />
+                  {unplanned.map((a) => (
+                    <UnplannedCard
+                      key={a.strava_activity_id}
+                      activity={a}
+                      loading={loadingDate === a.activity_date}
+                      onClick={() => handleOpenRide(a)}
+                    />
+                  ))}
+                </div>
               );
             })}
           </div>
