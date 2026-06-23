@@ -5,6 +5,7 @@ import { ReadinessModule } from '@/components/veloiq/ReadinessModule';
 import { DailyInsight } from '@/components/veloiq/DailyInsight';
 import { Progress } from '@/components/veloiq/Progress';
 import { LastActivityCard, type LastActivityRow } from '@/components/veloiq/LastActivityCard';
+import { SyncButton } from '@/components/veloiq/SyncButton';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { computeProgressStats, type ActivityStatRow } from '@/lib/progressStats';
 import { type FtpPoint } from '@/components/veloiq/Progress';
@@ -100,9 +101,12 @@ export default async function DashboardPage() {
     <div className="flex flex-col gap-4">
       <header className="flex items-center justify-between py-2">
         <span className="text-lg font-bold">VeloIQ</span>
-        <span className="text-sm text-secondary">
-          Cześć, {athlete?.name ?? 'Zawodniku'} 👋
-        </span>
+        <div className="flex items-center gap-3">
+          <SyncButton />
+          <span className="text-sm text-secondary">
+            Cześć, {athlete?.name ?? 'Zawodniku'} 👋
+          </span>
+        </div>
       </header>
 
       {!stravaConnected && (
