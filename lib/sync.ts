@@ -24,7 +24,9 @@ function computeTSS(
   ftpWatts: number | null,
   hrmax: number | null
 ): number {
-  if (ftpWatts && activity.weighted_average_watts) {
+  // E-bike: moc zawiera wspomaganie silnika → ignoruj ją, licz zawsze z HR.
+  const isEbike = activity.type === 'EBikeRide';
+  if (!isEbike && ftpWatts && activity.weighted_average_watts) {
     return calculateTSSfromPower(activity.moving_time, activity.weighted_average_watts, ftpWatts);
   }
   // Brak hrmax w profilu — przybliż go z max_heartrate tej aktywności (sekcja 11)
@@ -32,7 +34,7 @@ function computeTSS(
   if (effectiveHrmax && activity.average_heartrate) {
     return calculateTSSfromHR(activity.moving_time, activity.average_heartrate, effectiveHrmax);
   }
-  return 0;
+  return 0; // F1: brak mocy i HR → TSS 0 (na e-bike teoretyczne — zawsze z pasem HR)
 }
 
 // Pobiera nowe aktywności ze Stravy i zapisuje do strava_activities
