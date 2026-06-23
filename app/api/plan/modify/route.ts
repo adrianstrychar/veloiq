@@ -90,16 +90,25 @@ export async function POST(req: NextRequest) {
       if (!v.ok || !v.days) { lastErr = v.error ?? 'walidacja nieudana'; continue; }
       // ── TWARDY ENFORCEMENT lockowanych dni (serwer, nie ufamy AI) ──
       // Jedno źródło prawdy: oryginał (currentDays.locked) + intencja (changedDays/unlock).
+      const off = new Set<number>(Array.isArray(parsed.off) ? parsed.off.map(Number) : []);
       const changed = new Set<number>(Array.isArray(parsed.changedDays) ? parsed.changedDays.map(Number) : []);
       const unlock = new Set<number>(Array.isArray(parsed.unlock) ? parsed.unlock.map(Number) : []);
+      // Kolejność: off → unlock → changed → locked-restore → ogólny. Każdy case ma JAWNY
+      // warunek (nie polega na pozycji w łańcuchu) — odporne na przyszłe przestawienie/dodanie case'ów.
       days = v.days.map((aiDay) => {
-        const orig = currentDays.find((o) => o.dow === aiDay.dow);
-        // 1. locked w oryginale, NIE jawnie wskazany → PRZYWRÓĆ oryginał (ignoruj cokolwiek AI zwrócił)
-        if (orig?.locked && !changed.has(aiDay.dow) && !unlock.has(aiDay.dow)) return { ...orig };
-        // 2. jawne odwołanie → zmiana AI + zdejmij lock
-        if (unlock.has(aiDay.dow)) return { ...aiDay, locked: false };
-        // 3. jawna zmiana konkretnego dnia → zmiana AI + ustaw lock
-        if (changed.has(aiDay.dow)) return { ...aiDay, locked: true };
+        const dow = aiDay.dow;
+        const orig = currentDays.find((o) => o.dow === dow);
+        // 0. JAWNE WOLNE (off) → wymuś OFF+locked, IGNORUJĄC co AI wstawiło. off WYGRYWA z changed.
+        if (off.has(dow)) {
+          return { ...aiDay, type: 'OFF' as const, label: 'Odpoczynek', tss: 0, dur_min: 0, watt: '–', hr: '–', zones: [0, 0, 0, 0, 0], locked: true };
+        }
+        // 1. jawne odwołanie → zmiana AI + zdejmij lock
+        if (unlock.has(dow)) return { ...aiDay, locked: false };
+        // 2. jawna zmiana konkretnego dnia → zmiana AI + ustaw lock
+        if (changed.has(dow)) return { ...aiDay, locked: true };
+        // 3. locked w oryginale i NIE wskazany jawnie (off/changed/unlock) → PRZYWRÓĆ oryginał.
+        //    Warunek jawny, niezależny od kolejności case'ów (samodokumentujący, odporny na zmiany).
+        if (orig?.locked && !off.has(dow) && !changed.has(dow) && !unlock.has(dow)) return { ...orig };
         // 4. dzień nielockowany, komenda ogólna → zmiana AI, lock bez zmian (z oryginału)
         return { ...aiDay, locked: !!orig?.locked };
       });
