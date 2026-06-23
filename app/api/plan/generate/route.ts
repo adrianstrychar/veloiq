@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
   buildTwoWeekPrompt,
   validateTwoWeekPlan,
@@ -14,23 +13,13 @@ import {
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// TODO: usunąć DEV_SECRET przed produkcją
-const DEV_SECRET = process.env.DEV_TEST_SECRET ?? 'veloiq-dev-2026';
-
-function makeAdminClient(): SupabaseClient {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-}
-
 export async function POST(req: NextRequest) {
-  const isDevBypass =
-    req.headers.get('x-dev-secret') === DEV_SECRET &&
-    process.env.NODE_ENV !== 'production';
+  const supabase = createServerSupabaseClient();
+  const { data: { user: authUser } } = await supabase.auth.getUser();
+  if (!authUser) return NextResponse.json({ error: 'not_authenticated' }, { status: 401 });
 
-  // Furtka na przyszłość (5.6 suwak / 5.7 czat "mocniejszy tydzień") + dry_run do
-  // bezpiecznego testu bez zapisu. Body opcjonalne.
+  // Opcje generowania (legalne funkcje, działają za sesją): dry_run = podgląd bez
+  // zapisu, intensity/target_tss = nadpisanie celu tygodniowego (pod 5.6/5.7).
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
   const dryRun = (body as Record<string, unknown>)?.dry_run === true;
   const overrideTarget = Number((body as Record<string, unknown>)?.target_tss) > 0
@@ -38,27 +27,11 @@ export async function POST(req: NextRequest) {
   const intensityMul = Number((body as Record<string, unknown>)?.intensity) > 0
     ? Number((body as Record<string, unknown>).intensity) : 1.1;
 
-  let supabase: SupabaseClient;
-  let athleteFilter: { col: 'user_id' | 'id'; val: string };
-
-  if (isDevBypass) {
-    // TODO: usunąć ten blok przed produkcją — tylko do testów lokalnych
-    supabase = makeAdminClient();
-    const { data: ath } = await supabase.from('athletes').select('id').limit(1).maybeSingle();
-    if (!ath) return NextResponse.json({ error: 'no_athlete' }, { status: 404 });
-    athleteFilter = { col: 'id', val: ath.id as string };
-  } else {
-    supabase = createServerSupabaseClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'not_authenticated' }, { status: 401 });
-    athleteFilter = { col: 'user_id', val: user.id };
-  }
-
   // ── Dane wejściowe z bazy ──
   const { data: athlete } = await supabase
     .from('athletes')
     .select('id, ftp_watts, weight_kg, vo2max, training_mode')
-    .eq(athleteFilter.col, athleteFilter.val)
+    .eq('user_id', authUser.id)
     .single();
 
   if (!athlete) return NextResponse.json({ error: 'athlete_not_found' }, { status: 404 });
