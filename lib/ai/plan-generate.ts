@@ -154,16 +154,17 @@ export function buildModifyPrompt(
     'Modyfikuj PODANY plan zgodnie z prośbą — zachowaj sens treningowy, nie generuj od zera.',
     'ZASADY (twarde): dokładnie 7 dni Pn–Nd (dow 1..7). Typy: OFF/Z1/Z2/SST/THR/OU/VO2/LONG.',
     'Jeśli user chce wolny dzień → type OFF (tss 0, dur_min 0, watt/hr "–", zones [0,0,0,0,0]).',
+    'Dni, które user JAWNIE wskazał jako wolne (też wielodniowe, np. cały weekend So+Nd), wypisz w polu "off".',
     'NIE przenoś obciążenia z dnia OFF na inne dni — suma TSS tygodnia ma SPAŚĆ (wolne realnie zmniejsza obciążenie).',
     `DNI ZABLOKOWANE (dow): [${ctx.lockedDows.join(', ') || 'brak'}] — NIE zmieniaj ich, chyba że prośba JAWNIE wskazuje dany dzień.`,
     'Komenda OGÓLNA (np. "zwiększ godziny") — respektuj wszystkie locki, zmieniaj tylko dni niezablokowane.',
     'Komenda JAWNA dla dnia (np. "dołóż trening w sobotę", "odwołaj wolny weekend") — możesz zmienić wskazany dzień.',
-    'OBOWIĄZKOWO 2 dni OFF w tygodniu, nigdy dwa OFF z rzędu. Sesje jakościowe (THR/OU/VO2) nigdy obok siebie.',
+    'Domyślnie celuj w 2 nieprzylegające OFF, ale JAWNA prośba użytkownika MA PRIORYTET — jeśli prosi o konkretne wolne dni (np. wolny weekend = So+Nd), ustaw je OFF NAWET gdy przylegają; nie redukuj do jednego, nie dorzucaj trzeciego. Sesje jakościowe (THR/OU/VO2) nie obok siebie.',
     'MINIMALNY czas sesji 45 min (dur_min >= 45) — krótszej nie planuj, daj OFF.',
     'Rozgrzewka min 20 min przed Z2/SST, 25 min przed THR/OU/VO2. zones to % czasu w Z1–Z5, suma ~100.',
     'Label: krótka nazwa (typ + ewentualnie struktura), MAX ~3 słowa, bez zdań.',
     'insight: 1–2 zdania PO POLSKU co zmieniłeś i dlaczego — MUSI zgadzać się z nowym planem.',
-    'Zwróć WYŁĄCZNIE JSON (bez markdown): {"days":[...7 dni dow 1..7...],"insight":"...","changedDays":[dow jawnie zmienione],"unlock":[dow do odblokowania]}.',
+    'Zwróć WYŁĄCZNIE JSON (bez markdown): {"days":[...7 dni dow 1..7...],"insight":"...","changedDays":[dow jawnie zmienione],"unlock":[dow do odblokowania],"off":[dow jawnie wskazane jako wolne]}.',
   ].join(' ');
 
   const user = [
