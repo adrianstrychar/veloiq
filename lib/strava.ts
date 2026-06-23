@@ -54,6 +54,7 @@ export interface StravaActivity {
   name: string;
   type: string;
   start_date: string;
+  start_date_local?: string; // data lokalna zawodnika (preferowana do activity_date)
   distance: number; // meters
   moving_time: number; // seconds
   total_elevation_gain: number; // meters

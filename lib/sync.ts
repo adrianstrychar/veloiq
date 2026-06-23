@@ -96,7 +96,7 @@ export async function syncStravaActivities(
       return {
         athlete_id: athlete.id,
         strava_activity_id: a.id,
-        activity_date: a.start_date.slice(0, 10),
+        activity_date: (a.start_date_local ?? a.start_date).slice(0, 10),
         name: a.name,
         type: a.type,
         distance_km: Math.round((a.distance / 1000) * 100) / 100,
