@@ -5,8 +5,15 @@ import { localTodayISO, mondayOfISO, addWeeks, weekKind } from '@/lib/plan';
 export const dynamic = 'force-dynamic';
 
 // Kolumny jazdy potrzebne do RideAnalysis + identyfikacja/flaga details.
+// raw_data: do odczytu start_date_local (data lokalna, nie UTC) — workaround b1.
 const ACTIVITY_SELECT =
-  'strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at';
+  'strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, raw_data';
+
+// Data lokalna jazdy (start_date_local z raw_data); fallback do activity_date (UTC).
+function localDateOf(a: { activity_date: string; raw_data?: { start_date_local?: string } | null }): string {
+  const local = a.raw_data?.start_date_local;
+  return (typeof local === 'string' && local.length >= 10 ? local : a.activity_date).slice(0, 10);
+}
 
 interface PlanJson {
   days: PlanDayView[];
@@ -58,17 +65,27 @@ export default async function PlanPage() {
   const byStart = new Map<string, PlanJson>();
   for (const r of rows ?? []) byStart.set(r.week_start as string, r.plan_json as PlanJson);
 
-  // Join ze Stravą: jazdy z okna 4 tygodni → mapa date→jazda (przy >1 dziennie: max TSS).
+  // Join ze Stravą: WSZYSTKIE jazdy z okna → mapa lokalnaData→lista jazd (nie jedna).
+  // Zakres poszerzony o 1 dzień wstecz, bo data lokalna może różnić się od UTC activity_date.
+  const lowerBound = (() => {
+    const d = new Date(weekStarts[0] + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+  })();
   const { data: actRows } = await supabase
     .from('strava_activities')
     .select(ACTIVITY_SELECT)
     .eq('athlete_id', athlete?.id ?? '')
-    .gte('activity_date', weekStarts[0]);
+    .gte('activity_date', lowerBound);
 
-  const activitiesByDate: Record<string, PlanActivityRow> = {};
+  const activitiesByDate: Record<string, PlanActivityRow[]> = {};
   for (const a of (actRows ?? []) as unknown as PlanActivityRow[]) {
-    const prev = activitiesByDate[a.activity_date];
-    if (!prev || (a.tss ?? 0) > (prev.tss ?? 0)) activitiesByDate[a.activity_date] = a;
+    const key = localDateOf(a as never);
+    (activitiesByDate[key] ??= []).push(a);
+  }
+  // Posortuj dzienne listy malejąco po TSS (max TSS = ta dopasowana do planu jako "done").
+  for (const k of Object.keys(activitiesByDate)) {
+    activitiesByDate[k].sort((x, y) => (y.tss ?? 0) - (x.tss ?? 0));
   }
 
   const weeks: WeekSlot[] = weekStarts.map((ws) => {
