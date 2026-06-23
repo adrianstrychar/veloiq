@@ -56,7 +56,9 @@ export async function POST(req: NextRequest) {
   if (!plan) return NextResponse.json({ ok: false, error: 'plan_not_found' }, { status: 404 });
 
   const currentDays = (plan.plan_json as { days: PlanDay[] }).days;
+  const lockedDows = currentDays.filter((d) => d.locked).map((d) => d.dow);
   const ctx: ModifyContext = {
+    lockedDows,
     ftp: (athlete.ftp_watts as number | null) ?? 250,
     ctl: fm?.ctl != null ? Number(fm.ctl) : null,
     raceName: (race?.name as string | null) ?? null,
@@ -86,7 +88,21 @@ export async function POST(req: NextRequest) {
       const parsed = JSON.parse(txt.slice(a, b + 1));
       const v = validateWeek(parsed.days, weekStart, { outline: false });
       if (!v.ok || !v.days) { lastErr = v.error ?? 'walidacja nieudana'; continue; }
-      days = v.days;
+      // ── TWARDY ENFORCEMENT lockowanych dni (serwer, nie ufamy AI) ──
+      // Jedno źródło prawdy: oryginał (currentDays.locked) + intencja (changedDays/unlock).
+      const changed = new Set<number>(Array.isArray(parsed.changedDays) ? parsed.changedDays.map(Number) : []);
+      const unlock = new Set<number>(Array.isArray(parsed.unlock) ? parsed.unlock.map(Number) : []);
+      days = v.days.map((aiDay) => {
+        const orig = currentDays.find((o) => o.dow === aiDay.dow);
+        // 1. locked w oryginale, NIE jawnie wskazany → PRZYWRÓĆ oryginał (ignoruj cokolwiek AI zwrócił)
+        if (orig?.locked && !changed.has(aiDay.dow) && !unlock.has(aiDay.dow)) return { ...orig };
+        // 2. jawne odwołanie → zmiana AI + zdejmij lock
+        if (unlock.has(aiDay.dow)) return { ...aiDay, locked: false };
+        // 3. jawna zmiana konkretnego dnia → zmiana AI + ustaw lock
+        if (changed.has(aiDay.dow)) return { ...aiDay, locked: true };
+        // 4. dzień nielockowany, komenda ogólna → zmiana AI, lock bez zmian (z oryginału)
+        return { ...aiDay, locked: !!orig?.locked };
+      });
       insight = typeof parsed.insight === 'string' ? parsed.insight : 'Plan zaktualizowany.';
       break;
     } catch (err: unknown) {
