@@ -38,21 +38,25 @@ function computeTSS(
 // Pobiera nowe aktywności ze Stravy i zapisuje do strava_activities
 export async function syncStravaActivities(
   supabase: SupabaseClient,
-  athlete: AthleteRow
+  athlete: AthleteRow,
+  opts: { skipCooldown?: boolean } = {}
 ): Promise<{ skipped: true; reason: string } | { skipped: false; synced: number }> {
-  const { data: lastActivity } = await supabase
-    .from('strava_activities')
-    .select('activity_date, synced_at')
-    .eq('athlete_id', athlete.id)
-    .order('synced_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Cron (zaufane wywołanie systemowe) omija cooldown; user-triggered go respektuje (anty-spam).
+  if (!opts.skipCooldown) {
+    const { data: lastActivity } = await supabase
+      .from('strava_activities')
+      .select('activity_date, synced_at')
+      .eq('athlete_id', athlete.id)
+      .order('synced_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (lastActivity?.synced_at) {
-    const minutesSinceSync =
-      (Date.now() - new Date(lastActivity.synced_at).getTime()) / 60000;
-    if (minutesSinceSync < SYNC_COOLDOWN_MINUTES) {
-      return { skipped: true, reason: 'cooldown' };
+    if (lastActivity?.synced_at) {
+      const minutesSinceSync =
+        (Date.now() - new Date(lastActivity.synced_at).getTime()) / 60000;
+      if (minutesSinceSync < SYNC_COOLDOWN_MINUTES) {
+        return { skipped: true, reason: 'cooldown' };
+      }
     }
   }
 
@@ -81,7 +85,7 @@ export async function syncStravaActivities(
   const activities = await fetchStravaActivities(accessToken, after);
 
   const rows = activities
-    .filter((a) => a.type === 'Ride' || a.type === 'VirtualRide' || a.type === 'MountainBikeRide')
+    .filter((a) => a.type === 'Ride' || a.type === 'VirtualRide' || a.type === 'MountainBikeRide' || a.type === 'EBikeRide')
     .map((a) => {
       const tss = computeTSS(a, athlete.ftp_watts, athlete.hrmax);
       const intensityFactor =
