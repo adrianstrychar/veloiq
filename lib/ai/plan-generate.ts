@@ -14,6 +14,7 @@ export interface PlanDay {
   hr: string;         // "155–168" lub "–"
   zones: number[];    // [Z1,Z2,Z3,Z4,Z5] %
   outline: boolean;   // true = zarys (tylko type+label+~tss+~dur)
+  locked?: boolean;   // ręczna zmiana usera — generator/modify/suwak NIE rusza (ustawiane server-side)
 }
 
 export interface GeneratorInputs {
@@ -128,6 +129,7 @@ export interface ModifyContext {
   ctl: number | null;
   raceName: string | null;
   daysToRace: number | null;
+  lockedDows: number[]; // dni (dow 1..7) zablokowane ręcznie w oryginale — nie ruszaj bez jawnej prośby
 }
 
 // Modyfikuje ISTNIEJĄCY plan tygodnia wg prośby użytkownika (nie generuje od zera).
@@ -151,13 +153,17 @@ export function buildModifyPrompt(
       : 'Brak najbliższego wyścigu w kalendarzu.',
     'Modyfikuj PODANY plan zgodnie z prośbą — zachowaj sens treningowy, nie generuj od zera.',
     'ZASADY (twarde): dokładnie 7 dni Pn–Nd (dow 1..7). Typy: OFF/Z1/Z2/SST/THR/OU/VO2/LONG.',
-    'Jeśli user chce wolny dzień → type OFF (tss 0, dur_min 0, watt/hr "–", zones [0,0,0,0,0]); obciążenie rozłóż na inne dni.',
+    'Jeśli user chce wolny dzień → type OFF (tss 0, dur_min 0, watt/hr "–", zones [0,0,0,0,0]).',
+    'NIE przenoś obciążenia z dnia OFF na inne dni — suma TSS tygodnia ma SPAŚĆ (wolne realnie zmniejsza obciążenie).',
+    `DNI ZABLOKOWANE (dow): [${ctx.lockedDows.join(', ') || 'brak'}] — NIE zmieniaj ich, chyba że prośba JAWNIE wskazuje dany dzień.`,
+    'Komenda OGÓLNA (np. "zwiększ godziny") — respektuj wszystkie locki, zmieniaj tylko dni niezablokowane.',
+    'Komenda JAWNA dla dnia (np. "dołóż trening w sobotę", "odwołaj wolny weekend") — możesz zmienić wskazany dzień.',
     'OBOWIĄZKOWO 2 dni OFF w tygodniu, nigdy dwa OFF z rzędu. Sesje jakościowe (THR/OU/VO2) nigdy obok siebie.',
     'MINIMALNY czas sesji 45 min (dur_min >= 45) — krótszej nie planuj, daj OFF.',
     'Rozgrzewka min 20 min przed Z2/SST, 25 min przed THR/OU/VO2. zones to % czasu w Z1–Z5, suma ~100.',
     'Label: krótka nazwa (typ + ewentualnie struktura), MAX ~3 słowa, bez zdań.',
     'insight: 1–2 zdania PO POLSKU co zmieniłeś i dlaczego — MUSI zgadzać się z nowym planem.',
-    'Zwróć WYŁĄCZNIE JSON (bez markdown, bez tekstu przed/po): {"days":[{...7 dni dow 1..7...}],"insight":"..."}.',
+    'Zwróć WYŁĄCZNIE JSON (bez markdown): {"days":[...7 dni dow 1..7...],"insight":"...","changedDays":[dow jawnie zmienione],"unlock":[dow do odblokowania]}.',
   ].join(' ');
 
   const user = [

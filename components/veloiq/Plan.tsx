@@ -23,6 +23,7 @@ export interface PlanDayView {
   warmup?: number;    // 5.6: rozgrzewka/schłodzenie po skalowaniu suwakiem (→ buildWorkout)
   cooldown?: number;
   removed?: boolean;  // 5.6: sesja usunięta przez skalowanie w dół (pokazana jako OFF)
+  locked?: boolean;   // ręczna blokada usera — odblokowanie tylko przez czat
 }
 
 // Wykonana jazda dla dnia planu — kształt wymagany przez RideAnalysis + sync-details.
@@ -117,10 +118,13 @@ function DayCard({ d, isToday, done, loading, onClick }: { d: PlanDayView; isTod
           <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{dowLabel(d.date)}</div>
           <div style={{ fontSize: 9, color: C.muted }}>{dateLabel(d.date)}</div>
         </div>
-        <div style={{ width: 50 }}>
+        <div style={{ width: 50, display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={{ background: tc + '22', color: tc, border: `1px solid ${tc}55`, borderRadius: 4, padding: '2px 7px', fontSize: 9, fontWeight: 600 }}>
             {isRemoved ? 'OFF' : d.type}
           </span>
+          {d.locked && (
+            <span title="Zablokowane ręcznie — zmień przez czat" style={{ fontSize: 11, color: C.muted, fontWeight: 600 }}>🔒</span>
+          )}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: C.text }}>

@@ -105,6 +105,7 @@ export interface ScalableDay {
   warmup?: number;
   cooldown?: number;
   removed?: boolean;
+  locked?: boolean; // ręczna blokada usera — suwak NIE skaluje/usuwa/konwertuje tego dnia
 }
 
 // Kolejność usuwania zależy od budżetu (LONG nie ma sensu przy bardzo krótkim tygodniu).
@@ -123,7 +124,7 @@ export function scaleWeek<T extends ScalableDay>(
   // Stan roboczy per dzień (kopie). Skalowalne = NOT done, NOT OFF.
   type W = { idx: number; type: string; core: number; w: number; c: number; origDur: number; origTss: number; removed: boolean };
   const work: (W | null)[] = days.map((d, idx) => {
-    if (d.type === 'OFF' || isDone(d.date)) return null;
+    if (d.type === 'OFF' || isDone(d.date) || d.locked) return null; // locked nietykalne dla suwaka
     const ss = sessionStructure(d.type);
     const core = Math.max(0, d.dur_min - ss.warmupDefault - ss.cooldownDefault);
     return { idx, type: d.type, core, w: ss.warmupDefault, c: ss.cooldownDefault, origDur: d.dur_min, origTss: d.tss, removed: false };
@@ -141,7 +142,7 @@ export function scaleWeek<T extends ScalableDay>(
   let delta = targetDurMin - baseDur;
 
   // Dni OFF bieżącego tygodnia (kandydaci na Z1 przy skalowaniu w górę).
-  const offIdxs = days.map((d, idx) => ({ d, idx })).filter(({ d }) => d.type === 'OFF' && !isDone(d.date)).map(({ idx }) => idx);
+  const offIdxs = days.map((d, idx) => ({ d, idx })).filter(({ d }) => d.type === 'OFF' && !isDone(d.date) && !d.locked).map(({ idx }) => idx);
   const converted = new Map<number, { dur: number }>(); // idx OFF → nowy Z1
 
   if (delta > 0) {
