@@ -7,7 +7,7 @@ import { ZoneBar } from './ZoneBar';
 import { WorkoutDetail } from './WorkoutDetail';
 import { RideAnalysis, type RideActivity } from './RideAnalysis';
 import { createBrowserSupabaseClient } from '@/lib/supabase-browser';
-import { typeColor, fmtDur, dowLabel, dateLabel, weekRangeLabel, scaleWeek, type WeekKind } from '@/lib/plan';
+import { typeColor, fmtDur, dowLabel, dateLabel, weekRangeLabel, scaleWeek, maxAchievableMin, type WeekKind } from '@/lib/plan';
 
 export interface PlanDayView {
   dow: number;
@@ -214,7 +214,7 @@ const ACTIVITY_SELECT =
 function computeBaseHours(days: PlanDayView[] | null, acts: Record<string, PlanActivityRow[]>): number {
   if (!days) return 1;
   const min = days
-    .filter((d) => d.type !== 'OFF' && !isDoneDate(acts, d.date))
+    .filter((d) => d.type !== 'OFF' && !d.locked && !isDoneDate(acts, d.date))
     .reduce((a, d) => a + d.dur_min, 0);
   return Math.round(min / 60) || 1;
 }
@@ -332,9 +332,21 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
   // Suwak działa TYLKO na bieżącym tygodniu. Hierarchiczne skalowanie (scaleWeek):
   // ruszamy warmup/cooldown w zakresach, przy dużych cięciach usuwamy całe sesje.
   const baseHours = computeBaseHours(days, activitiesByDate);
+  // Dynamiczny sufit suwaka z AKTUALNEGO stanu (blokady go obniżają). maxAchievableMin = mirror
+  // pojemności UP w scaleWeek, więc cap = realnie osiągalny czas (suwak nie głuchnie ani nie kłamie).
+  const maxMin = days ? maxAchievableMin(days, (date) => isDoneDate(activitiesByDate, date)) : 960;
+  const dynamicMaxHours = Math.max(3, Math.min(16, Math.ceil(maxMin / 60)));
+  const hoursClamped = Math.min(hours, dynamicMaxHours);
+  const hasLocked = !!days && days.some((d) => d.locked);
+  const atCap = isCurrent && hoursClamped >= dynamicMaxHours && hasLocked;
+  // Bez ducha: gdy cap spadnie poniżej zapamiętanego hours (np. po zablokowaniu weekendu),
+  // dociśnij stan w dół. Po odblokowaniu suwak NIE skacze do starej wartości — zostaje na clampie.
+  useEffect(() => {
+    if (hours > dynamicMaxHours) setHours(dynamicMaxHours);
+  }, [dynamicMaxHours, hours]);
   const scaledDays: PlanDayView[] | null = days
     ? isCurrent
-      ? scaleWeek(days, hours * 60, (date) => isDoneDate(activitiesByDate, date))
+      ? scaleWeek(days, hoursClamped * 60, (date) => isDoneDate(activitiesByDate, date))
       : days
     : null;
 
@@ -356,7 +368,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
   const remDurMin = remDays.reduce((a, d) => a + d.dur_min, 0);
   const remTss = remDays.reduce((a, d) => a + d.tss, 0);
   // CZAS „pozostało" rzadko trafia dokładnie w hours×60 (interwały chronione) — ~ gdy różnica >10.
-  const durApprox = isCurrent && Math.abs(remDurMin - hours * 60) > 10;
+  const durApprox = isCurrent && Math.abs(remDurMin - hoursClamped * 60) > 10;
 
   // Rekomendacja AI godzin: ile jeszcze do celu, licząc od FAKTYCZNIE wykonanego TSS.
   const futureBaseTSS = remDays.reduce((a, d) => a + d.tss, 0);
@@ -366,9 +378,9 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
   // Fallback: brak CTL (pusta baza fitness_metrics) → rekomendacja = baseHours (marker pokrywa suwak).
   const recHours =
     ctl > 0
-      ? Math.max(2, Math.min(16, Math.round((targetWeeklyTSS - doneTss) / tssPerH)))
-      : Math.max(2, Math.min(16, baseHours));
-  const atRec = hours === recHours;
+      ? Math.max(2, Math.min(dynamicMaxHours, Math.round((targetWeeklyTSS - doneTss) / tssPerH)))
+      : Math.max(2, Math.min(dynamicMaxHours, baseHours));
+  const atRec = hoursClamped === recHours;
 
   return (
     <div className="flex flex-col gap-3">
@@ -414,7 +426,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Pozostały czas w tygodniu</span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-              <span style={{ fontSize: 24, fontWeight: 600, color: C.cyan }}>{hours}</span>
+              <span style={{ fontSize: 24, fontWeight: 600, color: C.cyan }}>{hoursClamped}</span>
               <span style={{ fontSize: 13, color: C.muted }}>h</span>
             </div>
           </div>
@@ -422,16 +434,16 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
           {/* track z markerem rekomendacji AI */}
           <div style={{ position: 'relative' }}>
             <input
-              type="range" min={2} max={16} step={1} value={hours}
+              type="range" min={2} max={dynamicMaxHours} step={1} value={hoursClamped}
               onChange={(e) => setHours(+e.target.value)}
               style={{ width: '100%', accentColor: C.cyan, cursor: 'pointer', display: 'block' }}
             />
-            <div style={{ position: 'absolute', top: -3, left: `${((recHours - 2) / (16 - 2)) * 100}%`, transform: 'translateX(-50%)', pointerEvents: 'none' }}>
+            <div style={{ position: 'absolute', top: -3, left: `${((recHours - 2) / Math.max(1, dynamicMaxHours - 2)) * 100}%`, transform: 'translateX(-50%)', pointerEvents: 'none' }}>
               <div style={{ width: 2, height: 22, background: C.green, borderRadius: 1, margin: '0 auto' }} />
             </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: C.muted, marginTop: 4 }}>
-            <span>2h</span><span>8h</span><span>16h</span>
+            <span>2h</span><span>{Math.round((2 + dynamicMaxHours) / 2)}h</span><span>{dynamicMaxHours}h</span>
           </div>
 
           {/* Rekomendacja AI */}
@@ -444,7 +456,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
               <div style={{ fontSize: 11, color: C.text, lineHeight: 1.4 }}>
                 {atRec
                   ? 'Optymalny punkt dla Twojej formy — najlepszy postęp przy zdrowej regeneracji.'
-                  : hours > recHours
+                  : hoursClamped > recHours
                   ? 'Powyżej rekomendacji — większy bodziec, ale i większe obciążenie. Świadomy wybór, jeśli czujesz się dobrze.'
                   : 'Poniżej rekomendacji — bezpieczniej, wolniejszy przyrost formy. Dołóż, jeśli chcesz szybciej budować.'}
               </div>
@@ -459,6 +471,11 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
           <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>
             Skaluje tylko <b style={{ color: C.text }}>nadchodzące</b> sesje — wykonane treningi i dzisiejsza jazda zostają bez zmian.
           </div>
+          {atCap && (
+            <div style={{ fontSize: 11, color: C.yellow, marginTop: 6 }}>
+              Maks ~{(maxMin / 60).toFixed(1)}h w tym układzie — odblokuj weekend, by dodać więcej.
+            </div>
+          )}
         </div>
       )}
 

@@ -116,6 +116,26 @@ const MIN_SESSION_MIN = 45; // sesja krótsza niż 45 min nie ma sensu — usuwa
 // Priorytet ocalałego (gdy zostaje 1 sesja): VO2 najcenniejszy, LONG/Z1 najmniej.
 const SURVIVOR_PRIORITY = ['VO2', 'OU', 'THR', 'SST', 'Z2', 'LONG', 'Z1'];
 
+// ⚠️ SPRZĘŻENIE z scaleWeek: ta funkcja liczy SUFIT pojemności rozszerzania (UP) — dokładnie te
+// same dźwignie, którymi scaleWeek realnie dokłada godziny: headroom warmup/cooldown na dniach
+// skalowalnych + konwersje OFF→Z1 (dni OFF nie-locked, nie-done). Używana do dynamicznego max suwaka.
+// Jeśli zmienisz dźwignie UP w scaleWeek (granice warmup/cooldown, OFF→Z1, nowa dźwignia) — ZAKTUALIZUJ
+// TĘ funkcję, inaczej cap suwaka rozjedzie się z realnym skalowaniem (głuchy suwak albo nieosiągalny limit).
+export function maxAchievableMin<T extends ScalableDay>(days: T[], isDone: (date: string) => boolean): number {
+  let base = 0;
+  let headroom = 0;
+  for (const d of days) {
+    if (d.type === 'OFF' || isDone(d.date) || d.locked) continue;
+    const ss = sessionStructure(d.type);
+    base += d.dur_min;
+    headroom += (ss.cooldownMax - ss.cooldownDefault) + (ss.warmupMax - ss.warmupDefault);
+  }
+  const convOff = days.filter((d) => d.type === 'OFF' && !isDone(d.date) && !d.locked).length;
+  return base + headroom + convOff * 60;
+}
+
+// ⚠️ SPRZĘŻENIE z maxAchievableMin: dźwignie rozszerzania (UP) tutaj MUSZĄ odpowiadać sufitowi
+// liczonemu w maxAchievableMin. Zmiana jednej funkcji wymaga aktualizacji drugiej (patrz komentarz tam).
 export function scaleWeek<T extends ScalableDay>(
   days: T[],
   targetDurMin: number,
