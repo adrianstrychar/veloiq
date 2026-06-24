@@ -3,7 +3,22 @@
 import { useEffect, useState } from 'react';
 import { C } from '@/lib/theme';
 
-export function DailyInsight() {
+// Wspólny kafelek — fallback MUSI wyglądać identycznie jak AI Insight (ta sama ramka,
+// padding, boczny akcent), żeby graceful degradation była niewidoczna jako degradacja.
+const cardStyle: React.CSSProperties = {
+  background: C.card,
+  border: `1px solid ${C.border}`,
+  borderLeft: `3px solid ${C.cyan}`,
+  borderRadius: '0 12px 12px 0',
+  padding: '12px 14px',
+  marginBottom: 10,
+};
+const headerStyle: React.CSSProperties = {
+  fontSize: 9, letterSpacing: '0.12em', fontWeight: 600, marginBottom: 7,
+};
+const bodyStyle: React.CSSProperties = { fontSize: 13, lineHeight: 1.65, color: C.text };
+
+export function DailyInsight({ fallback }: { fallback?: string }) {
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState(false);
 
@@ -22,26 +37,24 @@ export function DailyInsight() {
     };
   }, []);
 
-  if (error) return null; // cicho — nie zaśmiecamy dashboardu gdy AI niedostępne
-
-  // Styl 1:1 z mockupu (Dashboard 942-945): lewa cyjanowa krawędź, prawy zaokrąglony róg.
-  return (
-    <div
-      style={{
-        background: C.card,
-        border: `1px solid ${C.border}`,
-        borderLeft: `3px solid ${C.cyan}`,
-        borderRadius: '0 12px 12px 0',
-        paddingLeft: 14,
-        padding: '12px 14px 12px 14px',
-        marginBottom: 10,
-      }}
-    >
-      <div style={{ fontSize: 9, color: C.cyan, letterSpacing: '0.12em', fontWeight: 600, marginBottom: 7 }}>
-        AI INSIGHT
+  // AI niedostępne → statyczny advice jako WSKAZÓWKA (neutralny nagłówek, nie "AI INSIGHT").
+  // Nigdy razem z AI Insight: albo AI, albo to — sprzeczność dwóch werdyktów niemożliwa.
+  // Brak fallbacku → nic (jak wcześniej return null, nie zaśmiecamy dashboardu).
+  if (error) {
+    if (!fallback) return null;
+    return (
+      <div style={cardStyle}>
+        <div style={{ ...headerStyle, color: C.muted }}>WSKAZÓWKA</div>
+        <div style={bodyStyle}>{fallback}</div>
       </div>
+    );
+  }
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ ...headerStyle, color: C.cyan }}>AI INSIGHT</div>
       {text ? (
-        <div style={{ fontSize: 13, lineHeight: 1.65, color: C.text }}>{text}</div>
+        <div style={bodyStyle}>{text}</div>
       ) : (
         <div style={{ color: C.muted, fontSize: 13, fontStyle: 'italic' }}>Analizuję dane Strava...</div>
       )}
