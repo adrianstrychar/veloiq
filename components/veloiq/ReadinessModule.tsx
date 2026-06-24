@@ -13,8 +13,8 @@ const COLOR: Record<Readiness['color'], string> = {
 
 // Pierścień gotowości (mockup Ring 278-293): size 132, sw 11, wartość + "%".
 function Ring({ value, color }: { value: number; color: string }) {
-  const size = 132;
-  const sw = 11;
+  const size = 104;
+  const sw = 9;
   const r = (size - sw) / 2;
   const circ = 2 * Math.PI * r;
   const off = circ * (1 - value / 100);
@@ -64,8 +64,8 @@ export function ReadinessModule({ readiness, pmc }: ReadinessModuleProps) {
           </div>
         </div>
 
-        {/* Prawa kolumna: dwa paski + werdykt */}
-        <div style={{ flex: 1, minWidth: 200 }}>
+        {/* Prawa kolumna: dwa paski (advice usunięty — patrz DailyInsight fallback) */}
+        <div style={{ flex: 1, minWidth: 130 }}>
           {/* Forma */}
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
@@ -89,13 +89,6 @@ export function ReadinessModule({ readiness, pmc }: ReadinessModuleProps) {
               <div style={{ height: '100%', width: `${readiness.freshPct}%`, background: C.muted, borderRadius: 5, transition: 'width 1s ease' }} />
             </div>
             <div style={{ fontSize: 9, color: C.muted, marginTop: 3 }}>nogi wypoczęte i gotowe do wysiłku</div>
-          </div>
-          {/* Werdykt */}
-          <div style={{
-            fontSize: 12, lineHeight: 1.55, color: C.text, background: C.bg,
-            borderRadius: 8, padding: '10px 12px', border: `1px solid ${C.border}`,
-          }}>
-            {readiness.advice}
           </div>
         </div>
       </div>

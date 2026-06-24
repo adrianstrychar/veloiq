@@ -124,8 +124,8 @@ export default async function DashboardPage() {
       {/* 2. ReadinessModule: gotowość z TSB + rozwijany RawMetrics (CTL/ATL/TSB) */}
       {readiness && <ReadinessModule readiness={readiness} pmc={pmc} />}
 
-      {/* 3. AI Insight: forma na dziś */}
-      {readiness && <DailyInsight />}
+      {/* 3. AI Insight: forma na dziś (fallback = statyczny advice gdy AI padnie) */}
+      {readiness && <DailyInsight fallback={readiness.advice} />}
 
       {/* 4. Ostatnia aktywność — klikalna, otwiera RideAnalysis */}
       {lastActivity && (
