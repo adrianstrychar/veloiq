@@ -46,6 +46,20 @@ export function ReadinessModule({ readiness, pmc }: ReadinessModuleProps) {
   const [open, setOpen] = useState(false);
   const color = COLOR[readiness.color];
 
+  // Podpisy pasków DYNAMICZNE — czytane z wartości, nie statyczne (żaden nie kłamie).
+  // Świeżość: progi 67/40 spójne z kolorem pierścienia (jedna skala na karcie).
+  const freshLabel =
+    readiness.freshPct >= 67 ? 'nogi wypoczęte i gotowe do wysiłku'
+      : readiness.freshPct >= 40 ? 'umiarkowane zmęczenie — forma w budowie'
+        : 'nogi zmęczone po bloku treningowym';
+  // Forma: kierunek z ctlRamp, martwa strefa ±1.0 CTL (poniżej = "stoi", żeby szum
+  // nie migał rośnie/spada). TODO (przyszłość, gdy dojdą fazy treningowe): ↘ podczas
+  // taperingu jest celowy → wtedy inny ton ("↘ tapering"); bez fazy "↘ spada" wystarcza.
+  const formaTrend =
+    readiness.ctlRamp > 1 ? '↗ rośnie'
+      : readiness.ctlRamp < -1 ? '↘ spada'
+        : '→ stabilna';
+
   return (
     <div style={{
       background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
@@ -76,7 +90,7 @@ export function ReadinessModule({ readiness, pmc }: ReadinessModuleProps) {
               <div style={{ height: '100%', width: `${readiness.fitnessPct}%`, background: C.cyan, borderRadius: 5, transition: 'width 1s ease' }} />
             </div>
             <div style={{ fontSize: 9, color: C.muted, marginTop: 3 }}>
-              {readiness.ctlRamp >= 0 ? '↗ rośnie' : '↘ regeneracja'} · względem szczytu sezonu
+              {formaTrend} · względem szczytu sezonu
             </div>
           </div>
           {/* Świeżość */}
@@ -88,7 +102,7 @@ export function ReadinessModule({ readiness, pmc }: ReadinessModuleProps) {
             <div style={{ background: C.dim, borderRadius: 5, height: 9, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${readiness.freshPct}%`, background: C.muted, borderRadius: 5, transition: 'width 1s ease' }} />
             </div>
-            <div style={{ fontSize: 9, color: C.muted, marginTop: 3 }}>nogi wypoczęte i gotowe do wysiłku</div>
+            <div style={{ fontSize: 9, color: C.muted, marginTop: 3 }}>{freshLabel}</div>
           </div>
         </div>
       </div>
