@@ -30,6 +30,7 @@ export interface PlanDayView {
 export interface PlanActivityRow extends RideActivity {
   strava_activity_id: number;
   details_synced_at: string | null;
+  normalized_power?: number | null; // do MOC realnej na karcie done (NP ?? avg_watts)
 }
 
 export interface WeekSlot {
@@ -77,6 +78,14 @@ function weekLabel(idx: number, currentIdx: number): string {
 
 // ── Karta dnia ──────────────────────────────────────────────────────────────
 
+// MOC realna na karcie done: NP ?? avg_watts. e-bike → "—" (moc z silnika nierzetelna,
+// spójnie z decyzją hrTSS dla e-bike — nie pokazujemy jej jako mocy zawodnika).
+function actualPower(a: PlanActivityRow): string {
+  if (a.type === 'EBikeRide') return '—';
+  const w = a.normalized_power ?? a.avg_watts;
+  return w != null ? `${w}W` : '—';
+}
+
 function Cell({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div>
@@ -86,7 +95,7 @@ function Cell({ label, value, color }: { label: string; value: string; color?: s
   );
 }
 
-function DayCard({ d, isToday, done, loading, onClick }: { d: PlanDayView; isToday: boolean; done: boolean; loading: boolean; onClick?: () => void }) {
+function DayCard({ d, isToday, done, loading, actual, onClick }: { d: PlanDayView; isToday: boolean; done: boolean; loading: boolean; actual?: PlanActivityRow; onClick?: () => void }) {
   const isRemoved = !!d.removed;
   const isOff = d.type === 'OFF';
   const offLike = isOff || isRemoved; // usunięta sesja renderuje się jak OFF (szara)
@@ -108,9 +117,9 @@ function DayCard({ d, isToday, done, loading, onClick }: { d: PlanDayView; isTod
         transition: 'border-color 0.15s',
       }}
     >
-      {isToday && (
+      {(isToday || done) && (
         <div style={{ position: 'absolute', top: -8, left: 14, background: C.cyan, color: C.bg, fontSize: 8, fontWeight: 600, padding: '2px 8px', borderRadius: 4, letterSpacing: '0.1em' }}>
-          {done ? 'DZIŚ · ZROBIONE ✓' : 'DZIŚ'}
+          {isToday ? (done ? 'DZIŚ · ZROBIONE ✓' : 'DZIŚ') : 'ZROBIONE ✓'}
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -141,6 +150,14 @@ function DayCard({ d, isToday, done, loading, onClick }: { d: PlanDayView; isTod
           <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center' }}>
             <Cell label="CZAS" value={`~${fmtDur(d.dur_min)}`} />
             <Cell label="~TSS" value={`${d.tss}`} color={C.yellow} />
+          </div>
+        ) : done && actual ? (
+          // WYKONANE — realne dane ze Stravy ZASTĘPUJĄ plan. e-bike: moc z silnika nierzetelna → "—".
+          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center' }}>
+            <Cell label="CZAS" value={actual.duration_seconds != null ? fmtDur(Math.round(actual.duration_seconds / 60)) : '—'} />
+            <Cell label="MOC" value={actualPower(actual)} color={C.cyan} />
+            <Cell label="HR" value={actual.avg_hr != null ? `${actual.avg_hr}` : '—'} color={C.red} />
+            <Cell label="TSS" value={actual.tss != null ? `${Math.round(actual.tss)}` : '—'} color={C.yellow} />
           </div>
         ) : (
           <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center' }}>
@@ -544,6 +561,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
                     isToday={isCurrent && d.date === todayISO}
                     done={done}
                     loading={loadingDate === d.date}
+                    actual={matched}
                     onClick={onClick}
                   />
                   {unplanned.map((a) => (
