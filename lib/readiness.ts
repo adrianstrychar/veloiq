@@ -11,7 +11,7 @@ export interface MetricRow {
 export interface Readiness {
   raceReady: number;   // 0–100, główny wskaźnik (pierścień)
   fitnessPct: number;  // forma: ctl_teraz / szczyt_sezonu * 100
-  freshPct: number;    // świeżość: clamp((tsb+30)/55*100)
+  freshPct: number;    // świeżość: clamp((tsb+30)/45*100) — kotwice TSB −30→0%, +15→100%
   state: string;       // werdykt PL
   color: 'green' | 'yellow' | 'red';
   advice: string;      // rada PL wg progów TSB
@@ -33,7 +33,7 @@ export function computeReadiness(rows: MetricRow[]): Readiness | null {
   const peakCtl = rows.reduce((mx, r) => Math.max(mx, r.ctl), 0);
 
   const fitnessPct = peakCtl > 0 ? clamp((now.ctl / peakCtl) * 100, 0, 100) : 0;
-  const freshPct = clamp(((now.tsb + 30) / 55) * 100, 0, 100);
+  const freshPct = clamp(((now.tsb + 30) / 45) * 100, 0, 100);
   const raceReady = Math.round(fitnessPct * 0.55 + freshPct * 0.45);
 
   // ctl sprzed 7 dni (7 pozycji wstecz; fallback do najstarszego wiersza)
@@ -43,23 +43,29 @@ export function computeReadiness(rows: MetricRow[]): Readiness | null {
   let state: string;
   let color: Readiness['color'];
   let advice: string;
-  // Teksty 1:1 z mockupu (docs/veloiq-mockup.jsx, computeReadiness 270-273).
-  if (now.tsb > 15) {
-    state = 'Wypoczęty';
-    color = 'green';
-    advice = 'Nogi świeże i pełne energii. Świetny dzień na mocniejszy trening.';
-  } else if (now.tsb >= 5) {
-    state = 'Gotowy';
-    color = 'green';
-    advice = 'Forma w równowadze — możesz spokojnie realizować plan.';
-  } else if (now.tsb >= -10) {
-    state = 'Lekko zmęczony';
-    color = 'yellow';
-    advice = 'Nogi trochę zmęczone po treningach — to normalne, tak rośnie forma. Zadbaj o sen.';
-  } else {
-    state = 'Mocno zmęczony';
+  // Kolor/etykieta z WYŚWIETLANEGO raceReady% (nie z surowych pasm TSB) — koniec
+  // sytuacji "63% na czerwono", gdzie liczba i kolor czytały z różnych wejść.
+  // ŚWIADOMY PRÓG OSTRZEGAWCZY (nie upraszczać): TSB < −30 = realne przetrenowanie,
+  // ZAWSZE czerwony, niezależnie od raceReady% — bo wysoka forma (CTL/peak) potrafi
+  // sztucznie podbić raceReady i ukryć głębokie zmęczenie. Override musi zostać.
+  if (now.tsb < -30) {
     color = 'red';
-    advice = 'Duże zmęczenie. Lepiej dziś odpocząć albo pojechać lekko, zanim przesadzisz.';
+    state = 'Głębokie zmęczenie';
+    advice = 'Głębokie zmęczenie — odpuść dziś. Odpoczynek albo bardzo lekka jazda.';
+  } else if (raceReady >= 67) {
+    color = 'green';
+    state = now.tsb > 15 ? 'Wypoczęty' : 'Dobra gotowość';
+    advice = now.tsb > 15
+      ? 'Nogi świeże i pełne energii. Świetny dzień na mocniejszy trening.'
+      : 'Dobra gotowość — możesz spokojnie realizować plan.';
+  } else if (raceReady >= 40) {
+    color = 'yellow';
+    state = 'Solidne zmęczenie';
+    advice = 'Solidne zmęczenie treningowe — lekki trening OK, tak rośnie forma. Zadbaj o sen.';
+  } else {
+    color = 'red';
+    state = 'Duże zmęczenie';
+    advice = 'Duże zmęczenie. Lepiej dziś odpocząć albo pojechać bardzo lekko.';
   }
 
   return {
