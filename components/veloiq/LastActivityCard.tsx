@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { C } from '@/lib/theme';
 import { createBrowserSupabaseClient } from '@/lib/supabase-browser';
 import { RideAnalysis, type RideActivity } from './RideAnalysis';
@@ -25,6 +25,15 @@ export function LastActivityCard({ activity, ftp }: LastActivityCardProps) {
   const [loading, setLoading] = useState(false);
   const [hover, setHover] = useState(false);
   const [data, setData] = useState<LastActivityRow>(activity);
+
+  // Po router.refresh() (np. SyncButton) page.tsx przekazuje świeży `activity`.
+  // useState liczy wartość początkową tylko przy pierwszym renderze, więc bez tego
+  // karta trzymałaby starą jazdę. Reset `data` gdy props się zmieni → React przerysowuje.
+  // Bezpieczne dla wzbogacenia: page.tsx selectuje też best_efforts/laps/details_synced_at,
+  // a sync-details zapisuje je do DB — więc świeży props zawiera komplet (nic nie ginie).
+  useEffect(() => {
+    setData(activity);
+  }, [activity]);
 
   // "czw. 18.06.2026" — jak w mockupie
   const formattedDate = data.activity_date
