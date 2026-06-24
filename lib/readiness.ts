@@ -60,12 +60,12 @@ export function computeReadiness(rows: MetricRow[]): Readiness | null {
       : 'Dobra gotowość — możesz spokojnie realizować plan.';
   } else if (raceReady >= 40) {
     color = 'yellow';
-    state = 'Solidne zmęczenie';
-    advice = 'Solidne zmęczenie treningowe — lekki trening OK, tak rośnie forma. Zadbaj o sen.';
+    state = 'Umiarkowana gotowość';
+    advice = 'Forma w budowie — lekki trening OK, tak rośnie forma. Zadbaj o sen.';
   } else {
     color = 'red';
-    state = 'Duże zmęczenie';
-    advice = 'Duże zmęczenie. Lepiej dziś odpocząć albo pojechać bardzo lekko.';
+    state = 'Niska gotowość';
+    advice = 'Niska gotowość — lepiej dziś odpocząć albo pojechać bardzo lekko.';
   }
 
   return {
