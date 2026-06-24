@@ -83,10 +83,10 @@ export function ReadinessModule({ readiness, pmc }: ReadinessModuleProps) {
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>Świeżość</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: C.green }}>{readiness.freshPct}%</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.muted }}>{readiness.freshPct}%</span>
             </div>
             <div style={{ background: C.dim, borderRadius: 5, height: 9, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${readiness.freshPct}%`, background: C.green, borderRadius: 5, transition: 'width 1s ease' }} />
+              <div style={{ height: '100%', width: `${readiness.freshPct}%`, background: C.muted, borderRadius: 5, transition: 'width 1s ease' }} />
             </div>
             <div style={{ fontSize: 9, color: C.muted, marginTop: 3 }}>nogi wypoczęte i gotowe do wysiłku</div>
           </div>
