@@ -249,7 +249,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
     const w = weeks[currentIdx];
     return w?.userHours ?? computeBaseHours(w?.days ?? null, activitiesByDate);
   });
-  const didDerive = useRef(false);  // strażnik: derywuj hours raz dla bieżącego tygodnia
+  const prevWeekStart = useRef<string | null>(null);  // ostatnio wyświetlany tydzień — do re-derywacji NA WEJŚCIU
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 5.7: lokalny override planu per tydzień (po modyfikacji czatem) + stan czatu.
@@ -382,9 +382,12 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
   const atCap = isCurrent && hoursClamped >= dynamicMaxHours && hasLocked;
   // Bez ducha: gdy cap spadnie poniżej zapamiętanego hours (np. po zablokowaniu weekendu),
   // dociśnij stan w dół. Po odblokowaniu suwak NIE skacze do starej wartości — zostaje na clampie.
+  // BRAMKA isCurrent: clamp dotyka hours TYLKO na bieżącym tygodniu. Bez niej cap oglądanego
+  // minionego tygodnia (≈3h, bo dni wykonane skraca maxAchievableMin) zgniatał współdzielony hours
+  // przy samej nawigacji — suwak bieżącego wracał obniżony, mimo że nikt go nie ruszał.
   useEffect(() => {
-    if (hours > dynamicMaxHours) setHours(dynamicMaxHours);
-  }, [dynamicMaxHours, hours]);
+    if (isCurrent && hours > dynamicMaxHours) setHours(dynamicMaxHours);
+  }, [isCurrent, dynamicMaxHours, hours]);
   const scaledDays: PlanDayView[] | null = days
     ? isCurrent
       ? scaleWeek(days, hoursClamped * 60, (date) => isDoneDate(activitiesByDate, date))
@@ -423,17 +426,18 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
       : Math.max(2, Math.min(dynamicMaxHours, baseHours));
   const atRec = hoursClamped === recHours;
 
-  // Re-derywacja hours dla BIEŻĄCEGO tygodnia: user_hours z bazy ?? recHours, SKLAMPOWANE
-  // do aktualnego capu. Raz (didDerive) — kolejne zmiany recHours nie nadpisują ruchów usera.
-  // Clamp = ten sam no-ghost co przy dynamicznym capie: zapisane 9h + zablokowany weekend
-  // (cap 8) → wczytuje się 8, nie wskrzesza 9. Suwak jest current-only, więc nawigacja na
-  // inne tygodnie tu nie wchodzi (isCurrent guard); wartość per tydzień trzyma baza.
+  // Re-derywacja hours dla BIEŻĄCEGO tygodnia: user_hours z bazy ?? recHours, SKLAMPOWANE do capu.
+  // Odpala przy WEJŚCIU na bieżący tydzień (zmiana weekStart), NIE na każdym renderze — inaczej
+  // każdy render bieżącego cofałby świeży ruch suwaka do user_hours i suwak byłby nieruchomy.
+  // Pas bezpieczeństwa: gdyby cokolwiek zepsuło hours podczas oglądania innego tygodnia, powrót na
+  // bieżący odtwarza poprawną wartość z week.userHours (fallback recHours). Clamp = no-ghost.
   useEffect(() => {
-    if (!isCurrent || didDerive.current) return;
-    didDerive.current = true;
+    if (!isCurrent) { prevWeekStart.current = week.weekStart; return; }
+    if (prevWeekStart.current === week.weekStart) return;  // już na tym tygodniu — nie nadpisuj ruchu suwaka
+    prevWeekStart.current = week.weekStart;
     const target = week.userHours ?? recHours;
     setHours(Math.min(Math.max(2, target), dynamicMaxHours));
-  }, [isCurrent, week.userHours, recHours, dynamicMaxHours]);
+  }, [isCurrent, week.weekStart, week.userHours, recHours, dynamicMaxHours]);
 
   // PROMOCJA SZKICU → PEŁNY PLAN (lazy, przy wejściu na Plan). Bieżący tydzień bywa czystym
   // szkicem (outline:true na wszystkich 7 dniach), gdy powstał jako "next-week zarys" i jego
