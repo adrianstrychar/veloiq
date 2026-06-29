@@ -58,12 +58,16 @@ export default async function PlanPage() {
   // Jedno zapytanie po wszystkich istniejących tygodniach z okna
   const { data: rows } = await supabase
     .from('weekly_plans')
-    .select('week_start, plan_json')
+    .select('week_start, plan_json, user_hours')
     .eq('athlete_id', athlete?.id ?? '')
     .in('week_start', weekStarts);
 
   const byStart = new Map<string, PlanJson>();
-  for (const r of rows ?? []) byStart.set(r.week_start as string, r.plan_json as PlanJson);
+  const userHoursByStart = new Map<string, number | null>();
+  for (const r of rows ?? []) {
+    byStart.set(r.week_start as string, r.plan_json as PlanJson);
+    userHoursByStart.set(r.week_start as string, (r.user_hours as number | null) ?? null);
+  }
 
   // Join ze Stravą: WSZYSTKIE jazdy z okna → mapa lokalnaData→lista jazd (nie jedna).
   // Zakres poszerzony o 1 dzień wstecz, bo data lokalna może różnić się od UTC activity_date.
@@ -95,6 +99,7 @@ export default async function PlanPage() {
       kind: weekKind(ws, currentWeek),
       days: pj?.days ?? null,
       insight: pj?.insight ?? '',
+      userHours: userHoursByStart.get(ws) ?? null,
     };
   });
 
