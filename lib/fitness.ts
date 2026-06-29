@@ -51,12 +51,23 @@ export function interpretTSB(tsb: number): {
   return { label: 'Przetrenowany', color: '#FF4757', emoji: '🔴' };
 }
 
-// Pełne przeliczenie historii CTL/ATL/TSB z listy aktywności
+// Dzisiejsza data w STREFIE LOKALNEJ (spójnie z activity_date = start_date_local).
+// Zwraca YYYY-MM-DD odpowiadające lokalnemu kalendarzowi, nie UTC.
+function localTodayISO(): string {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+// Pełne przeliczenie historii CTL/ATL/TSB z listy aktywności.
+// Pętla dolicza dni OFF jako TSS=0 aż do `today` (domyślnie dziś, lokalnie),
+// żeby ATL opadał przez dni regeneracji po ostatniej jeździe — bez tego
+// najświeższy wiersz utknąłby na dniu ostatniej aktywności (zamrożone ATL).
 export function calculateFitnessHistory(
   activities: Array<{ date: string; tss: number }>,
   startCTL: number = 0,
-  startATL: number = 0
-): Array<{ date: string; ctl: number; atl: number; tsb: number }> {
+  startATL: number = 0,
+  today: string = localTodayISO()
+): Array<{ date: string; ctl: number; atl: number; tsb: number; tss: number }> {
   if (activities.length === 0) return [];
 
   // Zsumuj TSS per dzień
@@ -66,20 +77,25 @@ export function calculateFitnessHistory(
   }
 
   const dates = Array.from(tssByDate.keys()).sort();
-  const startDate = new Date(dates[0]);
-  const endDate = new Date(dates[dates.length - 1]);
+  const lastActivityDate = dates[dates.length - 1];
+  // Koniec pętli = dziś, jeśli minęły dni od ostatniej jazdy; inaczej dzień ostatniej jazdy.
+  // Porównanie stringów YYYY-MM-DD jest leksykograficznie == chronologicznie.
+  const endDateStr = today > lastActivityDate ? today : lastActivityDate;
 
   let ctl = startCTL;
   let atl = startATL;
-  const result: Array<{ date: string; ctl: number; atl: number; tsb: number }> = [];
+  const result: Array<{ date: string; ctl: number; atl: number; tsb: number; tss: number }> = [];
 
-  // Generuj wszystkie dni (włącznie z dniami bez aktywności)
-  for (
-    let current = new Date(startDate);
-    current <= endDate;
-    current.setDate(current.getDate() + 1)
-  ) {
-    const dateStr = current.toISOString().slice(0, 10);
+  // Iteracja w CZYSTYM UTC (krok = doba w ms). NIE używać setDate/getDate — operują w
+  // strefie lokalnej i przy przekroczeniu zmiany czasu (DST) dryfują o godzinę względem
+  // toISOString(), przez co ostatni dzień gubił się o jeden (06-29 → 06-28).
+  const MS_PER_DAY = 86_400_000;
+  const startMs = Date.parse(`${dates[0]}T00:00:00Z`);
+  const endMs = Date.parse(`${endDateStr}T00:00:00Z`);
+
+  // Generuj wszystkie dni (włącznie z dniami bez aktywności i dniami OFF do dziś)
+  for (let ms = startMs; ms <= endMs; ms += MS_PER_DAY) {
+    const dateStr = new Date(ms).toISOString().slice(0, 10);
     const todayTSS = tssByDate.get(dateStr) ?? 0;
 
     ctl = updateCTL(ctl, todayTSS);
@@ -90,6 +106,7 @@ export function calculateFitnessHistory(
       ctl: Math.round(ctl * 100) / 100,
       atl: Math.round(atl * 100) / 100,
       tsb: Math.round(calculateTSB(ctl, atl) * 100) / 100,
+      tss: Math.round(todayTSS * 100) / 100,
     });
   }
 
