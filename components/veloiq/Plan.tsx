@@ -435,6 +435,26 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
     setHours(Math.min(Math.max(2, target), dynamicMaxHours));
   }, [isCurrent, week.userHours, recHours, dynamicMaxHours]);
 
+  // PROMOCJA SZKICU → PEŁNY PLAN (lazy, przy wejściu na Plan). Bieżący tydzień bywa czystym
+  // szkicem (outline:true na wszystkich 7 dniach), gdy powstał jako "next-week zarys" i jego
+  // tydzień nadszedł, a nikt go nie awansował (brak crona/UI). Wykryj i wygeneruj pełny plan
+  // przez istniejący generate (anchor = bieżący tydzień: pisze current=pełny + next=nowy szkic).
+  // every(outline): tylko czysty auto-szkic, nigdy plan z choćby jednym dopiętym dniem.
+  // Szkic nie ma locków (validateWeek ich nie ustawia), więc nic do zachowania.
+  const currentDays = weeks[currentIdx]?.days ?? null;
+  const currentSketch = !!currentDays && currentDays.length > 0 && currentDays.every((d) => d.outline);
+  const promoting = isCurrent && currentSketch;
+  const promoTriggered = useRef(false);
+  useEffect(() => {
+    // Raz na mount (promoTriggered). Refresh/2 taby w trakcie generacji tworzą nowy mount i
+    // reset refa — przed podwójnym AI chroni IDEMPOTENTNY re-check po stronie /api/plan/generate
+    // (jeśli tydzień jest już pełny → already_promoted, bez drugiego calla).
+    if (currentSketch && !promoTriggered.current && !genLoading) {
+      promoTriggered.current = true;
+      generatePlan(weeks[currentIdx].weekStart);
+    }
+  }, [currentSketch]);
+
   return (
     <div className="flex flex-col gap-3">
       {/* WEEK NAVIGATION — strzałki ‹ › */}
@@ -473,8 +493,8 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
         </div>
       )}
 
-      {/* SUWAK GODZIN — tylko bieżący tydzień */}
-      {isCurrent && days && (
+      {/* SUWAK GODZIN — tylko bieżący tydzień, ukryty gdy trwa promocja szkicu */}
+      {isCurrent && days && !promoting && (
         <div style={{ ...card }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Pozostały czas w tygodniu</span>
@@ -532,7 +552,13 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
         </div>
       )}
 
-      {days ? (
+      {promoting ? (
+        // Promocja szkicu w toku — stan ładowania zamiast wyblakłego planu (nie pusty/blady ekran).
+        <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 12, padding: '20px 16px' }}>
+          <div className="animate-spin" style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${C.border}`, borderTopColor: C.cyan, flexShrink: 0 }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Przygotowuję plan tygodnia…</span>
+        </div>
+      ) : days ? (
         <>
           {/* AI INSIGHT (override po modyfikacji czatem, inaczej z bazy) */}
           {(overrideInsight[week.weekStart] ?? week.insight) && (
