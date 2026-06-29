@@ -38,6 +38,7 @@ export interface WeekSlot {
   kind: WeekKind;
   days: PlanDayView[] | null;   // null = brak planu na ten tydzień
   insight: string;
+  userHours: number | null;     // zapisany wybór suwaka (null = nie ustawiono → recHours)
 }
 
 interface PlanProps {
@@ -241,10 +242,15 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
   const [openWorkout, setOpenWorkout] = useState<PlanDayView | null>(null);
   const [openRide, setOpenRide] = useState<PlanActivityRow | null>(null);
   const [loadingDate, setLoadingDate] = useState<string | null>(null);
-  // hours init = baseHours bieżącego tygodnia (nie rekomendacji — user sam decyduje).
-  const [hours, setHours] = useState(() =>
-    computeBaseHours(weeks[currentIdx]?.days ?? null, activitiesByDate)
-  );
+  // hours = wybór suwaka dla BIEŻĄCEGO tygodnia. Źródło prawdy = baza (user_hours);
+  // gdy null → recHours (efekt re-derywacji niżej, bo recHours liczy się dalej w ciele).
+  // Init: zapisana wartość bez mignięcia dla wracających; placeholder dla nowych userów.
+  const [hours, setHours] = useState(() => {
+    const w = weeks[currentIdx];
+    return w?.userHours ?? computeBaseHours(w?.days ?? null, activitiesByDate);
+  });
+  const didDerive = useRef(false);  // strażnik: derywuj hours raz dla bieżącego tygodnia
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 5.7: lokalny override planu per tydzień (po modyfikacji czatem) + stan czatu.
   const [override, setOverride] = useState<Record<string, PlanDayView[]>>({});
@@ -316,6 +322,24 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
   const isCurrent = week.kind === 'current';
   const isPast = week.kind === 'past';
   const isFuture = week.kind === 'future';
+
+  // Auto-zapis wybranych godzin (~800ms po ostatnim ruchu). setHours natychmiast (UI płynne),
+  // zapis opóźniony — seria ruchów suwakiem resetuje timer, jedno zapytanie na końcu.
+  // Wołane TYLKO przez gesty usera (suwak, "Użyj Xh"); re-derywacja używa setHours wprost,
+  // więc null w bazie zostaje null, dopóki user realnie nie wybierze.
+  function onHoursChange(v: number) {
+    setHours(v);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const weekStart = week.weekStart;
+    saveTimer.current = setTimeout(() => {
+      fetch('/api/plan/hours', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ week_start: weekStart, hours: v }),
+      }).catch((e) => console.error('save hours failed', e));
+    }, 800);
+  }
+  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
 
   // 5.7: czat modyfikacji planu — aktualizuje override (UI od razu) + zapisuje w bazie.
   async function sendMod(text?: string) {
@@ -399,6 +423,18 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
       : Math.max(2, Math.min(dynamicMaxHours, baseHours));
   const atRec = hoursClamped === recHours;
 
+  // Re-derywacja hours dla BIEŻĄCEGO tygodnia: user_hours z bazy ?? recHours, SKLAMPOWANE
+  // do aktualnego capu. Raz (didDerive) — kolejne zmiany recHours nie nadpisują ruchów usera.
+  // Clamp = ten sam no-ghost co przy dynamicznym capie: zapisane 9h + zablokowany weekend
+  // (cap 8) → wczytuje się 8, nie wskrzesza 9. Suwak jest current-only, więc nawigacja na
+  // inne tygodnie tu nie wchodzi (isCurrent guard); wartość per tydzień trzyma baza.
+  useEffect(() => {
+    if (!isCurrent || didDerive.current) return;
+    didDerive.current = true;
+    const target = week.userHours ?? recHours;
+    setHours(Math.min(Math.max(2, target), dynamicMaxHours));
+  }, [isCurrent, week.userHours, recHours, dynamicMaxHours]);
+
   return (
     <div className="flex flex-col gap-3">
       {/* WEEK NAVIGATION — strzałki ‹ › */}
@@ -452,7 +488,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
           <div style={{ position: 'relative' }}>
             <input
               type="range" min={2} max={dynamicMaxHours} step={1} value={hoursClamped}
-              onChange={(e) => setHours(+e.target.value)}
+              onChange={(e) => onHoursChange(+e.target.value)}
               style={{ width: '100%', accentColor: C.cyan, cursor: 'pointer', display: 'block' }}
             />
             <div style={{ position: 'absolute', top: -3, left: `${((recHours - 2) / Math.max(1, dynamicMaxHours - 2)) * 100}%`, transform: 'translateX(-50%)', pointerEvents: 'none' }}>
@@ -479,7 +515,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
               </div>
             </div>
             {!atRec && (
-              <button onClick={() => setHours(recHours)} style={{ flexShrink: 0, background: C.green + '1E', color: C.green, border: `1px solid ${C.green}55`, borderRadius: 7, padding: '7px 11px', fontSize: 10.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              <button onClick={() => onHoursChange(recHours)} style={{ flexShrink: 0, background: C.green + '1E', color: C.green, border: `1px solid ${C.green}55`, borderRadius: 7, padding: '7px 11px', fontSize: 10.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 Użyj {recHours}h
               </button>
             )}
