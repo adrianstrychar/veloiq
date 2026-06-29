@@ -62,6 +62,24 @@ export async function POST(req: NextRequest) {
     ? String((body as Record<string, unknown>).week_start)
     : null;
   const weekStart = weekStartParam ? mondayOf(new Date(weekStartParam)) : mondayOf(new Date());
+
+  // IDEMPOTENTNY RE-CHECK (anti-double-gen dla lazy promocji szkicu). Jeśli kotwiczny tydzień ma
+  // już PEŁNY plan (żaden dzień nie jest outline), ktoś go zdążył wygenerować/awansować —
+  // refresh po zakończeniu albo równoległe żądanie. Nie wołaj AI drugi raz. Pusty wiersz/szkic
+  // (są dni outline) → przechodzimy dalej i generujemy. Rzadkie równoległe żądania w oknie przed
+  // pierwszym zapisem dadzą co najwyżej podwójny koszt AI, bez korupcji (upsert nadpisuje spójnie).
+  if (!dryRun) {
+    const { data: anchorRow } = await supabase
+      .from('weekly_plans')
+      .select('plan_json')
+      .eq('athlete_id', athleteId)
+      .eq('week_start', weekStart)
+      .maybeSingle();
+    const anchorDays = ((anchorRow?.plan_json as { days?: { outline?: boolean }[] } | null)?.days) ?? [];
+    if (anchorDays.length > 0 && anchorDays.every((d) => !d.outline)) {
+      return NextResponse.json({ ok: true, already_promoted: true });
+    }
+  }
   const ctl = fm?.ctl != null ? Number(fm.ctl) : null;
   const daysToRace = race?.date
     ? Math.round((new Date(race.date).getTime() - new Date(todayIso).getTime()) / 86400000)
@@ -151,6 +169,11 @@ export async function POST(req: NextRequest) {
 
   // ── Ręczny upsert tygodnia do weekly_plans (działa bez unique constraintu) ──
   async function upsertWeek(ws: string, days: PlanDay[], insight: string) {
+    // UWAGA: `row` CELOWO nie zawiera `user_hours`. Przy promocji/regeneracji bieżący tydzień to
+    // ten sam wiersz, który trzyma ręczny wybór godzin suwaka (weekly_plans.user_hours). Supabase
+    // .update(row) generuje SET tylko dla podanych kluczy, więc pominięcie tej kolumny ZACHOWUJE
+    // wybór usera. NIE dopisywać user_hours (ani nie zamieniać na upsert pełnego wiersza) — to po
+    // cichu skasowałoby wybór godzin przy każdej regeneracji. Pominięcie jest zamierzone.
     const row = {
       athlete_id: athleteId,
       week_start: ws,
