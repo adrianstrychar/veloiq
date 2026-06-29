@@ -153,7 +153,7 @@ export async function recalculateFitnessMetrics(
     ctl: h.ctl,
     atl: h.atl,
     tsb: h.tsb,
-    daily_tss: 0,
+    daily_tss: h.tss,
     calculated_at: new Date().toISOString(),
   }));
 
