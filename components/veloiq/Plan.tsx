@@ -378,8 +378,11 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
   const maxMin = days ? maxAchievableMin(days, (date) => isDoneDate(activitiesByDate, date)) : 960;
   const dynamicMaxHours = Math.max(3, Math.min(16, Math.ceil(maxMin / 60)));
   const hoursClamped = Math.min(hours, dynamicMaxHours);
-  const hasLocked = !!days && days.some((d) => d.locked);
-  const atCap = isCurrent && hoursClamped >= dynamicMaxHours && hasLocked;
+  // Dni, których lock REALNIE ogranicza cap (odblokowanie każdego z nich podnosi maxAchievableMin):
+  // locked treningowy traci base+headroom, locked OFF traci konwersję +60. locked+done wykluczamy —
+  // done i tak wypada z maxAchievableMin, więc jego odblokowanie nic nie da (nie wskazujemy go userowi).
+  const cappingLockedDays = days ? days.filter((d) => d.locked && !isDoneDate(activitiesByDate, d.date)) : [];
+  const atCap = isCurrent && hoursClamped >= dynamicMaxHours && cappingLockedDays.length > 0;
   // Bez ducha: gdy cap spadnie poniżej zapamiętanego hours (np. po zablokowaniu weekendu),
   // dociśnij stan w dół. Po odblokowaniu suwak NIE skacze do starej wartości — zostaje na clampie.
   // BRAMKA isCurrent: clamp dotyka hours TYLKO na bieżącym tygodniu. Bez niej cap oglądanego
@@ -550,7 +553,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
           </div>
           {atCap && (
             <div style={{ fontSize: 11, color: C.yellow, marginTop: 6 }}>
-              Maks ~{(maxMin / 60).toFixed(1)}h w tym układzie — odblokuj weekend, by dodać więcej.
+              Maks ~{(maxMin / 60).toFixed(1)}h w tym układzie — odblokuj {cappingLockedDays.map((d) => dowLabel(d.date)).join(', ')}, by dodać więcej.
             </div>
           )}
         </div>
