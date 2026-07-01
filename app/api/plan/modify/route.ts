@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { buildModifyPrompt, validateWeek, type PlanDay, type ModifyContext } from '@/lib/ai/plan-generate';
+import { buildModifyPrompt, validateWeek, parseCommandDows, type PlanDay, type ModifyContext } from '@/lib/ai/plan-generate';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -88,29 +88,33 @@ export async function POST(req: NextRequest) {
       const parsed = JSON.parse(txt.slice(a, b + 1));
       const v = validateWeek(parsed.days, weekStart, { outline: false });
       if (!v.ok || !v.days) { lastErr = v.error ?? 'walidacja nieudana'; continue; }
-      // ── TWARDY ENFORCEMENT lockowanych dni (serwer, nie ufamy AI) ──
-      // Jedno źródło prawdy: oryginał (currentDays.locked) + intencja (changedDays/unlock).
+      // ── TWARDY ENFORCEMENT lockowanych dni (serwer, NIE ufamy AI przy lockowaniu) ──
+      // LOCK SET = dni JAWNIE wskazane przez usera (AI: userSpecifiedDays) ∩ dni faktycznie
+      // obecne w SUROWYM tekście komendy (leksykon parseCommandDows). Przecięcie jest jednostronne:
+      // może lock set tylko ZWĘZIĆ, nigdy poszerzyć → dzień nieobecny w tekście NIE zostanie
+      // zlockowany, choćby AI wrzucił go do userSpecifiedDays. Over-locking niemożliwy z konstrukcji.
+      // changedDays (bilansowanie AI, np. Cz/Pt) NIE lockuje — dni przebudowane zostają skalowalne suwakiem.
       const off = new Set<number>(Array.isArray(parsed.off) ? parsed.off.map(Number) : []);
-      const changed = new Set<number>(Array.isArray(parsed.changedDays) ? parsed.changedDays.map(Number) : []);
       const unlock = new Set<number>(Array.isArray(parsed.unlock) ? parsed.unlock.map(Number) : []);
-      // Kolejność: off → unlock → changed → locked-restore → ogólny. Każdy case ma JAWNY
-      // warunek (nie polega na pozycji w łańcuchu) — odporne na przyszłe przestawienie/dodanie case'ów.
+      const userSpecified = new Set<number>(Array.isArray(parsed.userSpecifiedDays) ? parsed.userSpecifiedDays.map(Number) : []);
+      const commandDays = new Set<number>(parseCommandDows(message));
+      const lockSet = new Set<number>(Array.from(userSpecified).filter((d) => commandDays.has(d)));
+      // Każdy case ma JAWNY warunek (nie polega na pozycji w łańcuchu).
       days = v.days.map((aiDay) => {
         const dow = aiDay.dow;
         const orig = currentDays.find((o) => o.dow === dow);
-        // 0. JAWNE WOLNE (off) → wymuś OFF+locked, IGNORUJĄC co AI wstawiło. off WYGRYWA z changed.
+        // 0. JAWNE WOLNE (off) → typ OFF. locked TYLKO gdy dzień w lock set (jawnie wymieniony w komendzie).
         if (off.has(dow)) {
-          return { ...aiDay, type: 'OFF' as const, label: 'Odpoczynek', tss: 0, dur_min: 0, watt: '–', hr: '–', zones: [0, 0, 0, 0, 0], locked: true };
+          return { ...aiDay, type: 'OFF' as const, label: 'Odpoczynek', tss: 0, dur_min: 0, watt: '–', hr: '–', zones: [0, 0, 0, 0, 0], locked: lockSet.has(dow) };
         }
-        // 1. jawne odwołanie → zmiana AI + zdejmij lock
+        // 1. jawne odblokowanie → zmiana AI + zdejmij lock
         if (unlock.has(dow)) return { ...aiDay, locked: false };
-        // 2. jawna zmiana konkretnego dnia → zmiana AI + ustaw lock
-        if (changed.has(dow)) return { ...aiDay, locked: true };
-        // 3. locked w oryginale i NIE wskazany jawnie (off/changed/unlock) → PRZYWRÓĆ oryginał.
-        //    Warunek jawny, niezależny od kolejności case'ów (samodokumentujący, odporny na zmiany).
-        if (orig?.locked && !off.has(dow) && !changed.has(dow) && !unlock.has(dow)) return { ...orig };
-        // 4. dzień nielockowany, komenda ogólna → zmiana AI, lock bez zmian (z oryginału)
-        return { ...aiDay, locked: !!orig?.locked };
+        // 2. dzień JAWNIE WSKAZANY w komendzie (lock set) → zmiana AI + lock
+        if (lockSet.has(dow)) return { ...aiDay, locked: true };
+        // 3. lock z POPRZEDNICH komend (orig.locked), NIE ruszany teraz → PRZYWRÓĆ oryginał (immutability).
+        if (orig?.locked) return { ...orig };
+        // 4. dzień przebudowany przez AI (bilansowanie) albo nietknięty, bez wcześniejszego locka → BEZ locka.
+        return { ...aiDay, locked: false };
       });
       insight = typeof parsed.insight === 'string' ? parsed.insight : 'Plan zaktualizowany.';
       break;

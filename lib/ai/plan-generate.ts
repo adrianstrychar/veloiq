@@ -164,7 +164,8 @@ export function buildModifyPrompt(
     'Rozgrzewka min 20 min przed Z2/SST, 25 min przed THR/OU/VO2. zones to % czasu w Z1–Z5, suma ~100.',
     'Label: krótka nazwa (typ + ewentualnie struktura), MAX ~3 słowa, bez zdań.',
     'insight: 1–2 zdania PO POLSKU co zmieniłeś i dlaczego — MUSI zgadzać się z nowym planem.',
-    'Zwróć WYŁĄCZNIE JSON (bez markdown): {"days":[...7 dni dow 1..7...],"insight":"...","changedDays":[dow jawnie zmienione],"unlock":[dow do odblokowania],"off":[dow jawnie wskazane jako wolne]}.',
+    'userSpecifiedDays: WYŁĄCZNIE dni (dow), które user JAWNIE wymienił w prośbie (np. "wtorek Z2, środa wolna" → [2,3]). NIE dokładaj tu dni, które tylko przebudowałeś dla równowagi TSS — te idą do changedDays. Serwer blokuje (lock) TYLKO userSpecifiedDays.',
+    'Zwróć WYŁĄCZNIE JSON (bez markdown): {"days":[...7 dni dow 1..7...],"insight":"...","changedDays":[dow przebudowane w planie],"userSpecifiedDays":[dow jawnie wymienione przez usera],"unlock":[dow do odblokowania],"off":[dow jawnie wskazane jako wolne]}.',
   ].join(' ');
 
   const user = [
@@ -176,6 +177,35 @@ export function buildModifyPrompt(
   ].join('\n');
 
   return { system, user };
+}
+
+// Leksykon: dni tygodnia (dow 1..7) faktycznie WYSTĘPUJĄCE w surowym tekście komendy usera.
+// Diakrytyki normalizowane (sroda=środa), case-insensitive, dopasowanie po rdzeniu (wtorek/wtorki).
+// UŻYCIE: walidacja lock set — serwer lockuje TYLKO userSpecifiedDays ∩ parseCommandDows(message),
+// więc dzień nieobecny w tekście NIE zostanie zablokowany, choćby AI wrzucił go do userSpecifiedDays.
+// Przecięcie jest jednostronne (może lock set tylko zwęzić) → over-locking niemożliwy z konstrukcji.
+// Under-locking przy egzotycznym sformułowaniu = łagodna degradacja (dzień po prostu skalowalny).
+const DOW_PATTERNS: Array<[RegExp, number[]]> = [
+  [/weekend/, [6, 7]],
+  [/\brobocz|dni\s+robocze/, [1, 2, 3, 4, 5]],
+  [/\bponiedzial|\bpn\b/, [1]],
+  [/\bwtor|\bwt\b/, [2]],
+  [/\bsrod[aey]|\bsr\b/, [3]],
+  [/\bczwart|\bczw\b/, [4]],
+  [/\bpiat|\bpt\b/, [5]],
+  [/\bsobot|\bsob\b/, [6]],
+  [/\bniedziel|\bndz\b|\bnd\b/, [7]],
+];
+
+export function parseCommandDows(message: string): number[] {
+  const norm = message
+    .toLowerCase()
+    .replace(/ł/g, 'l')                    // ł nie jest łączonym diakrytykiem — ręcznie
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');      // usuń pozostałe diakrytyki (ą,ć,ę,ś,ó,ż,ź,ń)
+  const dows = new Set<number>();
+  for (const [re, list] of DOW_PATTERNS) if (re.test(norm)) list.forEach((d) => dows.add(d));
+  return Array.from(dows).sort((a, b) => a - b);
 }
 
 // ── Walidacja ────────────────────────────────────────────────────────────────
