@@ -96,7 +96,7 @@ function Cell({ label, value, color }: { label: string; value: string; color?: s
   );
 }
 
-function DayCard({ d, isToday, done, loading, actual, onClick }: { d: PlanDayView; isToday: boolean; done: boolean; loading: boolean; actual?: PlanActivityRow; onClick?: () => void }) {
+function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: PlanDayView; isToday: boolean; isPast: boolean; done: boolean; loading: boolean; actual?: PlanActivityRow; onClick?: () => void }) {
   const isRemoved = !!d.removed;
   const isOff = d.type === 'OFF';
   const offLike = isOff || isRemoved; // usunięta sesja renderuje się jak OFF (szara)
@@ -113,14 +113,14 @@ function DayCard({ d, isToday, done, loading, actual, onClick }: { d: PlanDayVie
       style={{
         ...card, padding: '12px 14px', position: 'relative',
         border: `1px solid ${isToday ? C.cyan : hover ? tc + '88' : C.border}`,
-        opacity: isRemoved ? 0.5 : isOutline ? 0.6 : (done && !isToday ? 0.55 : 1),
+        opacity: isRemoved ? 0.5 : isOutline ? 0.6 : ((done || isPast) && !isToday ? 0.55 : 1),
         cursor: clickable ? 'pointer' : 'default',
         transition: 'border-color 0.15s',
       }}
     >
-      {(isToday || done) && (
-        <div style={{ position: 'absolute', top: -8, left: 14, background: C.cyan, color: C.bg, fontSize: 8, fontWeight: 600, padding: '2px 8px', borderRadius: 4, letterSpacing: '0.1em' }}>
-          {isToday ? (done ? 'DZIŚ · ZROBIONE ✓' : 'DZIŚ') : 'ZROBIONE ✓'}
+      {(isToday || done || isPast) && (
+        <div style={{ position: 'absolute', top: -8, left: 14, background: (done || isToday) ? C.cyan : C.muted, color: C.bg, fontSize: 8, fontWeight: 600, padding: '2px 8px', borderRadius: 4, letterSpacing: '0.1em' }}>
+          {isToday ? (done ? 'DZIŚ · ZROBIONE ✓' : 'DZIŚ') : done ? 'ZROBIONE ✓' : 'MINĄŁ'}
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -375,7 +375,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
   const baseHours = computeBaseHours(days, activitiesByDate);
   // Dynamiczny sufit suwaka z AKTUALNEGO stanu (blokady go obniżają). maxAchievableMin = mirror
   // pojemności UP w scaleWeek, więc cap = realnie osiągalny czas (suwak nie głuchnie ani nie kłamie).
-  const maxMin = days ? maxAchievableMin(days, (date) => isDoneDate(activitiesByDate, date)) : 960;
+  const maxMin = days ? maxAchievableMin(days, (date) => isDoneDate(activitiesByDate, date), todayISO) : 960;
   const dynamicMaxHours = Math.max(3, Math.min(16, Math.ceil(maxMin / 60)));
   const hoursClamped = Math.min(hours, dynamicMaxHours);
   // Dni, których lock REALNIE ogranicza cap (odblokowanie każdego z nich podnosi maxAchievableMin):
@@ -393,7 +393,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
   }, [isCurrent, dynamicMaxHours, hours]);
   const scaledDays: PlanDayView[] | null = days
     ? isCurrent
-      ? scaleWeek(days, hoursClamped * 60, (date) => isDoneDate(activitiesByDate, date))
+      ? scaleWeek(days, hoursClamped * 60, (date) => isDoneDate(activitiesByDate, date), todayISO)
       : days
     : null;
 
@@ -628,6 +628,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
                   <DayCard
                     d={d}
                     isToday={isCurrent && d.date === todayISO}
+                    isPast={d.date < todayISO}
                     done={done}
                     loading={loadingDate === d.date}
                     actual={matched}

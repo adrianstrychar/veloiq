@@ -121,16 +121,18 @@ const SURVIVOR_PRIORITY = ['VO2', 'OU', 'THR', 'SST', 'Z2', 'LONG', 'Z1'];
 // skalowalnych + konwersje OFF→Z1 (dni OFF nie-locked, nie-done). Używana do dynamicznego max suwaka.
 // Jeśli zmienisz dźwignie UP w scaleWeek (granice warmup/cooldown, OFF→Z1, nowa dźwignia) — ZAKTUALIZUJ
 // TĘ funkcję, inaczej cap suwaka rozjedzie się z realnym skalowaniem (głuchy suwak albo nieosiągalny limit).
-export function maxAchievableMin<T extends ScalableDay>(days: T[], isDone: (date: string) => boolean): number {
+export function maxAchievableMin<T extends ScalableDay>(days: T[], isDone: (date: string) => boolean, todayISO: string): number {
+  const isPast = (date: string) => date < todayISO; // ostry '<' — dziś NIE jest przeszły (dzień trwa)
   let base = 0;
   let headroom = 0;
   for (const d of days) {
-    if (d.type === 'OFF' || isDone(d.date) || d.locked) continue;
+    if (d.type === 'OFF' || isDone(d.date) || isPast(d.date) || d.locked) continue;
     const ss = sessionStructure(d.type);
     base += d.dur_min;
     headroom += (ss.cooldownMax - ss.cooldownDefault) + (ss.warmupMax - ss.warmupDefault);
   }
-  const convOff = days.filter((d) => d.type === 'OFF' && !isDone(d.date) && !d.locked).length;
+  // Przeszłe dni OFF nie konwertują się na Z1 — suwak nie dokłada jazdy na miniony dzień.
+  const convOff = days.filter((d) => d.type === 'OFF' && !isDone(d.date) && !isPast(d.date) && !d.locked).length;
   return base + headroom + convOff * 60;
 }
 
@@ -139,12 +141,14 @@ export function maxAchievableMin<T extends ScalableDay>(days: T[], isDone: (date
 export function scaleWeek<T extends ScalableDay>(
   days: T[],
   targetDurMin: number,
-  isDone: (date: string) => boolean
+  isDone: (date: string) => boolean,
+  todayISO: string
 ): T[] {
-  // Stan roboczy per dzień (kopie). Skalowalne = NOT done, NOT OFF.
+  const isPast = (date: string) => date < todayISO; // ostry '<' — dziś NIE jest przeszły (dzień trwa)
+  // Stan roboczy per dzień (kopie). Skalowalne = NOT done, NOT OFF, NOT past, NOT locked.
   type W = { idx: number; type: string; core: number; w: number; c: number; origDur: number; origTss: number; removed: boolean };
   const work: (W | null)[] = days.map((d, idx) => {
-    if (d.type === 'OFF' || isDone(d.date) || d.locked) return null; // locked nietykalne dla suwaka
+    if (d.type === 'OFF' || isDone(d.date) || isPast(d.date) || d.locked) return null; // przeszłe/done/locked nietykalne
     const ss = sessionStructure(d.type);
     const core = Math.max(0, d.dur_min - ss.warmupDefault - ss.cooldownDefault);
     return { idx, type: d.type, core, w: ss.warmupDefault, c: ss.cooldownDefault, origDur: d.dur_min, origTss: d.tss, removed: false };
@@ -161,8 +165,9 @@ export function scaleWeek<T extends ScalableDay>(
 
   let delta = targetDurMin - baseDur;
 
-  // Dni OFF bieżącego tygodnia (kandydaci na Z1 przy skalowaniu w górę).
-  const offIdxs = days.map((d, idx) => ({ d, idx })).filter(({ d }) => d.type === 'OFF' && !isDone(d.date) && !d.locked).map(({ idx }) => idx);
+  // Dni OFF bieżącego tygodnia (kandydaci na Z1 przy skalowaniu w górę). Przeszłe OFF wykluczone —
+  // suwak nie dokłada jazdy na miniony dzień (isPast, spójnie z maxAchievableMin).
+  const offIdxs = days.map((d, idx) => ({ d, idx })).filter(({ d }) => d.type === 'OFF' && !isDone(d.date) && !isPast(d.date) && !d.locked).map(({ idx }) => idx);
   const converted = new Map<number, { dur: number }>(); // idx OFF → nowy Z1
 
   if (delta > 0) {
