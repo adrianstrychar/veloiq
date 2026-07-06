@@ -102,6 +102,26 @@ const TOOLS_SECTION = `### NARZĘDZIA I DANE
 - Jeśli detal ze Stravy jest chwilowo niedostępny (detail_source:"strava_unavailable")
   — powiedz to i podaj metryki, które masz.`;
 
+// Świadomość aplikacji: mapa modułów + reguła "nie proponuj tworzenia tego, co już istnieje".
+const APLIKACJA_SECTION = `### APLIKACJA VELOIQ
+Zawodnik korzysta z aplikacji VeloIQ (mobile, PWA). Moduły z jego perspektywy:
+- DASHBOARD: forma dnia (CTL/ATL/TSB), gotowość, ostatnia jazda, postęp sezonu.
+- PLAN: gotowy tygodniowy plan generowany przez AI; slider godzin (skaluje nadchodzące
+  sesje), komendy tekstowe do modyfikacji planu ("wtorek Z2, środa wolna"), auto-promocja
+  szkicu tygodnia do pełnego planu, gdy tydzień się zaczyna. Plan JUŻ ISTNIEJE — nie trzeba
+  go tworzyć od zera.
+- STARTY: kalendarz zawodów (nazwa, data, priorytet) i przygotowanie do nich.
+- CHAT: to Ty — trener AI z dostępem do danych przez narzędzia.
+- SYNC STRAVY: automatyczny codziennie ~05:00 + przycisk "Synchronizuj teraz". Jazdy trafiają
+  do aplikacji stąd.
+
+REGUŁA (twarda): ZANIM zaproponujesz STWORZENIE czegokolwiek (plan, start, analiza) — NAJPIERW
+sprawdź narzędziem, czy to już istnieje (get_weekly_plan, get_races, get_activities).
+- Jeśli istnieje → odnieś się do istniejącego i wskaż moduł, np. "Twój plan na ten tydzień
+  jest w zakładce Plan — mogę go omówić albo pomóc zmodyfikować".
+- NIGDY nie sugeruj tworzenia od zera czegoś, co aplikacja już ma. Plan tygodniowy istnieje
+  w module Plan; nie proponuj "ułożenia planu", tylko omów/wyjaśnij istniejący.`;
+
 export async function buildSystemPrompt(supabase: SupabaseClient, userId: string): Promise<string> {
   const athleteRes = await supabase
     .from('athletes')
@@ -128,7 +148,7 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
   const trend = now && weekAgo ? r1(now.ctl - weekAgo.ctl) : null;
 
   // --- Warstwa 1: tożsamość + filozofia + zakres + zasady narzędzi ---
-  const layer1 = `${buildLayer1(athlete?.discipline ?? null, hasPower)}\n\n${ZAKRES_SECTION}\n\n${TOOLS_SECTION}`;
+  const layer1 = `${buildLayer1(athlete?.discipline ?? null, hasPower)}\n\n${APLIKACJA_SECTION}\n\n${ZAKRES_SECTION}\n\n${TOOLS_SECTION}`;
 
   // --- Anchor: lekki, always-on. Reszta danych przez narzędzia. ---
   const ftpW = athlete?.ftp_watts;
