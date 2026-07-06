@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
     try {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
+        max_tokens: 5000, // structure + reguła spójności minut → model liczy w prozie przed JSON-em; parser wycina tekst wokół JSON
         system,
         messages: [{ role: 'user', content: userMsg }],
       });
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
         const orig = currentDays.find((o) => o.dow === dow);
         // 0. JAWNE WOLNE (off) → typ OFF. locked TYLKO gdy dzień w lock set (jawnie wymieniony w komendzie).
         if (off.has(dow)) {
-          return { ...aiDay, type: 'OFF' as const, label: 'Odpoczynek', tss: 0, dur_min: 0, watt: '–', hr: '–', zones: [0, 0, 0, 0, 0], locked: lockSet.has(dow) };
+          return { ...aiDay, type: 'OFF' as const, label: 'Odpoczynek', tss: 0, dur_min: 0, watt: '–', hr: '–', zones: [0, 0, 0, 0, 0], locked: lockSet.has(dow), structure: null };
         }
         // 1. jawne odblokowanie → zmiana AI + zdejmij lock
         if (unlock.has(dow)) return { ...aiDay, locked: false };
@@ -115,6 +115,18 @@ export async function POST(req: NextRequest) {
         if (orig?.locked) return { ...orig };
         // 4. dzień przebudowany przez AI (bilansowanie) albo nietknięty, bez wcześniejszego locka → BEZ locka.
         return { ...aiDay, locked: false };
+      });
+      // ── OCHRONA STRUCTURE (nie ufamy, że AI ją przepisze): dzień bez structure, którego typ,
+      // czas i TSS są identyczne z oryginałem = echo dnia nieruszonego → przywróć structure
+      // (i pochodne label/watt) z oryginału. Dzień realnie przebudowany bez structure zostaje
+      // null → render/insight spadają na fallback (łagodna degradacja, nie błąd modyfikacji).
+      days = days.map((day) => {
+        if (day.structure || day.type === 'OFF') return day;
+        const orig = currentDays.find((o) => o.dow === day.dow);
+        if (orig?.structure && orig.type === day.type && orig.dur_min === day.dur_min && orig.tss === day.tss) {
+          return { ...day, structure: orig.structure, label: orig.label, watt: orig.watt };
+        }
+        return day;
       });
       insight = typeof parsed.insight === 'string' ? parsed.insight : 'Plan zaktualizowany.';
       break;

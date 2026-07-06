@@ -1,8 +1,10 @@
 import { C } from '@/lib/theme';
+import { type DayStructure, isOU, ouBlockMin } from '@/lib/structure';
 
 // Deterministyczny generator rozpiski treningu (ETAP 5.4) — port buildWorkout z mockupu.
-// Struktura interwałów parsowana z labela ("Threshold 2×15min" → 2×15), żeby rozpiska
-// ZGADZAŁA się z tym co mówi label. Moc liczona z FTP przekazanego z bazy (zero hardcode).
+// Dni ze `structure` (nowy kontrakt): rozpiska i profil budowane Z PARAMETRÓW (buildFromStructure)
+// — label, tekst i rysunek z jednego źródła. Dni bez structure (stare tygodnie): fallback do
+// syntezy z labela ("Threshold 2×15min" → 2×15) + zaszytych defaultów, jak dotąd.
 
 export interface WorkoutSegment {
   k: string;            // nazwa segmentu
@@ -51,6 +53,45 @@ export const FTP_LINE_COLOR = '#4A8FC7';
 
 // Powyżej tylu powtórzeń w JEDNEJ serii → zwiń w zgrupowany blok z etykietą.
 const REPS_GROUP_THRESHOLD = 8;
+
+// Profil ze `structure` (nowy kontrakt): segmenty budowane Z PARAMETRÓW, moc = %FTP z realnych
+// watów. Zero założeń o proporcji under/over czy długości przerw — wszystko przychodzi w danych.
+function buildFromStructure(d: WorkoutInput, s: DayStructure, ftp: number): ExpandedSeg[] {
+  const ss = sessionStructure(d.type);
+  const wUsed = d.warmup ?? ss.warmupDefault;
+  const cUsed = d.cooldown ?? ss.cooldownDefault;
+  const pct = (watts: number) => Math.round((watts / ftp) * 100);
+  const segs: ExpandedSeg[] = [];
+  segs.push({ kind: 'warmup', min: wUsed, pctFtp: 58, color: PC.gray });
+
+  if (isOU(s)) {
+    for (let b = 0; b < s.reps; b++) {
+      if (s.cycles > REPS_GROUP_THRESHOLD) {
+        segs.push({ kind: 'over', min: ouBlockMin(s), pctFtp: pct(s.over_w), color: PC.over, label: `${s.cycles}×${s.under_min}/${s.over_min}` });
+      } else {
+        for (let j = 0; j < s.cycles; j++) {
+          segs.push({ kind: 'under', min: s.under_min, pctFtp: pct(s.under_w), color: PC.yellow });
+          segs.push({ kind: 'over', min: s.over_min, pctFtp: pct(s.over_w), color: PC.over });
+        }
+      }
+      if (b < s.reps - 1) segs.push({ kind: 'rest', min: s.rest_min, pctFtp: 50, color: PC.gray });
+    }
+  } else {
+    const workColor = d.type === 'VO2' ? PC.vo2 : PC.yellow;
+    if (s.reps > REPS_GROUP_THRESHOLD) {
+      const totalWork = s.reps * s.work_min + (s.reps - 1) * s.rest_min;
+      segs.push({ kind: 'work', min: totalWork, pctFtp: pct(s.work_w), color: workColor, label: `${s.reps}×${s.work_min}min` });
+    } else {
+      for (let i = 0; i < s.reps; i++) {
+        segs.push({ kind: 'work', min: s.work_min, pctFtp: pct(s.work_w), color: workColor });
+        if (i < s.reps - 1) segs.push({ kind: 'rest', min: s.rest_min, pctFtp: 50, color: PC.gray });
+      }
+    }
+  }
+
+  segs.push({ kind: 'cooldown', min: cUsed, pctFtp: 50, color: PC.gray });
+  return segs;
+}
 
 // Buduje atomową listę segmentów profilu per typ.
 function buildExpanded(d: WorkoutInput, struct: { reps: number; minutes: number } | null): ExpandedSeg[] {
@@ -132,6 +173,7 @@ export interface WorkoutInput {
   dur_min: number;
   warmup?: number;   // nadpisanie rozgrzewki (min) — z suwaka godzin (scaleWeek)
   cooldown?: number; // nadpisanie schłodzenia (min)
+  structure?: DayStructure | null; // parametry substruktury z plan_json (brak = stary plan → fallback)
 }
 
 // Zakresy i domyślne rozgrzewki/schłodzenia per typ (minuty). Domyślne = obecne
@@ -179,7 +221,12 @@ export function buildWorkout(d: WorkoutInput, ftp: number): Workout {
   const ss = sessionStructure(T);
   const wUsed = d.warmup ?? ss.warmupDefault;     // rozgrzewka (z suwaka lub domyślna)
   const cUsed = d.cooldown ?? ss.cooldownDefault; // schłodzenie
-  const struct = parseStructure(d.label) ?? DEFAULT_STRUCT[T] ?? null;
+  // Substruktura: parametry z plan_json (jedno źródło prawdy) albo fallback z labela/defaultów.
+  const sOU = d.structure && isOU(d.structure) ? d.structure : null;
+  const sWork = d.structure && !isOU(d.structure) ? d.structure : null;
+  const struct = d.structure
+    ? { reps: d.structure.reps, minutes: sOU ? ouBlockMin(sOU) : sWork!.work_min }
+    : parseStructure(d.label) ?? DEFAULT_STRUCT[T] ?? null;
   const ivT = struct ? `${struct.reps}×${struct.minutes} min` : '';
 
   const segs: WorkoutSegment[] = [];
@@ -199,25 +246,33 @@ export function buildWorkout(d: WorkoutInput, ftp: number): Workout {
     tips = ['Oddech swobodny, powinieneś móc rozmawiać.', 'Trzymaj równe tempo — to nie wyścig, buduj bazę.'];
   } else if (T === 'SST') {
     segs.push({ k: 'Rozgrzewka', t: `${wUsed} min`, w: wr(50, 65), hr: '120–140', c: C.green, note: '+ 3×30s narastająco' });
-    segs.push({ k: 'Interwały', t: ivT, w: wr(88, 94), hr: '155–168', c: C.yellow, note: 'sweet spot · przerwy 5 min Z1', reps: true });
+    segs.push({ k: 'Interwały', t: ivT, w: sWork ? `${sWork.work_w}W` : wr(88, 94), hr: '155–168', c: C.yellow, note: `sweet spot · przerwy ${sWork ? sWork.rest_min : 5} min Z1`, reps: true });
     segs.push({ k: 'Schłodzenie', t: `${cUsed} min`, w: wr(45, 55), hr: '<125', c: C.muted });
     goal = 'Próg bez nadmiernego zmęczenia — najlepszy stosunek bodziec/koszt.';
     tips = ['Kadencja 85–90.', 'Moc równa przez cały interwał, nie zaczynaj za mocno.'];
   } else if (T === 'THR') {
     segs.push({ k: 'Rozgrzewka', t: `${wUsed} min`, w: wr(50, 65), hr: '120–145', c: C.green, note: '+ 3×(10s @110% openery)' });
-    segs.push({ k: 'Interwały', t: ivT, w: wr(95, 102), hr: '162–174', c: C.yellow, note: 'próg · przerwy 6 min Z1', reps: true });
+    segs.push({ k: 'Interwały', t: ivT, w: sWork ? `${sWork.work_w}W` : wr(95, 102), hr: '162–174', c: C.yellow, note: `próg · przerwy ${sWork ? sWork.rest_min : 6} min Z1`, reps: true });
     segs.push({ k: 'Schłodzenie', t: `${cUsed} min`, w: wr(45, 55), hr: '<125', c: C.muted });
     goal = 'Podniesienie FTP — to Twoja luka. Trzymaj moc równo aż do końca każdego bloku.';
     tips = ['Ostatnie 3 min są najważniejsze — nie odpuszczaj.', 'Jeśli moc spada >5% w 2. bloku, skróć ostatni interwał.'];
   } else if (T === 'OU') {
     segs.push({ k: 'Rozgrzewka', t: `${wUsed} min`, w: wr(50, 65), hr: '120–145', c: C.green, note: '+ 3×(10s @110% openery)' });
-    segs.push({ k: 'Interwały', t: ivT, w: `${w(95)}/${w(110)}W`, hr: '155–177', c: '#C68A4E', note: 'under 95% / over 110% · przerwy 5 min Z1', reps: true });
+    segs.push({
+      k: 'Interwały', t: ivT,
+      w: sOU ? `${sOU.under_w}/${sOU.over_w}W` : `${w(95)}/${w(110)}W`,
+      hr: '155–177', c: '#C68A4E',
+      note: sOU
+        ? `${sOU.cycles}× (${sOU.under_min}min @${sOU.under_w}W + ${sOU.over_min}min @${sOU.over_w}W) · przerwy ${sOU.rest_min} min Z1`
+        : 'under 95% / over 110% · przerwy 5 min Z1',
+      reps: true,
+    });
     segs.push({ k: 'Schłodzenie', t: `${cUsed} min`, w: wr(45, 55), hr: '<125', c: C.muted });
     goal = 'Tolerancja mleczanu i moc progowa. „Over" boli, ale „under" to Twój aktywny odpoczynek.';
     tips = ['Nie zwalniaj na under — to ma być wciąż 95% FTP.', 'Jeśli over przestaje być osiągalny, zakończ blok wcześniej.'];
   } else if (T === 'VO2') {
     segs.push({ k: 'Rozgrzewka', t: `${wUsed} min`, w: wr(50, 65), hr: '120–150', c: C.green, note: '+ 3×(15s @120% openery)' });
-    segs.push({ k: 'Interwały', t: ivT, w: wr(110, 120), hr: '175–186', c: C.red, note: 'VO2max · przerwy równe (1:1) Z1', reps: true });
+    segs.push({ k: 'Interwały', t: ivT, w: sWork ? `${sWork.work_w}W` : wr(110, 120), hr: '175–186', c: C.red, note: `VO2max · przerwy ${sWork ? `${sWork.rest_min} min` : 'równe (1:1)'} Z1`, reps: true });
     segs.push({ k: 'Schłodzenie', t: `${cUsed} min`, w: wr(45, 55), hr: '<125', c: C.muted });
     goal = 'Pułap tlenowy. Pierwsze 2 powtórzenia mają wydawać się „za łatwe".';
     tips = ['Buduj moc przez pierwsze 30s, potem trzymaj.', 'Jeśli ostatnie powtórzenie się sypie, zrób jedno mniej — jakość > ilość.'];
@@ -259,5 +314,7 @@ export function buildWorkout(d: WorkoutInput, ftp: number): Workout {
     };
   }
 
-  return { segs, goal, tips, nutrition, expanded: buildExpanded(d, struct) };
+  // Profil: ze structure gdy jest (te same parametry co tekst wyżej), inaczej dotychczasowa synteza.
+  const expanded = d.structure ? buildFromStructure(d, d.structure, ftp) : buildExpanded(d, struct);
+  return { segs, goal, tips, nutrition, expanded };
 }
