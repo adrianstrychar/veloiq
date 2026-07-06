@@ -3,6 +3,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { buildSystemPrompt } from '@/lib/ai/prompt';
 import { TOOL_DEFS, dispatch, type ToolCtx } from '@/lib/ai/chat-tools';
+import { WRITE_TOOL_DEFS, isWriteTool, dispatchWrite } from '@/lib/ai/chat-write-tools';
+
+const ALL_TOOLS = [...TOOL_DEFS, ...WRITE_TOOL_DEFS];
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -61,7 +64,7 @@ export async function POST(request: NextRequest) {
       model: MODEL,
       max_tokens: MAX_TOKENS,
       system: systemPrompt,
-      tools: TOOL_DEFS,
+      tools: ALL_TOOLS,
       messages,
     });
 
@@ -76,7 +79,8 @@ export async function POST(request: NextRequest) {
     for (const block of resp.content) {
       if (block.type !== 'tool_use') continue;
       try {
-        const data = await dispatch(block.name, block.input as Record<string, unknown>, ctx);
+        const input = block.input as Record<string, unknown>;
+        const data = isWriteTool(block.name) ? await dispatchWrite(block.name, input, ctx) : await dispatch(block.name, input, ctx);
         toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(data) });
       } catch (e) {
         // Błąd handlera → is_error (model dostaje info, może zaproponować sync); request nie pada.
@@ -96,7 +100,7 @@ export async function POST(request: NextRequest) {
     model: MODEL,
     max_tokens: MAX_TOKENS,
     system: systemPrompt,
-    tools: TOOL_DEFS,
+    tools: ALL_TOOLS,
     tool_choice: { type: 'none' },
     messages,
   });
