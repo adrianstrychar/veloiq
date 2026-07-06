@@ -17,7 +17,7 @@ export async function GET() {
   const { data: athlete, error: athleteError } = await supabase
     .from('athletes')
     .select(
-      'id, ftp_watts, hrmax, strava_access_token, strava_refresh_token, strava_token_expires_at'
+      'id, strava_id, ftp_watts, hrmax, strava_access_token, strava_refresh_token, strava_token_expires_at'
     )
     .eq('user_id', user.id)
     .single();

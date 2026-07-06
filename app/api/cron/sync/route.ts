@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
   const { data: athletes, error } = await supabase
     .from('athletes')
-    .select('id, ftp_watts, hrmax, strava_access_token, strava_refresh_token, strava_token_expires_at')
+    .select('id, strava_id, ftp_watts, hrmax, strava_access_token, strava_refresh_token, strava_token_expires_at')
     .not('strava_refresh_token', 'is', null);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

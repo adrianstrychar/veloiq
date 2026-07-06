@@ -66,6 +66,39 @@ export interface StravaActivity {
   average_cadence?: number;
 }
 
+// Totale z GET /athletes/{id}/stats (dystanse w metrach).
+export interface StravaTotals {
+  count: number;
+  distance: number;
+  moving_time: number;
+  elapsed_time: number;
+  elevation_gain: number;
+}
+
+export interface StravaAthleteStats {
+  ytd_ride_totals?: StravaTotals;
+  all_ride_totals?: StravaTotals;
+  recent_ride_totals?: StravaTotals;
+}
+
+// Statystyki atlety (YTD/all-time). Wymaga tylko scope `read` dla własnego konta —
+// nasz scope (read,activity:read_all,profile:read_all) wystarcza.
+export async function fetchStravaAthleteStats(
+  accessToken: string,
+  stravaId: number
+): Promise<StravaAthleteStats> {
+  const response = await fetch(
+    `https://www.strava.com/api/v3/athletes/${stravaId}/stats`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Strava stats fetch failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 // Pobiera aktywności z konta Stravy (sekcja 15)
 export async function fetchStravaActivities(
   accessToken: string,

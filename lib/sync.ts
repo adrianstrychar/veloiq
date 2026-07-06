@@ -2,6 +2,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   fetchStravaActivities,
+  fetchStravaAthleteStats,
   refreshStravaToken,
   type StravaActivity,
 } from '@/lib/strava';
@@ -12,11 +13,45 @@ const DEFAULT_LOOKBACK_DAYS = 90;
 
 interface AthleteRow {
   id: string;
+  strava_id: number | null;
   ftp_watts: number | null;
   hrmax: number | null;
   strava_access_token: string;
   strava_refresh_token: string;
   strava_token_expires_at: string | null;
+}
+
+// Licznik sezonu = czysty YTD ze Stravy (GET /athletes/{id}/stats → ytd_ride_totals).
+// Jedno źródło prawdy, zero dryfu przy edycjach/usunięciach aktywności w Stravie; user
+// porównuje z liczbą, którą zna z appki Stravy. Definicja Stravy ZWERYFIKOWANA liczbowo
+// (2026-07-06, konto 16541591): ytd_ride_totals = suma aktywności o type Ride + VirtualRide
+// + EBikeRide (132 jazdy / 7336 km, co do kilometra), wyklucza inne sporty (AlpineSki).
+// To ten sam zakres co nasz filtr syncu poniżej — bez rozjazdu definicji.
+// BEST EFFORT: błąd stats NIE wysadza syncu aktywności (licznik może być o jeden sync
+// starszy, aktywności są ważniejsze) — stąd try/catch w środku i void w sygnaturze.
+export async function refreshSeasonDistance(
+  supabase: SupabaseClient,
+  athleteId: string,
+  stravaId: number,
+  accessToken: string
+): Promise<void> {
+  try {
+    const stats = await fetchStravaAthleteStats(accessToken, stravaId);
+    const meters = stats.ytd_ride_totals?.distance;
+    if (meters == null) return;
+    await supabase
+      .from('athletes')
+      .update({
+        ytd_ride_km: Math.round((meters / 1000) * 10) / 10,
+        ytd_refreshed_at: new Date().toISOString(),
+      })
+      .eq('id', athleteId);
+  } catch (e) {
+    console.error(
+      `ytd stats refresh failed (sync kontynuowany), athlete ${athleteId}:`,
+      e instanceof Error ? e.message : e
+    );
+  }
 }
 
 function computeTSS(
@@ -79,6 +114,12 @@ export async function syncStravaActivities(
         strava_token_expires_at: new Date(refreshed.expires_at * 1000).toISOString(),
       })
       .eq('id', athlete.id);
+  }
+
+  // Odśwież licznik sezonu (YTD) — po refreshu tokenu, przed aktywnościami. Best effort:
+  // własny try/catch w środku, porażka stats nie przerywa syncu aktywności.
+  if (athlete.strava_id != null) {
+    await refreshSeasonDistance(supabase, athlete.id, athlete.strava_id, accessToken);
   }
 
   // Zawsze pobieraj pełne okno 90 dni, żeby CTL/ATL liczyły się od początku okresu (sekcja 11)
