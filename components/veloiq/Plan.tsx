@@ -8,6 +8,7 @@ import { WorkoutDetail } from './WorkoutDetail';
 import { RideAnalysis, type RideActivity } from './RideAnalysis';
 import { createBrowserSupabaseClient } from '@/lib/supabase-browser';
 import { typeColor, fmtDur, dowLabel, dateLabel, weekRangeLabel, scaleWeek, maxAchievableMin, type WeekKind } from '@/lib/plan';
+import type { DayStructure } from '@/lib/structure';
 
 export interface PlanDayView {
   dow: number;
@@ -20,6 +21,7 @@ export interface PlanDayView {
   hr: string;
   zones: number[];
   outline?: boolean;
+  structure?: DayStructure | null; // parametry substruktury (nowe plany) → WorkoutDetail/profil
   warmup?: number;    // 5.6: rozgrzewka/schłodzenie po skalowaniu suwakiem (→ buildWorkout)
   cooldown?: number;
   removed?: boolean;  // 5.6: sesja usunięta przez skalowanie w dół (pokazana jako OFF)

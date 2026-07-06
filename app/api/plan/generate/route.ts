@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
     try {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
-        max_tokens: 3500,
+        max_tokens: 16000, // structure + reguła spójności minut → model liczy w prozie (bywa >8k tokenów) przed JSON-em; walidator wycina sam JSON (kotwica "current")
         system,
         messages: [{ role: 'user', content: user }],
       });

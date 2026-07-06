@@ -1,5 +1,6 @@
 import { buildSessionStructure, type LapInput, type SessionElement } from '@/lib/laps';
-import { parseStructure } from '@/lib/workout';
+import { parseStructure, sessionStructure } from '@/lib/workout';
+import { isOU, ouBlockMin, type DayStructure } from '@/lib/structure';
 
 export interface InsightActivity {
   name: string | null;
@@ -25,6 +26,18 @@ export interface PlannedWorkout {
   hr: string;     // zakres np. "175–185" lub "–"
   tss: number;
   dur_min: number;
+  structure?: DayStructure | null; // parametry substruktury z plan_json (brak = stary plan → fallback z labela)
+}
+
+// Pełna rozpiska zaplanowanej sesji dla promptu — Z PRZERWAMI między interwałami/blokami
+// i rozgrzewką/schłodzeniem, żeby AI nie krytykowało przerw zrobionych zgodnie z planem.
+function describePlannedStructure(type: string, s: DayStructure): string {
+  const ss = sessionStructure(type);
+  const frame = `rozgrzewka ~${ss.warmupDefault} min, schłodzenie ~${ss.cooldownDefault} min`;
+  if (isOU(s)) {
+    return `${s.reps} bloki × ${s.cycles} cykle (${s.under_min}min @${s.under_w}W under + ${s.over_min}min @${s.over_w}W over) = ${s.reps}×${ouBlockMin(s)}min, przerwy między blokami ${s.rest_min} min Z1 (PLANOWE — nie krytykuj ich), ${frame}`;
+  }
+  return `${s.reps}×${s.work_min}min @${s.work_w}W, przerwy między interwałami ${s.rest_min} min Z1 (PLANOWE — nie krytykuj ich), ${frame}`;
 }
 
 // Opis struktury lapów. hidePower → e-bike: moc nierzetelna (silnik), pokazujemy tylko czas + HR.
@@ -75,8 +88,12 @@ export function buildInsightPrompt(
   // ── Blok ZAPLANOWANO (tylko gdy jest plan) ──
   const plannedLines: string[] = [];
   if (planned) {
-    const s = parseStructure(planned.label);
-    const struct = s ? `${s.reps} × ${s.minutes}min` : planned.label; // fallback: surowy label
+    // Pełna substruktura z plan_json (przerwy, waty per segment); stare plany bez structure →
+    // fallback: N×M z labela albo surowy label (jak dotąd).
+    const s = planned.structure ? null : parseStructure(planned.label);
+    const struct = planned.structure
+      ? describePlannedStructure(planned.type, planned.structure)
+      : s ? `${s.reps} × ${s.minutes}min` : planned.label;
     const powerTarget = isEbike ? '' : `, moc ${planned.watt}`;
     plannedLines.push(
       `ZAPLANOWANO: ${planned.type} — "${planned.label}" (struktura: ${struct}), cele:${powerTarget} HR ${planned.hr}, TSS ${planned.tss}, czas ${planned.dur_min} min.`,

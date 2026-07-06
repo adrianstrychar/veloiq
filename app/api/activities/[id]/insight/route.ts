@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { buildInsightPrompt, type InsightActivity, type PlannedWorkout } from '@/lib/ai/insight';
+import type { DayStructure } from '@/lib/structure';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -13,6 +14,7 @@ interface PlanDayRow {
   hr: string;
   tss: number;
   dur_min: number;
+  structure?: DayStructure | null;
 }
 
 // Zaplanowany trening na dzień jazdy. null = brak planu na tydzień, dzień OFF, lub jazda niezaplanowana.
@@ -44,6 +46,7 @@ async function fetchPlannedDay(
     hr: day.hr,
     tss: day.tss,
     dur_min: day.dur_min,
+    structure: day.structure ?? null, // pełna substruktura → prompt zna przerwy z planu
   };
 }
 
