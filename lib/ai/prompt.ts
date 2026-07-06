@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { localTodayISO } from '@/lib/plan';
+import { computeReadiness, type MetricRow } from '@/lib/readiness';
 
 interface AthleteRow {
   id: string;
@@ -8,26 +10,10 @@ interface AthleteRow {
   hrmax: number | null;
   weight_kg: number | null;
   has_power_meter: boolean | null;
-  weekly_hours_min: number | null;
-  weekly_hours_max: number | null;
-  training_days: number[] | null;
-  long_ride_days: number[] | null;
-  current_goals: string | null;
-  weak_points: string[] | null;
 }
 
-// Mapowanie dni tygodnia (DB: 1=pon..7=nd) na etykiety PL
-const DAY_NAMES: Record<number, string> = {
-  1: 'pon', 2: 'wt', 3: 'śr', 4: 'czw', 5: 'pt', 6: 'sob', 7: 'nd',
-};
-
-function getMonday(): string {
-  const d = new Date();
-  const day = d.getDay(); // 0=nd
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  return d.toISOString().slice(0, 10);
-}
+const DAY_NAME_PL = ['', 'poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota', 'niedziela'];
+const r1 = (n: number) => Math.round(n * 10) / 10;
 
 function buildLayer1(discipline: string | null, hasPower: boolean): string {
   const disc = (discipline ?? 'gravel').toLowerCase();
@@ -73,58 +59,53 @@ STREFY HR (HRmax = 100%):
 Z1 <70% | Z2 71-80% | Z3 81-87% | Z4 88-93% | Z5 94-100%`;
 }
 
-function summarizeLast14Days(
-  activities: Array<{
-    activity_date: string;
-    type: string;
-    distance_km: number;
-    avg_watts: number | null;
-    avg_hr: number | null;
-    tss: number | null;
-  }>,
-  hasPower: boolean
-): string {
-  if (!activities || activities.length === 0) return '';
+// Zakres merytoryczny — co odpowiadać wprost, gdzie zastrzegać niepewność, czego nie robić.
+const ZAKRES_SECTION = `### ZAKRES ODPOWIEDZI
+Obszar główny (odpowiadaj konkretnie, na danych zawodnika z anchora i narzędzi):
+trening, plany, analiza jazd, FTP i strefy, forma (CTL/ATL/TSB), pacing, tapering,
+przygotowanie do startów.
 
-  const totalTSS = activities.reduce((sum, a) => sum + (a.tss ?? 0), 0);
-  const totalKm = activities.reduce((sum, a) => sum + (a.distance_km ?? 0), 0);
-  const rideCount = activities.length;
+Tematy okołotreningowe — żywienie, nawodnienie, regeneracja, taktyka wyścigowa,
+sprzęt/opony/ciśnienia:
+- ŻYWIENIE I NAWODNIENIE: personalizuj tym, co MASZ — waga z profilu, czas trwania
+  i intensywność jazd (narzędzia), kalendarz startów. Możesz podać konkretne zalecenia
+  typu węglowodany/h na jutrzejszy trening 3h Z2 albo płyny od wagi i warunków.
+  Zastrzeż niepewność TYLKO tam, gdzie danych nie masz: dieta dnia codziennego,
+  alergie, tolerancja żołądkowa, suplementacja — tam podaj zakres i powiedz, od czego zależy.
+- SPRZĘT, OPONY, CIŚNIENIA, POZYCJA: doradzaj na poziomie ogólnej wiedzy trenerskiej —
+  danych o sprzęcie zawodnika nie masz. Podawaj rozsądne zakresy i czynniki, nie
+  precyzyjne liczby jako pewnik.
+- REGENERACJA I TAKTYKA: pełnoprawne tematy trenerskie — korzystaj z check-inu,
+  biometrii i kalendarza startów przez narzędzia.
 
-  // Ostatnia "ciężka" sesja (najwyższy TSS)
-  const heaviest = [...activities].sort((a, b) => (b.tss ?? 0) - (a.tss ?? 0))[0];
-  const heaviestMetric = hasPower && heaviest.avg_watts
-    ? `${heaviest.avg_watts}W avg`
-    : heaviest.avg_hr
-    ? `HR avg ${heaviest.avg_hr} bpm`
-    : '';
+Poza zakresem — NIE odpowiadaj merytorycznie, krótko i życzliwie przekieruj:
+- diagnozy medyczne, leki, leczenie kontuzji i bólu → lekarz sportowy / fizjoterapeuta.
+  TWARDA REGUŁA: ból, uraz, niepokojące objawy = specjalista. NIGDY nie doradzaj
+  treningu "przez ból" ani nie oceniaj, czy uraz jest groźny.
+  Przy zgłoszeniu bólu/urazu NIE proponuj ŻADNEJ formy jazdy (nawet spokojnej/lżejszej)
+  ani nie komentuj wpływu przerwy na formę — samo empatyczne przekierowanie do specjalisty.
+  Możesz domknąć JEDNYM zdaniem, że chętnie dostosujesz plan, gdy zawodnik dostanie
+  zielone światło od specjalisty (żeby nie brzmiało jak spławienie).
+- tematy niezwiązane z kolarstwem i treningiem → zaznacz krótko, że jesteś trenerem
+  kolarskim w VeloIQ, i wróć do tematu.`;
 
-  // Lista z jedną linią na aktywność (zwięzła)
-  const lines = activities.map((a) => {
-    const metric = hasPower && a.avg_watts
-      ? `${a.avg_watts}W`
-      : a.avg_hr
-      ? `HR ${a.avg_hr}`
-      : '-';
-    return `  ${a.activity_date} | ${a.type} | ${Math.round(a.distance_km ?? 0)}km | ${metric} | TSS ${Math.round(a.tss ?? 0)}`;
-  });
+// Anty-halucynacja: dane wyłącznie z anchora lub narzędzi; przy pustych danych — powiedz wprost.
+const TOOLS_SECTION = `### NARZĘDZIA I DANE
+- Nie masz danych w pamięci — masz NARZĘDZIA. Zanim odpowiesz na pytanie o konkretną
+  jazdę, plan, historię formy, start czy regenerację — NAJPIERW wywołaj właściwe narzędzie.
+- KAŻDA wartość liczbowa (waty, TSS, CTL/ATL/TSB, tętno, daty, dystanse) MUSI pochodzić
+  z sekcji "FORMA DZIŚ" albo z wyniku narzędzia. NIGDY nie zmyślaj liczb ani nie szacuj "z głowy".
+- Jeśli narzędzie zwróci pusto / found:false → powiedz WPROST, że tych danych nie ma
+  w aplikacji, i (dla jazdy) zaproponuj synchronizację ze Stravą.
+- NIGDY nie proś użytkownika o ręczne wklejenie danych, które aplikacja przechowuje
+  (jazdy, plan, forma) — od tego są narzędzia.
+- Jeśli detal ze Stravy jest chwilowo niedostępny (detail_source:"strava_unavailable")
+  — powiedz to i podaj metryki, które masz.`;
 
-  return `OSTATNIE 14 DNI (${rideCount} jazd, ${Math.round(totalKm)}km łącznie, TSS ${Math.round(totalTSS)}):
-Najcięższa sesja: ${heaviest.activity_date} ${heaviestMetric} TSS ${Math.round(heaviest.tss ?? 0)}
-${lines.join('\n')}`;
-}
-
-export async function buildSystemPrompt(
-  supabase: SupabaseClient,
-  userId: string
-): Promise<string> {
-  // Pobierz profil zawodnika
+export async function buildSystemPrompt(supabase: SupabaseClient, userId: string): Promise<string> {
   const athleteRes = await supabase
     .from('athletes')
-    .select(
-      'id, name, discipline, ftp_watts, hrmax, weight_kg, has_power_meter, ' +
-      'weekly_hours_min, weekly_hours_max, training_days, long_ride_days, ' +
-      'current_goals, weak_points'
-    )
+    .select('id, name, discipline, ftp_watts, hrmax, weight_kg, has_power_meter')
     .eq('user_id', userId)
     .single();
   const athlete = athleteRes.data as AthleteRow | null;
@@ -132,139 +113,43 @@ export async function buildSystemPrompt(
   const athleteId = athlete?.id ?? null;
   const hasPower = !!(athlete?.ftp_watts || athlete?.has_power_meter);
 
-  // Równoległe zapytania do bazy
-  const [
-    { data: latestMetric },
-    { data: weekAgoMetric },
-    { data: recentActivities },
-    { data: races },
-    { data: checkin },
-  ] = await Promise.all([
-    athleteId
-      ? supabase
-          .from('fitness_metrics')
-          .select('ctl, atl, tsb')
-          .eq('athlete_id', athleteId)
-          .order('date', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
+  // Historia formy — do computeReadiness (peak CTL, rampa) + najnowszy wiersz + trend 7d.
+  const { data: fmRows } = athleteId
+    ? await supabase.from('fitness_metrics').select('date, ctl, atl, tsb').eq('athlete_id', athleteId).order('date', { ascending: true })
+    : { data: null };
+  const rows = (fmRows ?? []) as MetricRow[];
+  const now = rows.length ? rows[rows.length - 1] : null;
+  const weekAgo = rows.length ? rows[Math.max(0, rows.length - 8)] : null;
+  const readiness = rows.length ? computeReadiness(rows) : null;
 
-    athleteId
-      ? supabase
-          .from('fitness_metrics')
-          .select('ctl')
-          .eq('athlete_id', athleteId)
-          .order('date', { ascending: false })
-          .range(6, 6)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
+  const ctl = now ? Math.round(now.ctl) : 0;
+  const atl = now ? Math.round(now.atl) : 0;
+  const tsb = now ? Math.round(now.tsb) : 0;
+  const trend = now && weekAgo ? r1(now.ctl - weekAgo.ctl) : null;
 
-    athleteId
-      ? supabase
-          .from('strava_activities')
-          .select('activity_date, type, distance_km, avg_watts, avg_hr, tss')
-          .eq('athlete_id', athleteId)
-          .gte(
-            'activity_date',
-            new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString().slice(0, 10)
-          )
-          .order('activity_date', { ascending: false })
-          .limit(20)
-      : Promise.resolve({ data: [] }),
+  // --- Warstwa 1: tożsamość + filozofia + zakres + zasady narzędzi ---
+  const layer1 = `${buildLayer1(athlete?.discipline ?? null, hasPower)}\n\n${ZAKRES_SECTION}\n\n${TOOLS_SECTION}`;
 
-    athleteId
-      ? supabase
-          .from('race_calendar')
-          .select('name, date, priority')
-          .eq('athlete_id', athleteId)
-          .gte('date', new Date().toISOString().slice(0, 10))
-          .order('date', { ascending: true })
-          .limit(5)
-      : Promise.resolve({ data: [] }),
-
-    athleteId
-      ? supabase
-          .from('weekly_checkins')
-          .select('rhr_bpm, sleep_hours, hrv, fatigue_score, legs_feeling, motivation, notes')
-          .eq('athlete_id', athleteId)
-          .gte('week_start', getMonday())
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-  ]);
-
-  // --- Warstwa 1: tożsamość + filozofia ---
-  const layer1 = buildLayer1(athlete?.discipline ?? null, hasPower);
-
-  // --- Warstwa 2: profil zawodnika ---
-  const ctl = latestMetric?.ctl ?? 0;
-  const atl = latestMetric?.atl ?? 0;
-  const tsb = latestMetric?.tsb ?? 0;
-  const ctlTrend = weekAgoMetric
-    ? Math.round((ctl - weekAgoMetric.ctl) * 10) / 10
-    : null;
-
+  // --- Anchor: lekki, always-on. Reszta danych przez narzędzia. ---
   const ftpW = athlete?.ftp_watts;
-  const wKg =
-    ftpW && athlete?.weight_kg
-      ? Math.round((ftpW / Number(athlete.weight_kg)) * 10) / 10
-      : null;
+  const wKg = ftpW && athlete?.weight_kg ? r1(ftpW / Number(athlete.weight_kg)) : null;
+  const todayISO = localTodayISO();
+  const dow = new Date(todayISO + 'T12:00:00Z').getUTCDay();
+  const dayName = DAY_NAME_PL[dow === 0 ? 7 : dow];
 
-  const trainingDays =
-    (athlete?.training_days as number[] | null)
-      ?.map((d) => DAY_NAMES[d])
-      .join(', ') ?? 'nieznane';
-  const longRideDays =
-    (athlete?.long_ride_days as number[] | null)
-      ?.map((d) => DAY_NAMES[d])
-      .join(', ') ?? 'nieznane';
+  const ftpLine =
+    hasPower && ftpW
+      ? `FTP: ${ftpW}W${wKg ? ` | W/kg: ${wKg}` : ''} | HRmax: ${athlete?.hrmax ?? '?'} bpm | Waga: ${athlete?.weight_kg ?? '?'}kg`
+      : `HRmax: ${athlete?.hrmax ?? '?'} bpm | Waga: ${athlete?.weight_kg ?? '?'}kg | TRENUJE NA HR (bez miernika mocy)`;
 
-  let layer2 = `ZAWODNIK: ${athlete?.name ?? 'Nieznany'}
-Dyscyplina: ${athlete?.discipline ?? 'gravel'}\n`;
-
-  if (hasPower && ftpW) {
-    layer2 += `FTP: ${ftpW}W${wKg ? ` | W/kg: ${wKg}` : ''} | HRmax: ${athlete?.hrmax ?? '?'} bpm | Waga: ${athlete?.weight_kg ?? '?'}kg\n`;
-  } else {
-    layer2 += `HRmax: ${athlete?.hrmax ?? '?'} bpm | Waga: ${athlete?.weight_kg ?? '?'}kg | TRENUJE NA HR (bez miernika mocy)\n`;
+  const anchor = `ZAWODNIK: ${athlete?.name ?? 'Nieznany'} | Dyscyplina: ${athlete?.discipline ?? 'gravel'}
+${ftpLine}
+DZIŚ: ${todayISO} (${dayName})
+FORMA DZIŚ: CTL ${ctl} | ATL ${atl} | TSB ${tsb}${trend !== null ? ` | Trend CTL ${trend >= 0 ? '+' : ''}${trend}/tydzień` : ''}${
+    readiness ? `\nGOTOWOŚĆ: ${readiness.raceReady}% (${readiness.state}) | Świeżość ${readiness.freshPct}%` : ''
   }
 
-  layer2 += `Tygodniowe godziny: ${athlete?.weekly_hours_min ?? '?'}-${athlete?.weekly_hours_max ?? '?'}h | Dni: ${trainingDays} | Długie jazdy: ${longRideDays}\n`;
+Dane szczegółowe (jazdy, plan tygodnia, historia formy, starty, regeneracja) NIE są tutaj — pobierasz je NARZĘDZIAMI na żądanie.`;
 
-  layer2 += `\nFORMA DZIŚ:
-CTL: ${Math.round(ctl)} | ATL: ${Math.round(atl)} | TSB: ${Math.round(tsb)}${ctlTrend !== null ? ` | Trend CTL: ${ctlTrend >= 0 ? '+' : ''}${ctlTrend}/tydzień` : ''}\n`;
-
-  const activitiesSummary = summarizeLast14Days(recentActivities ?? [], hasPower);
-  if (activitiesSummary) layer2 += `\n${activitiesSummary}\n`;
-
-  if (races && races.length > 0) {
-    layer2 += '\nKALENDARZ STARTÓW:\n';
-    for (const r of races) {
-      const daysTo = Math.ceil(
-        (new Date(r.date).getTime() - Date.now()) / 86400000
-      );
-      layer2 += `- ${r.name} | ${r.date} | za ${daysTo} dni | priorytet ${r.priority}\n`;
-    }
-  }
-
-  if (athlete?.weak_points?.length) {
-    layer2 += `\nSŁABE PUNKTY: ${(athlete.weak_points as string[]).join(', ')}\n`;
-  }
-  if (athlete?.current_goals) {
-    layer2 += `CEL SEZONU: ${athlete.current_goals}\n`;
-  }
-
-  if (checkin) {
-    layer2 += '\nCHECK-IN TEGO TYGODNIA:\n';
-    const parts: string[] = [];
-    if (checkin.rhr_bpm) parts.push(`RHR: ${checkin.rhr_bpm} bpm`);
-    if (checkin.sleep_hours) parts.push(`Sen: ${checkin.sleep_hours}h`);
-    if (checkin.hrv) parts.push(`HRV: ${checkin.hrv}`);
-    if (parts.length) layer2 += parts.join(' | ') + '\n';
-    layer2 += `Zmęczenie: ${checkin.fatigue_score}/10 | Nogi: ${checkin.legs_feeling} | Motywacja: ${checkin.motivation}\n`;
-    if (checkin.notes) layer2 += `Notatka: "${checkin.notes}"\n`;
-  }
-
-  // --- Warstwa 3: notatka trenera — faza 2, pomijamy w MVP ---
-
-  return `${layer1}\n\n---\n\n${layer2}`;
+  return `${layer1}\n\n---\n\n${anchor}`;
 }

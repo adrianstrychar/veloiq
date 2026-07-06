@@ -69,7 +69,7 @@ export default function ChatPage() {
       <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
         {messages.length === 0 && (
           <p className="text-secondary text-sm text-center mt-8">
-            Napisz do swojego AI trenera — zapytaj o plan, formę lub ostatni trening.
+            Napisz do swojego AI trenera — zapytaj o plan, formę, analizę jazdy, żywienie na trening albo przygotowanie do startu.
           </p>
         )}
 
