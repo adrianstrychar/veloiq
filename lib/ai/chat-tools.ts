@@ -92,11 +92,14 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
   {
     name: 'get_races',
     description:
-      "The athlete's upcoming races from the calendar (name, date, days-away, priority), soonest first. Use for 'next race', 'days until <race>', race-prep timing.",
+      "The athlete's races from the calendar (race_id, name, date, days-away, priority, series), soonest first. Use for 'next race', 'days until <race>', race-prep timing, and to get the race_id needed to edit or delete a race. By default only upcoming races; set include_past to also list past races (e.g. to delete an old one).",
     input_schema: {
       type: 'object',
       additionalProperties: false,
-      properties: { limit: { type: 'integer', minimum: 1, maximum: 20, default: 5 } },
+      properties: {
+        limit: { type: 'integer', minimum: 1, maximum: 20, default: 5 },
+        include_past: { type: 'boolean', description: 'Include past races too (default false). Use when the athlete wants to delete/clean up an old race.' },
+      },
     },
   },
   {
@@ -297,13 +300,18 @@ async function getWeeklyPlan({ supabase, athleteId }: ToolCtx, input: Record<str
 
 async function getRaces({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
   const limit = Math.min(Number(input.limit) || 5, 20);
+  const includePast = input.include_past === true;
   const today = localTodayISO();
-  const { data } = await supabase.from('race_calendar').select('name, date, priority').eq('athlete_id', athleteId).gte('date', today).order('date', { ascending: true }).limit(limit);
+  let q = supabase.from('race_calendar').select('id, name, date, priority, series').eq('athlete_id', athleteId).order('date', { ascending: true }).limit(limit);
+  if (!includePast) q = q.gte('date', today);
+  const { data } = await q;
   const races = (data ?? []).map((r) => ({
+    race_id: r.id, // potrzebne do edycji/usunięcia startu (propose_race_change)
     name: r.name,
     date: r.date,
     days_away: Math.ceil((new Date(r.date + 'T12:00:00Z').getTime() - new Date(today + 'T12:00:00Z').getTime()) / 86400000),
     priority: r.priority,
+    series: r.series ?? null,
   }));
   return { count: races.length, races };
 }
