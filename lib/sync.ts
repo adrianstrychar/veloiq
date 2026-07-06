@@ -7,9 +7,16 @@ import {
   type StravaActivity,
 } from '@/lib/strava';
 import { calculateTSSfromHR, calculateTSSfromPower, calculateFitnessHistory } from '@/lib/fitness';
+import { computeBestEfforts } from '@/lib/strava/details';
+import { estimateFtp, decideFtpDisplayUpdate, type EffortRide } from '@/lib/ftp-engine';
 
 const SYNC_COOLDOWN_MINUTES = 60;
 const DEFAULT_LOOKBACK_DAYS = 90;
+
+// Okno silnika FTP: krzywa mocy z ostatnich 28 dni. Limit dociągnięć na jeden sync —
+// bezpiecznik rate limitu (typowo 1-2 nowe jazdy; pierwszy sync po wdrożeniu = backfill ~9).
+const FTP_WINDOW_DAYS = 28;
+const BEST_EFFORTS_MAX_PER_SYNC = 30;
 
 interface AthleteRow {
   id: string;
@@ -70,6 +77,126 @@ function computeTSS(
     return calculateTSSfromHR(activity.moving_time, activity.average_heartrate, effectiveHrmax);
   }
   return 0; // F1: brak mocy i HR → TSS 0 (na e-bike teoretyczne — zawsze z pasem HR)
+}
+
+// Dociąga krzywą mocy (best_efforts) dla jazd z okna FTP, które jej nie mają — jeden
+// mechanizm pokrywa backfill po wdrożeniu i nowe jazdy z bieżącego syncu (jazda świeżo
+// upsertowana nie ma best_efforts → łapie się w to samo zapytanie). FILTRY:
+//  - EBikeRide pomijany CAŁKOWICIE (bez calla o streams) — moc z silnika nie istnieje
+//    w systemie, zatrułaby krzywą i estymatę FTP (spójnie z hrTSS/insight dla e-bike),
+//  - device_watts === false (moc SZACOWANA przez Stravę, nie z miernika) — pomijamy,
+//    zapisując {} żeby nie próbować w kółko; realnej krzywej z szacunku nie ma.
+// Błąd streams pojedynczej jazdy nie wysadza reszty (try/catch per jazda, log) — wzorzec
+// jak refreshSeasonDistance. CELOWO nie ustawiamy details_synced_at: lapy nie zostały
+// pobrane, lazy sync-details po kliknięciu ma dalej zadziałać w całości.
+export async function syncBestEfforts(
+  supabase: SupabaseClient,
+  athleteId: string,
+  accessToken: string
+): Promise<number> {
+  const since = new Date(Date.now() - FTP_WINDOW_DAYS * 24 * 3600 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  const { data: missing } = await supabase
+    .from('strava_activities')
+    .select('strava_activity_id, device_watts:raw_data->device_watts')
+    .eq('athlete_id', athleteId)
+    .gte('activity_date', since)
+    .is('best_efforts', null)
+    .neq('type', 'EBikeRide')
+    .not('avg_watts', 'is', null)
+    .limit(BEST_EFFORTS_MAX_PER_SYNC);
+
+  let fetched = 0;
+  for (const ride of missing ?? []) {
+    const id = ride.strava_activity_id as number;
+    try {
+      if (ride.device_watts === false) {
+        // Moc szacowana — krzywej nie liczymy; pusty obiekt kończy temat (nie retry'ujemy).
+        await supabase.from('strava_activities').update({ best_efforts: {} }).eq('strava_activity_id', id).eq('athlete_id', athleteId);
+        continue;
+      }
+      const res = await fetch(
+        `https://www.strava.com/api/v3/activities/${id}/streams?keys=watts,time&key_by_type=true&resolution=high`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!res.ok) throw new Error(`streams ${res.status}`);
+      const streams = await res.json();
+      const watts: number[] | undefined = streams?.watts?.data;
+      const time: number[] | undefined = streams?.time?.data;
+      const be = watts && watts.length > 0 ? computeBestEfforts(watts, time) : {};
+      const { error } = await supabase
+        .from('strava_activities')
+        .update({ best_efforts: be })
+        .eq('strava_activity_id', id)
+        .eq('athlete_id', athleteId);
+      if (error) throw new Error(`update: ${error.message}`);
+      fetched++;
+    } catch (e) {
+      console.error(`best_efforts fetch failed (jazda ${id}, kontynuuję):`, e instanceof Error ? e.message : e);
+    }
+  }
+  return fetched;
+}
+
+// Przelicza cichą estymatę FTP z 28-dniowej krzywej mocy i zapisuje ftp_estimate.
+// WYŚWIETLANE ftp_watts rusza TYLKO gdy silnik jest już zaakceptowany przez usera
+// (ftp_updated_at != null — ustawiane pierwszą akceptacją w UI) i reguła hybrydy
+// (≥14 dni LUB próg +5/−8 W) każe aktualizować. Ręcznego FTP sprzed silnika nie
+// nadpisujemy nigdy po cichu — pierwsza estymata żyje w UI jako "~X szac.".
+// Best effort: błąd (np. brak kolumn przed migracją 009) nie wysadza syncu.
+export async function recalculateFtpEstimate(
+  supabase: SupabaseClient,
+  athleteId: string
+): Promise<void> {
+  try {
+    const since = new Date(Date.now() - FTP_WINDOW_DAYS * 24 * 3600 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const { data: rides } = await supabase
+      .from('strava_activities')
+      .select('activity_date, type, best_efforts')
+      .eq('athlete_id', athleteId)
+      .gte('activity_date', since);
+
+    const est = estimateFtp((rides ?? []) as EffortRide[]);
+    if (!est) return; // za mało danych w oknie — zostaw poprzednią estymatę
+
+    const nowIso = new Date().toISOString();
+    const updates: Record<string, unknown> = {
+      ftp_estimate: est.ftp,
+      ftp_estimated_at: nowIso,
+    };
+
+    const { data: ath } = await supabase
+      .from('athletes')
+      .select('ftp_watts, ftp_updated_at')
+      .eq('id', athleteId)
+      .single();
+
+    if (ath?.ftp_updated_at != null && ath.ftp_watts != null) {
+      const decision = decideFtpDisplayUpdate(Number(ath.ftp_watts), String(ath.ftp_updated_at), est.ftp, nowIso);
+      if (decision.update) {
+        updates.ftp_watts = est.ftp;
+        updates.ftp_updated_at = nowIso;
+        await supabase.from('ftp_history').insert({
+          athlete_id: athleteId,
+          date: nowIso.slice(0, 10),
+          ftp_watts: est.ftp,
+          source: 'estimate',
+        });
+      }
+    }
+
+    const { error } = await supabase.from('athletes').update(updates).eq('id', athleteId);
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    console.error(
+      `ftp estimate failed (sync kontynuowany), athlete ${athleteId}:`,
+      e instanceof Error ? e.message : e
+    );
+  }
 }
 
 // Pobiera nowe aktywności ze Stravy i zapisuje do strava_activities
@@ -167,6 +294,16 @@ export async function syncStravaActivities(
       throw new Error(`upsert_failed: ${upsertError.message}`);
     }
   }
+
+  // Silnik FTP: dociągnij krzywą mocy dla jazd bez best_efforts w oknie 28 dni
+  // (nowe z tego syncu + ewentualne zaległości) i przelicz cichą estymatę.
+  // Oba kroki best effort — nie wysadzają syncu aktywności.
+  try {
+    await syncBestEfforts(supabase, athlete.id, accessToken);
+  } catch (e) {
+    console.error('syncBestEfforts failed (sync kontynuowany):', e instanceof Error ? e.message : e);
+  }
+  await recalculateFtpEstimate(supabase, athlete.id);
 
   return { skipped: false, synced: rows.length };
 }

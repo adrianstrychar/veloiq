@@ -57,7 +57,9 @@ function maxMovingAverage(perSec: number[], windowSec: number): number | null {
   return Math.round(best / windowSec);
 }
 
-function computeBestEfforts(watts: number[], time: number[] | undefined): Record<string, number | null> {
+// Eksport: reuse przez sync (hurtowe liczenie krzywej pod silnik FTP) — ta sama logika
+// co przy lazy sync-details po kliknięciu (obwiednia, pauzy, forward-fill).
+export function computeBestEfforts(watts: number[], time: number[] | undefined): Record<string, number | null> {
   const perSec = buildPerSecondWatts(watts, time);
 
   // Surowa max-średnia bywa NIEMONOTONICZNA przy strukturze interwałowej
