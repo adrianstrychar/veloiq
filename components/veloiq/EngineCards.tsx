@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { C } from '@/lib/theme';
 import type { FtpDisplay } from '@/lib/ftp';
 
@@ -57,6 +59,24 @@ function RightBadge({ badge, sub }: { badge: string; sub: string }) {
 
 function FtpCard({ f }: { f: FtpDisplay }) {
   const valueColor = f.est ? C.yellow : C.cyan;
+  const router = useRouter();
+  const [accepting, setAccepting] = useState(false);
+
+  // Najprostsza akceptacja estymaty: tap w chip → POST /api/ftp/accept → refresh.
+  // Do tego momentu silnik pisze tylko ftp_estimate — ręczne FTP zostaje nietknięte.
+  async function acceptEstimate() {
+    if (accepting) return;
+    setAccepting(true);
+    try {
+      const res = await fetch('/api/ftp/accept', { method: 'POST' });
+      if (!res.ok) throw new Error(`accept failed (${res.status})`);
+      router.refresh();
+    } catch (e) {
+      console.error('ftp accept failed', e);
+    } finally {
+      setAccepting(false);
+    }
+  }
 
   return (
     <CardShell>
@@ -79,9 +99,25 @@ function FtpCard({ f }: { f: FtpDisplay }) {
               {f.est ? '~' : ''}{f.value}
             </span>
             <span style={{ fontSize: 11, color: C.muted }}>
-              W{f.wkg ? ` · ${f.wkg} W/kg` : ''}
+              W{f.wkg ? ` · ${f.wkg} W/kg` : ''}{f.sinceLabel ? ` · ${f.sinceLabel}` : ''}
             </span>
           </div>
+        )}
+
+        {f.pendingEstimate != null && (
+          <button
+            onClick={acceptEstimate}
+            disabled={accepting}
+            title="Estymata z 28-dniowej krzywej mocy — tap, żeby przyjąć jako FTP"
+            style={{
+              alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5,
+              background: C.yellow + '1A', color: C.yellow, border: `1px solid ${C.yellow}44`,
+              borderRadius: 6, padding: '3px 8px', fontSize: 10.5, fontWeight: 600,
+              cursor: accepting ? 'default' : 'pointer', opacity: accepting ? 0.6 : 1,
+            }}
+          >
+            ~{f.pendingEstimate} W szac. · {accepting ? 'zapisuję…' : 'przyjmij'}
+          </button>
         )}
       </div>
 

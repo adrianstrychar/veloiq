@@ -2,6 +2,9 @@ import { C } from '@/lib/theme';
 
 export type FtpSource = 'measured' | 'estimated' | 'none';
 
+// Próg pokazania chipa estymaty przy wartości ręcznej (spójny z progiem wzrostu hybrydy).
+const PENDING_ESTIMATE_MIN_DELTA_W = 5;
+
 export interface FtpDisplay {
   value: number | null;
   wkg: string | null;
@@ -11,19 +14,34 @@ export interface FtpDisplay {
   badgeSub: string;
   est: boolean;
   empty: boolean;
+  sinceLabel: string | null;      // "od 28.06" — data ostatniej zmiany wyświetlanej wartości
+  pendingEstimate: number | null; // estymata silnika ≠ wyświetlane → chip "tap = przyjmij"
+}
+
+// ISO timestamp → "od 28.06" (null gdy brak daty — ręczna wartość sprzed silnika).
+function sinceLabelOf(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `od ${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 export function ftpDisplay(
   source: FtpSource,
   ftp: number | null,
   ftpEst: number | null,
-  mass: number | null
+  mass: number | null,
+  ftpUpdatedAt: string | null = null
 ): FtpDisplay {
   const wkg = (val: number | null) =>
     val && mass ? (val / mass).toFixed(2) : null;
 
   switch (source) {
-    case 'measured':
+    case 'measured': {
+      // Cicha estymata silnika obok ręcznej/wyświetlanej wartości: chip do akceptacji,
+      // gdy różnica jest znacząca. Silnik NIE nadpisuje ftp_watts bez tej akceptacji.
+      const est = ftpEst != null ? Math.round(ftpEst) : null;
+      const pending = est != null && ftp != null && Math.abs(est - ftp) >= PENDING_ESTIMATE_MIN_DELTA_W ? est : null;
       return {
         value: ftp,
         wkg: wkg(ftp),
@@ -33,17 +51,22 @@ export function ftpDisplay(
         badgeSub: 'top 4% · VeloIQ',
         est: false,
         empty: false,
+        sinceLabel: sinceLabelOf(ftpUpdatedAt),
+        pendingEstimate: pending,
       };
+    }
     case 'estimated':
       return {
-        value: ftpEst,
+        value: ftpEst != null ? Math.round(ftpEst) : null,
         wkg: wkg(ftpEst),
         tag: '~ szac. ze Stravy',
         tagColor: C.yellow,
         badge: 'Szacowane',
         badgeSub: 'podłącz miernik',
         est: true,
-        empty: false,
+        empty: ftpEst == null,
+        sinceLabel: null,
+        pendingEstimate: null,
       };
     case 'none':
     default:
@@ -56,6 +79,8 @@ export function ftpDisplay(
         badgeSub: 'zrób test 20 min',
         est: false,
         empty: true,
+        sinceLabel: null,
+        pendingEstimate: null,
       };
   }
 }

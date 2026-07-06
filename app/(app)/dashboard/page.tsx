@@ -20,7 +20,7 @@ export default async function DashboardPage() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, name, strava_id, ftp_watts, has_power_meter, weight_kg, vo2max, training_mode, season_km_goal, ytd_ride_km')
+    .select('id, name, strava_id, ftp_watts, ftp_estimate, ftp_updated_at, has_power_meter, weight_kg, vo2max, training_mode, season_km_goal, ytd_ride_km')
     .eq('user_id', user?.id ?? '')
     .single();
 
@@ -75,8 +75,9 @@ export default async function DashboardPage() {
   const ftpData = ftpDisplay(
     ftpSource,
     (athlete as any)?.ftp_watts ?? null,
-    null, // ftpEst — brak kalkulatora estymaty w tym etapie
-    (athlete as any)?.weight_kg ?? null
+    (athlete as any)?.ftp_estimate != null ? Number((athlete as any).ftp_estimate) : null, // cicha estymata silnika (28 dni)
+    (athlete as any)?.weight_kg ?? null,
+    (athlete as any)?.ftp_updated_at ?? null
   );
 
   // pmcRows przychodzi już rosnąco po dacie.
