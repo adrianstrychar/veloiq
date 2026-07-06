@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { type PmcRow } from '@/components/veloiq/RawMetrics';
 import { EngineCards } from '@/components/veloiq/EngineCards';
@@ -152,12 +153,12 @@ export default async function DashboardPage() {
 
       {/* Nawigacja */}
       <div className="grid grid-cols-2 gap-3">
-        <a href="/chat" className="rounded-xl bg-card border border-border text-center text-sm font-semibold py-3">
+        <Link href="/chat" className="rounded-xl bg-card border border-border text-center text-sm font-semibold py-3">
           💬 Chat z trenerem
-        </a>
-        <a href="/plan" className="rounded-xl bg-card border border-border text-center text-sm font-semibold py-3">
+        </Link>
+        <Link href="/plan" className="rounded-xl bg-card border border-border text-center text-sm font-semibold py-3">
           📅 Plan tygodnia
-        </a>
+        </Link>
       </div>
     </div>
   );

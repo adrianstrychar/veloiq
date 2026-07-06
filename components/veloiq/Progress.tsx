@@ -195,7 +195,8 @@ export function Progress({ stats, ftpHistory, weightKg, seasonGoalKm }: Progress
       {/* Nagłówek (mockup 1006-1009) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Twój rozwój</span>
-        <span style={{ fontSize: 11, color: C.green, fontWeight: 600 }}>● od początku sezonu</span>
+        {/* Zwykły label zakresu — bez kropki-chipa, żeby nie wyglądał na przełącznik. */}
+        <span style={{ fontSize: 11, color: C.muted }}>od początku sezonu</span>
       </div>
 
       {/* FTP hero (gdy ≥2 pomiary) */}

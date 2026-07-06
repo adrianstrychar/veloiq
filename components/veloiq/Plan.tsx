@@ -143,6 +143,12 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
             {isRemoved ? 'Dzień wolny' : d.label}
           </div>
           {!offLike && <ZoneBar zones={d.zones} />}
+          {isOutline && !offLike && (
+            // Zarys jest celowo nieklikalny — powiedz to na karcie, zamiast milczeć.
+            <div style={{ fontSize: 9, color: C.muted, fontStyle: 'italic', marginTop: 3 }}>
+              rozpiska dopnie się przed tygodniem
+            </div>
+          )}
         </div>
         {isRemoved ? (
           <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>Dzień wolny — obciążenie zredukowane</div>
