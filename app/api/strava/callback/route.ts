@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
       },
       { onConflict: 'strava_id' }
     )
-    .select('id, ftp_watts, hrmax, strava_access_token, strava_refresh_token, strava_token_expires_at')
+    .select('id, strava_id, ftp_watts, hrmax, strava_access_token, strava_refresh_token, strava_token_expires_at')
     .single();
 
   if (upsertError || !athlete) {

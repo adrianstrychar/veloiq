@@ -20,7 +20,7 @@ export default async function DashboardPage() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, name, strava_id, ftp_watts, has_power_meter, weight_kg, vo2max, training_mode, season_km_goal')
+    .select('id, name, strava_id, ftp_watts, has_power_meter, weight_kg, vo2max, training_mode, season_km_goal, ytd_ride_km')
     .eq('user_id', user?.id ?? '')
     .single();
 
@@ -95,7 +95,13 @@ export default async function DashboardPage() {
     return { date: r.date, label, ctl: r.ctl, atl: r.atl, tsb: r.tsb };
   });
 
-  const progressStats = computeProgressStats((season2026 ?? []) as ActivityStatRow[]);
+  // Licznik sezonu ("KM W SEZONIE" + pierścień celu + pace): YTD ze Stravy — nasza baza ma
+  // tylko ~90 dni wstecz od podłączenia, więc suma z niej zaniża km userowi wchodzącemu
+  // w środku sezonu. NULL (przed pierwszym syncem po wdrożeniu) → suma z bazy jak dotąd.
+  // Streak i najdłuższa jazda ŚWIADOMIE zostają z bazy — baza służy analizom, nie sumie km.
+  const dbStats = computeProgressStats((season2026 ?? []) as ActivityStatRow[]);
+  const ytdKm = (athlete as any)?.ytd_ride_km != null ? Math.round(Number((athlete as any).ytd_ride_km)) : null;
+  const progressStats = ytdKm != null ? { ...dbStats, totalKm: ytdKm } : dbStats;
 
   return (
     <div className="flex flex-col gap-4">
