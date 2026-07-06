@@ -13,14 +13,23 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<{ label: string; prompt: string }[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  async function sendMessage() {
-    const text = input.trim();
+  // Sugerowane pytania (chips) — deterministyczne, przy montowaniu. Nice-to-have: brak → pusto.
+  useEffect(() => {
+    fetch('/api/ai/suggestions')
+      .then((r) => r.json())
+      .then((d) => setSuggestions(Array.isArray(d.suggestions) ? d.suggestions : []))
+      .catch(() => setSuggestions([]));
+  }, []);
+
+  async function sendMessage(textArg?: string) {
+    const text = (typeof textArg === 'string' ? textArg : input).trim();
     if (!text || loading) return;
 
     const nextMessages: Message[] = [...messages, { role: 'user', content: text }];
@@ -68,9 +77,25 @@ export default function ChatPage() {
       {/* Lista wiadomości */}
       <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
         {messages.length === 0 && (
-          <p className="text-secondary text-sm text-center mt-8">
-            Napisz do swojego AI trenera — zapytaj o plan, formę, analizę jazdy, żywienie na trening albo przygotowanie do startu.
-          </p>
+          <div className="mt-8 flex flex-col items-center">
+            <p className="text-secondary text-sm text-center">
+              Napisz do swojego AI trenera — zapytaj o plan, formę, analizę jazdy, żywienie na trening albo przygotowanie do startu.
+            </p>
+            {suggestions.length > 0 && (
+              <div className="mt-4 flex flex-col gap-2 w-full max-w-md px-2">
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => sendMessage(s.prompt)}
+                    className="bg-card border border-border rounded-xl px-4 py-2 text-sm text-left text-foreground active:opacity-70 transition-opacity flex items-center"
+                    style={{ minHeight: 44 }}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {messages.map((m, i) => (
@@ -113,7 +138,7 @@ export default function ChatPage() {
           disabled={loading}
         />
         <button
-          onClick={sendMessage}
+          onClick={() => sendMessage()}
           disabled={loading || !input.trim()}
           className="bg-accent text-background text-sm font-semibold rounded-xl px-4 py-2 disabled:opacity-40 shrink-0"
         >
