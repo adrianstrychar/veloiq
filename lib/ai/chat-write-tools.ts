@@ -1,14 +1,18 @@
-// Write tools czatu AI (PR 2/3): propose_plan_change + commit_change (współdzielony).
-// Wzorzec confirm-before-write: model NIGDY nie zapisuje od razu. propose liczy zmianę przez
-// computePlanModification (dry-run, bez zapisu), pokazuje diff, zapisuje pending z base_hash.
-// commit aplikuje po jawnym "tak" — z walidacją expiry (15 min) + base_hash (optimistic lock)
-// + konsumpcją pending (odporność na podwójne "tak"). Reużywa applyPlanModification (#54).
+// Write tools czatu AI: plan (propose_plan_change) + starty (propose_race_change) + wspólne
+// commit_change / cancel_change. Wzorzec confirm-before-write: model NIGDY nie zapisuje od razu.
+// propose liczy zmianę (bez zapisu), pokazuje diff, zapisuje pending z base_hash. commit aplikuje
+// po jawnym "tak" — z expiry (15 min) + base_hash (optimistic lock) + konsumpcją pending. cancel
+// usuwa pending przy odmowie. Reużywa applyPlanModification (#54) i lib/races.ts (zapis startów).
 import type Anthropic from '@anthropic-ai/sdk';
 import { createHash } from 'node:crypto';
 import { computePlanModification, applyPlanModification, type PlanModificationResult } from '@/lib/ai/plan-modify';
 import { localTodayISO, mondayOfISO } from '@/lib/plan';
 import type { PlanDay } from '@/lib/ai/plan-generate';
 import type { ToolCtx } from '@/lib/ai/chat-tools';
+import { addRace, editRace, deleteRace, getRace, type RaceRow } from '@/lib/races';
+
+const PRIORITIES = ['A', 'B', 'C'] as const;
+const RACE_SERIES = ['GWS', 'GFWS', 'MTB', 'other'] as const;
 
 const PENDING_TTL_MS = 15 * 60 * 1000; // 15 min
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -41,10 +45,41 @@ export const WRITE_TOOL_DEFS: Anthropic.Tool[] = [
       required: ['change_id'],
     },
   },
+  {
+    name: 'propose_race_change',
+    description:
+      "Propose adding, editing, or deleting a race in the athlete's calendar. Does NOT save — returns a Polish diff (all fields, before→after) and a change_id. Add/edit only for dates today or later; delete allowed for any date (calendar cleanup). Fill `series` when it follows from the athlete's wording. After the athlete explicitly confirms, call commit_change.",
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        operation: { type: 'string', enum: ['add', 'edit', 'delete'] },
+        race_id: { type: 'string', description: 'Required for edit/delete — the race id from get_races.' },
+        name: { type: 'string', description: 'Race name (required for add).' },
+        date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Race date (local YYYY-MM-DD). Required for add.' },
+        priority: { type: 'string', enum: ['A', 'B', 'C'], description: 'A = main goal. Required for add.' },
+        series: { type: 'string', enum: ['GWS', 'GFWS', 'MTB', 'other'], description: 'Race series if it follows from wording.' },
+        distance_km: { type: 'integer', description: 'Optional distance in km.' },
+        elevation_m: { type: 'integer', description: 'Optional elevation gain in m.' },
+      },
+      required: ['operation'],
+    },
+  },
+  {
+    name: 'cancel_change',
+    description:
+      'Discard a previously proposed change (plan or race) when the athlete declines or backs out ("nie", "zostaw", "jednak nie"). Removes the pending proposal so it can no longer be committed. Then confirm the cancellation in one sentence.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: { change_id: { type: 'string', description: 'The change_id of the proposal being discarded.' } },
+      required: ['change_id'],
+    },
+  },
 ];
 
 export function isWriteTool(name: string): boolean {
-  return name === 'propose_plan_change' || name === 'commit_change';
+  return name === 'propose_plan_change' || name === 'propose_race_change' || name === 'commit_change' || name === 'cancel_change';
 }
 
 export function buildPlanDiff(current: PlanDay[], result: PlanModificationResult, weekStart: string): string {
@@ -115,6 +150,113 @@ async function proposePlanChange({ supabase, athleteId }: ToolCtx, input: Record
   };
 }
 
+// ── Starty (race_calendar) ──────────────────────────────────────────────────────
+type RaceFields = { name: string; date: string; priority: 'A' | 'B' | 'C'; series: string | null; distance_km: number | null; elevation_m: number | null };
+type RacePayload =
+  | { operation: 'add'; race: RaceFields }
+  | { operation: 'edit'; race_id: string; patch: Partial<RaceFields>; before: RaceRow }
+  | { operation: 'delete'; race_id: string; before: RaceRow };
+
+const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+const intOrNull = (v: unknown) => (v != null && Number.isFinite(Number(v)) ? Math.round(Number(v)) : null);
+
+function daysAwayLabel(dateISO: string, today: string): string {
+  const d = Math.ceil((new Date(`${dateISO}T12:00:00Z`).getTime() - new Date(`${today}T12:00:00Z`).getTime()) / 86400000);
+  if (d === 0) return 'dziś';
+  return d > 0 ? `za ${d} dni` : `${-d} dni temu`;
+}
+function raceLines(r: Partial<RaceFields>, today: string): string[] {
+  return [
+    `  Nazwa: ${r.name || '—'}`,
+    `  Data: ${r.date ? `${r.date} (${daysAwayLabel(r.date, today)})` : '—'}`,
+    `  Priorytet: ${r.priority || '—'}`,
+    `  Seria: ${r.series || '—'}`,
+    `  Dystans: ${r.distance_km != null ? `${r.distance_km} km` : '—'}`,
+    `  Przewyższenie: ${r.elevation_m != null ? `${r.elevation_m} m` : '—'}`,
+  ];
+}
+function buildRaceDiff(op: 'add' | 'edit' | 'delete', before: RaceRow | null, after: Partial<RaceFields> | null, today: string): string {
+  if (op === 'add') return ['Proponowane dodanie startu:', ...raceLines(after ?? {}, today), 'Napisz „tak", żeby dodać do kalendarza.'].join('\n');
+  if (op === 'delete') return ['Proponowane usunięcie startu:', ...raceLines(before ?? {}, today), 'Napisz „tak", żeby usunąć z kalendarza.'].join('\n');
+  const b = before!;
+  const a = after!;
+  const fmt = (r: Partial<RaceFields>, k: keyof RaceFields) => {
+    if (k === 'date') return r.date ? `${r.date} (${daysAwayLabel(r.date, today)})` : '—';
+    if (k === 'distance_km') return r.distance_km != null ? `${r.distance_km} km` : '—';
+    if (k === 'elevation_m') return r.elevation_m != null ? `${r.elevation_m} m` : '—';
+    return (r[k] as string) || '—';
+  };
+  const rows: Array<[string, keyof RaceFields]> = [['Nazwa', 'name'], ['Data', 'date'], ['Priorytet', 'priority'], ['Seria', 'series'], ['Dystans', 'distance_km'], ['Przewyższenie', 'elevation_m']];
+  const lines = rows.map(([label, k]) => {
+    const bv = fmt(b, k);
+    const av = fmt(a, k);
+    return bv === av ? `  ${label}: ${av}` : `  ${label}: ${bv} → ${av}`;
+  });
+  return ['Proponowana edycja startu:', ...lines, 'Napisz „tak", żeby zapisać zmiany.'].join('\n');
+}
+
+async function insertPending(supabase: ToolCtx['supabase'], athleteId: string, row: Record<string, unknown>) {
+  await supabase.from('pending_changes').delete().eq('athlete_id', athleteId); // stare pending → out
+  return supabase.from('pending_changes').insert({ athlete_id: athleteId, ...row }).select('id').single();
+}
+
+async function proposeRaceChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
+  const today = localTodayISO();
+  const op = str(input.operation);
+
+  if (op === 'add') {
+    const name = str(input.name), date = str(input.date), priority = str(input.priority);
+    if (!name || !date || !priority) return { ok: false, error: 'Do dodania startu potrzebuję nazwy, daty i priorytetu (A/B/C).' };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: 'Niepoprawna data.' };
+    if (!PRIORITIES.includes(priority as (typeof PRIORITIES)[number])) return { ok: false, error: 'Priorytet musi być A, B albo C.' };
+    if (date < today) return { ok: false, error: `Nie dodam startu z przeszłą datą (${date}). Starty dodaję na dziś lub później.` };
+    const series = RACE_SERIES.includes(str(input.series) as (typeof RACE_SERIES)[number]) ? str(input.series) : null;
+    const race: RaceFields = { name, date, priority: priority as 'A' | 'B' | 'C', series, distance_km: intOrNull(input.distance_km), elevation_m: intOrNull(input.elevation_m) };
+    const { data: pend, error } = await insertPending(supabase, athleteId, { kind: 'race', base_hash: sha256(`add:${JSON.stringify(race)}`), payload_json: { operation: 'add', race } });
+    if (error || !pend) return { ok: false, error: `Nie udało się zapisać propozycji: ${error?.message ?? ''}` };
+    return { ok: true, change_id: pend.id, diff: buildRaceDiff('add', null, race, today), requires_confirmation: true };
+  }
+
+  const raceId = str(input.race_id);
+  if (!raceId) return { ok: false, error: `Do ${op === 'edit' ? 'edycji' : 'usunięcia'} startu potrzebuję jego identyfikatora — sprawdź get_races.` };
+  const before = await getRace(supabase, athleteId, raceId);
+  if (!before) return { ok: false, error: 'Nie znalazłem takiego startu w kalendarzu.' };
+  const baseHash = sha256(JSON.stringify(before));
+
+  if (op === 'delete') {
+    const { data: pend, error } = await insertPending(supabase, athleteId, { kind: 'race', race_id: raceId, base_hash: baseHash, payload_json: { operation: 'delete', race_id: raceId, before } });
+    if (error || !pend) return { ok: false, error: `Nie udało się zapisać propozycji: ${error?.message ?? ''}` };
+    return { ok: true, change_id: pend.id, diff: buildRaceDiff('delete', before, null, today), requires_confirmation: true };
+  }
+
+  if (op === 'edit') {
+    const patch: Partial<RaceFields> = {};
+    if (input.name != null) patch.name = str(input.name);
+    if (input.date != null) { const d = str(input.date); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false, error: 'Niepoprawna data.' }; patch.date = d; }
+    if (input.priority != null) { if (!PRIORITIES.includes(str(input.priority) as (typeof PRIORITIES)[number])) return { ok: false, error: 'Priorytet musi być A, B albo C.' }; patch.priority = str(input.priority) as 'A' | 'B' | 'C'; }
+    if (input.series != null) patch.series = RACE_SERIES.includes(str(input.series) as (typeof RACE_SERIES)[number]) ? str(input.series) : null;
+    if (input.distance_km != null) patch.distance_km = intOrNull(input.distance_km);
+    if (input.elevation_m != null) patch.elevation_m = intOrNull(input.elevation_m);
+    if (Object.keys(patch).length === 0) return { ok: false, error: 'Nie podałeś, co zmienić w starcie.' };
+    const after: RaceFields = { ...before, ...patch } as RaceFields;
+    if (after.date < today) return { ok: false, error: `Edycja dotyczy przeszłego startu (${after.date}). Przeszły start mogę tylko usunąć.` };
+    const { data: pend, error } = await insertPending(supabase, athleteId, { kind: 'race', race_id: raceId, base_hash: baseHash, payload_json: { operation: 'edit', race_id: raceId, patch, before } });
+    if (error || !pend) return { ok: false, error: `Nie udało się zapisać propozycji: ${error?.message ?? ''}` };
+    return { ok: true, change_id: pend.id, diff: buildRaceDiff('edit', before, after, today), requires_confirmation: true };
+  }
+
+  return { ok: false, error: 'Nieznana operacja (add/edit/delete).' };
+}
+
+async function cancelChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
+  const changeId = str(input.change_id);
+  if (!changeId) return { ok: false, error: 'Brak change_id.' };
+  const { data: pend } = await supabase.from('pending_changes').select('id').eq('id', changeId).eq('athlete_id', athleteId).maybeSingle();
+  if (!pend) return { ok: true, cancelled: false, message: 'Nie ma już takiej oczekującej propozycji (mogła wygasnąć).' };
+  await supabase.from('pending_changes').delete().eq('id', pend.id);
+  return { ok: true, cancelled: true, message: 'Propozycja odrzucona.' };
+}
+
 async function commitChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
   const changeId = typeof input.change_id === 'string' ? input.change_id : '';
   if (!changeId) return { ok: false, error: 'Brak change_id.' };
@@ -143,13 +285,45 @@ async function commitChange({ supabase, athleteId }: ToolCtx, input: Record<stri
     return { ok: true, applied: true, kind: 'plan', message: 'Zapisane — plan tygodnia zaktualizowany.' };
   }
 
-  return { ok: false, error: 'Ten typ zmiany nie jest jeszcze obsługiwany (starty w kolejnej wersji).' };
+  if (pend.kind === 'race') {
+    const payload = pend.payload_json as RacePayload;
+    const consume = () => supabase.from('pending_changes').delete().eq('id', pend.id);
+
+    if (payload.operation === 'add') {
+      const { id } = await addRace(supabase, athleteId, payload.race);
+      await consume();
+      return { ok: true, applied: true, kind: 'race', race_id: id, message: `Dodano start „${payload.race.name}" (${payload.race.date}) do kalendarza.` };
+    }
+
+    // edit/delete — optimistic lock na aktualnym wierszu startu.
+    const cur = await getRace(supabase, athleteId, payload.race_id);
+    if (!cur) {
+      await consume();
+      return { ok: false, error: 'Start zniknął z kalendarza (mógł zostać usunięty). Nie ma czego zmieniać.' };
+    }
+    if (sha256(JSON.stringify(cur)) !== pend.base_hash) {
+      await consume();
+      return { ok: false, error: 'Start zmienił się od czasu propozycji. Przygotuję nową propozycję, jeśli potwierdzisz.' };
+    }
+    if (payload.operation === 'edit') {
+      await editRace(supabase, athleteId, payload.race_id, payload.patch);
+      await consume();
+      return { ok: true, applied: true, kind: 'race', message: `Zaktualizowano start „${cur.name}" w kalendarzu.` };
+    }
+    await deleteRace(supabase, athleteId, payload.race_id);
+    await consume();
+    return { ok: true, applied: true, kind: 'race', message: `Usunięto start „${cur.name}" (${cur.date}) z kalendarza.` };
+  }
+
+  return { ok: false, error: 'Nieznany typ zmiany.' };
 }
 
 export async function dispatchWrite(name: string, input: Record<string, unknown>, ctx: ToolCtx): Promise<unknown> {
   switch (name) {
     case 'propose_plan_change': return proposePlanChange(ctx, input);
+    case 'propose_race_change': return proposeRaceChange(ctx, input);
     case 'commit_change': return commitChange(ctx, input);
+    case 'cancel_change': return cancelChange(ctx, input);
     default: throw new Error(`unknown write tool: ${name}`);
   }
 }
