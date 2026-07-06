@@ -59,7 +59,8 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-5rem)]">
+    // 100vh − dolna nawigacja (5rem, pb-20 layoutu) − pionowy padding main (2rem, py-4)
+    <div className="flex flex-col h-[calc(100vh-7rem)]">
       <header className="py-3 text-center border-b border-border">
         <span className="font-bold text-sm">Chat z trenerem AI</span>
       </header>
