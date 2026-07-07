@@ -3,9 +3,19 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 
+type PendingStatus = 'pending' | 'committed' | 'cancelled' | 'expired';
+interface PendingCard {
+  change_id: string;
+  kind: 'plan' | 'race';
+  diff: string;
+  status: PendingStatus;
+  resultMsg?: string;
+  busy?: boolean;
+}
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  pendings?: PendingCard[];
 }
 
 const TEXTAREA_MAX = 120; // ~4 linie przy 16px; powyżej scroll wewnętrzny
@@ -53,17 +63,20 @@ export default function ChatPage() {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: nextMessages }),
+        // Wysyłamy TYLKO {role, content} — pendings to stan UI (Anthropic API nie zna tego pola).
+        body: JSON.stringify({ messages: nextMessages.map((m) => ({ role: m.role, content: m.content })) }),
       });
 
       const data = await res.json();
-
       if (!res.ok) {
         setError(data.error ?? 'Błąd serwera');
         return;
       }
 
-      setMessages([...nextMessages, { role: 'assistant', content: data.reply }]);
+      const pendings: PendingCard[] = Array.isArray(data.pendings)
+        ? data.pendings.map((p: Omit<PendingCard, 'status'>) => ({ ...p, status: 'pending' as const }))
+        : [];
+      setMessages([...nextMessages, { role: 'assistant', content: data.reply, pendings }]);
     } catch {
       setError('Nie udało się połączyć z serwerem');
     } finally {
@@ -71,7 +84,40 @@ export default function ChatPage() {
     }
   }
 
-  // Desktop: Enter wysyła, Shift+Enter nowa linia (zachowanie zostaje, opis znika z placeholdera).
+  // Aktualizuje pojedynczą kartę (po change_id) — karty są niezależne, jedna nie rusza drugiej.
+  function updatePending(changeId: string, patch: Partial<PendingCard>) {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.pendings ? { ...m, pendings: m.pendings.map((p) => (p.change_id === changeId ? { ...p, ...patch } : p)) } : m
+      )
+    );
+  }
+
+  // Klik [Zatwierdź]/[Odrzuć] → BEZPOŚREDNI POST na endpoint, z pominięciem modelu (deterministyczne).
+  async function handlePending(pending: PendingCard, action: 'commit' | 'cancel') {
+    if (pending.busy || pending.status !== 'pending') return;
+    updatePending(pending.change_id, { busy: true });
+    try {
+      const res = await fetch(`/api/ai/pending/${pending.change_id}/${action}`, { method: 'POST' });
+      const data = await res.json();
+
+      if (action === 'cancel') {
+        updatePending(pending.change_id, { status: 'cancelled', busy: false });
+        return;
+      }
+      if (data.ok) {
+        updatePending(pending.change_id, { status: 'committed', resultMsg: data.message, busy: false });
+        // Świadomość modelu: dopisz potwierdzenie do wątku (trafia do historii kolejnej tury).
+        setMessages((prev) => [...prev, { role: 'assistant', content: `✓ ${data.message ?? 'Zapisano.'}` }]);
+      } else {
+        // wygasło / już zastosowano / dane się zmieniły → czytelny komunikat, nie surowy błąd.
+        updatePending(pending.change_id, { status: 'expired', resultMsg: data.error ?? 'Propozycja nieaktualna — poproś ponownie.', busy: false });
+      }
+    } catch {
+      updatePending(pending.change_id, { busy: false, resultMsg: 'Błąd połączenia — spróbuj ponownie.' });
+    }
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -97,15 +143,20 @@ export default function ChatPage() {
         )}
 
         {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-              m.role === 'user'
-                ? 'self-end bg-accent text-background whitespace-pre-wrap'
-                : 'self-start bg-card border border-border text-foreground prose prose-invert prose-sm max-w-none'
-            }`}
-          >
-            {m.role === 'user' ? m.content : <ReactMarkdown>{m.content}</ReactMarkdown>}
+          <div key={i} className="flex flex-col gap-2">
+            <div
+              className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+                m.role === 'user'
+                  ? 'self-end bg-accent text-background whitespace-pre-wrap'
+                  : 'self-start bg-card border border-border text-foreground prose prose-invert prose-sm max-w-none'
+              }`}
+            >
+              {m.role === 'user' ? m.content : <ReactMarkdown>{m.content}</ReactMarkdown>}
+            </div>
+
+            {m.pendings?.map((p) => (
+              <ProposalCard key={p.change_id} p={p} onCommit={() => handlePending(p, 'commit')} onCancel={() => handlePending(p, 'cancel')} />
+            ))}
           </div>
         ))}
 
@@ -175,6 +226,53 @@ export default function ChatPage() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Karta propozycji: diff before→after + [Zatwierdź]/[Odrzuć]. Klik działa deterministycznie
+// na endpoint (bez modelu). Po rozstrzygnięciu przyciski znikają, karta pokazuje stan.
+function ProposalCard({ p, onCommit, onCancel }: { p: PendingCard; onCommit: () => void; onCancel: () => void }) {
+  const title = p.kind === 'plan' ? 'Proponowana zmiana planu' : 'Proponowana zmiana startu';
+  return (
+    <div className="self-start w-full max-w-md border border-border rounded-2xl overflow-hidden" style={{ background: 'var(--card, #1A1D23)' }}>
+      <div className="px-4 py-2 text-[11px] font-semibold tracking-wide border-b border-border" style={{ color: '#4A8FC7' }}>
+        {title}
+      </div>
+      <pre className="px-4 py-3 text-xs whitespace-pre-wrap font-sans text-foreground m-0">{p.diff}</pre>
+
+      {p.status === 'pending' && (
+        <div className="flex gap-2 px-4 pb-3 pt-1">
+          <button
+            onClick={onCommit}
+            disabled={p.busy}
+            className="flex-1 rounded-xl text-sm font-semibold text-background disabled:opacity-50"
+            style={{ minHeight: 44, background: '#5B9B7E' }}
+          >
+            {p.busy ? 'Zapisuję…' : 'Zatwierdź'}
+          </button>
+          <button
+            onClick={onCancel}
+            disabled={p.busy}
+            className="flex-1 rounded-xl text-sm font-semibold text-secondary border border-border disabled:opacity-50"
+            style={{ minHeight: 44 }}
+          >
+            Odrzuć
+          </button>
+        </div>
+      )}
+
+      {p.status === 'committed' && (
+        <div className="px-4 pb-3 pt-1 text-sm font-semibold" style={{ color: '#5B9B7E' }}>
+          ✓ Zapisano{p.resultMsg ? ` — ${p.resultMsg}` : ''}
+        </div>
+      )}
+      {p.status === 'cancelled' && (
+        <div className="px-4 pb-3 pt-1 text-sm text-secondary">Odrzucono — nic nie zapisano.</div>
+      )}
+      {p.status === 'expired' && (
+        <div className="px-4 pb-3 pt-1 text-sm" style={{ color: '#C99A4E' }}>{p.resultMsg}</div>
+      )}
     </div>
   );
 }

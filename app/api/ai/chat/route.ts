@@ -21,6 +21,21 @@ function textOf(resp: Anthropic.Message): string {
     .trim();
 }
 
+// Karta propozycji dla UI: przyciski [Zatwierdź]/[Odrzuć] działają na change_id BEZ modelu.
+interface PendingCard {
+  change_id: string;
+  kind: 'plan' | 'race';
+  diff: string;
+}
+
+// Wyciąga pending z wyniku propose_* (jeśli zwrócił change_id) — strukturalnie, nie z tekstu modelu.
+function pendingFrom(toolName: string, data: unknown): PendingCard | null {
+  if (toolName !== 'propose_plan_change' && toolName !== 'propose_race_change') return null;
+  const d = data as { ok?: boolean; change_id?: string; diff?: string };
+  if (!d?.ok || !d.change_id || !d.diff) return null;
+  return { change_id: d.change_id, kind: toolName === 'propose_plan_change' ? 'plan' : 'race', diff: d.diff };
+}
+
 export async function POST(request: NextRequest) {
   const supabase = createServerSupabaseClient();
   const {
@@ -57,6 +72,7 @@ export async function POST(request: NextRequest) {
   }
 
   const ctx: ToolCtx = { supabase, athleteId, userId: user.id, hasPower };
+  const pendings: PendingCard[] = []; // propozycje z tej odpowiedzi → karty z przyciskami w UI
 
   // ── Pętla tool-use: iteruj dopóki model prosi o narzędzia (stop_reason === 'tool_use') ──
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -69,7 +85,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (resp.stop_reason !== 'tool_use') {
-      return NextResponse.json({ reply: textOf(resp) });
+      return NextResponse.json({ reply: textOf(resp), pendings });
     }
 
     // Tura asystenta z blokami tool_use MUSI trafić do historii przed tool_result.
@@ -81,6 +97,8 @@ export async function POST(request: NextRequest) {
       try {
         const input = block.input as Record<string, unknown>;
         const data = isWriteTool(block.name) ? await dispatchWrite(block.name, input, ctx) : await dispatch(block.name, input, ctx);
+        const pending = pendingFrom(block.name, data);
+        if (pending) pendings.push(pending);
         toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(data) });
       } catch (e) {
         // Błąd handlera → is_error (model dostaje info, może zaproponować sync); request nie pada.
@@ -104,5 +122,5 @@ export async function POST(request: NextRequest) {
     tool_choice: { type: 'none' },
     messages,
   });
-  return NextResponse.json({ reply: textOf(finalResp) });
+  return NextResponse.json({ reply: textOf(finalResp), pendings });
 }
