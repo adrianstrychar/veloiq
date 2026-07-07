@@ -132,6 +132,31 @@ export function taperLast48hViolation(
   return null;
 }
 
+// ── Ochrona −1/−2 w tygodniu ZARYSU (next/outline) — post-processing, nie retry ─────
+// Gdy wyścig A jest w tygodniu zarysu (jeszcze nie bieżący), pełny taper się nie odpala
+// (bramka taperInCurrent). Model może dać LONG/OU/THR na −1/−2 zarysu → user widzi anti-taper
+// przez ~tydzień. Zamiast retry (zarys jest przybliżony, retry marnuje calle AI) NADPISUJEMY
+// −1/−2 deterministycznie lekkim placeholderem — whitelist {OFF,Z1,Z2} respektowana z definicji.
+// TYLKO ranga A: B (mini-taper) nie wymaga głębokiej ochrony w zarysie, dopina się w bieżącym.
+// Pełny taper (primer z akcentami, THR na −3, walidacja+retry) przychodzi przy promocji do current.
+export interface OutlinePlaceholder {
+  dow: number;
+  type: string;
+  label: string;
+  tss: number;
+  dur_min: number;
+}
+
+export function outlineTaperPlaceholders(raceDow: number, priority: RacePriority): OutlinePlaceholder[] {
+  if (priority !== 'A') return [];
+  const out: OutlinePlaceholder[] = [];
+  const d1 = raceDow - 1; // primer
+  const d2 = raceDow - 2; // luz/odpoczynek przed primerem
+  if (d1 >= 1) out.push({ dow: d1, type: 'Z2', label: 'Primer (dopnie się)', tss: 26, dur_min: 40 });
+  if (d2 >= 1) out.push({ dow: d2, type: 'OFF', label: 'Luz przed startem (dopnie się)', tss: 0, dur_min: 0 });
+  return out;
+}
+
 // Buduje blok promptu: struktura tygodnia startowego dzień po dniu (dow), wstecz od startu.
 // raceDow = dzień startu w generowanym tygodniu (1=Pn..7=Nd). Dni przed startem w TYM tygodniu
 // dostają instrukcję wg offsetu; offsety spoza tygodnia (taper sięga poprzedniego) pomijamy tu.
