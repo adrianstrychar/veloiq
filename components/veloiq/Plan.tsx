@@ -9,6 +9,18 @@ import { RideAnalysis, type RideActivity } from './RideAnalysis';
 import { createBrowserSupabaseClient } from '@/lib/supabase-browser';
 import { typeColor, fmtDur, dowLabel, dateLabel, weekRangeLabel, scaleWeek, maxAchievableMin, type WeekKind } from '@/lib/plan';
 import type { DayStructure } from '@/lib/structure';
+import type { RaceMeta } from '@/lib/ai/plan-generate';
+import { estimateRaceDay, type RacePriority } from '@/lib/race-taper';
+
+// Wyścig z kalendarza (do nałożenia dnia startu na plan, także sprzed race-aware generatora).
+export interface PlanRaceRow {
+  date: string;
+  name: string;
+  priority: RacePriority;
+  distance_km: number | null;
+  elevation_m: number | null;
+  discipline: string | null;
+}
 
 export interface PlanDayView {
   dow: number;
@@ -22,6 +34,7 @@ export interface PlanDayView {
   zones: number[];
   outline?: boolean;
   structure?: DayStructure | null; // parametry substruktury (nowe plany) → WorkoutDetail/profil
+  race?: RaceMeta | null;          // metadane dnia startu (type==='RACE') → karta wyścigu
   warmup?: number;    // 5.6: rozgrzewka/schłodzenie po skalowaniu suwakiem (→ buildWorkout)
   cooldown?: number;
   removed?: boolean;  // 5.6: sesja usunięta przez skalowanie w dół (pokazana jako OFF)
@@ -51,6 +64,17 @@ interface PlanProps {
   ctl: number;
   // Wszystkie jazdy danego dnia (data lokalna), posortowane malejąco po TSS.
   activitiesByDate: Record<string, PlanActivityRow[]>;
+  races?: PlanRaceRow[]; // starty z kalendarza — nakładane jako dzień RACE na pasującą datę
+}
+
+// Meta dnia startu z wiersza kalendarza (szacunek liczony jak w generatorze, deterministycznie).
+function raceMetaFromRow(r: PlanRaceRow): RaceMeta {
+  const est = estimateRaceDay(r.distance_km, r.elevation_m, r.discipline, r.priority);
+  return {
+    name: r.name, priority: r.priority,
+    distanceKm: r.distance_km, elevationM: r.elevation_m, discipline: r.discipline,
+    estTimeMin: est?.estTimeMin ?? 0, estTss: est?.estTss ?? 0,
+  };
 }
 
 // Czy dzień ma wykonaną jazdę (≥1 aktywność).
@@ -101,6 +125,8 @@ function Cell({ label, value, color }: { label: string; value: string; color?: s
 function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: PlanDayView; isToday: boolean; isPast: boolean; done: boolean; loading: boolean; actual?: PlanActivityRow; onClick?: () => void }) {
   const isRemoved = !!d.removed;
   const isOff = d.type === 'OFF';
+  const isRace = d.type === 'RACE';
+  const rm = d.race ?? null;
   const offLike = isOff || isRemoved; // usunięta sesja renderuje się jak OFF (szara)
   const tc = isRemoved ? C.muted : typeColor(d.type);
   const isOutline = !!d.outline;
@@ -113,8 +139,10 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
       onMouseEnter={clickable ? () => setHover(true) : undefined}
       onMouseLeave={clickable ? () => setHover(false) : undefined}
       style={{
+        // Dzień startu wyróżniony trwałym akcentem (nie tylko na hover) + delikatne tło.
         ...card, padding: '12px 14px', position: 'relative',
-        border: `1px solid ${isToday ? C.cyan : hover ? tc + '88' : C.border}`,
+        border: isRace ? `1.5px solid ${C.red}66` : `1px solid ${isToday ? C.cyan : hover ? tc + '88' : C.border}`,
+        background: isRace ? `${C.red}0D` : card.background,
         opacity: isRemoved ? 0.5 : isOutline ? 0.6 : ((done || isPast) && !isToday ? 0.55 : 1),
         cursor: clickable ? 'pointer' : 'default',
         transition: 'border-color 0.15s',
@@ -131,26 +159,39 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
           <div style={{ fontSize: 9, color: C.muted }}>{dateLabel(d.date)}</div>
         </div>
         <div style={{ width: 50, display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ background: tc + '22', color: tc, border: `1px solid ${tc}55`, borderRadius: 4, padding: '2px 7px', fontSize: 9, fontWeight: 600 }}>
-            {isRemoved ? 'OFF' : d.type}
+          <span style={{ background: tc + '22', color: tc, border: `1px solid ${tc}55`, borderRadius: 4, padding: '2px 7px', fontSize: 9, fontWeight: 600, whiteSpace: 'nowrap' }}>
+            {isRemoved ? 'OFF' : isRace ? '🏁 START' : d.type}
           </span>
           {d.locked && (
             <span title="Zablokowane ręcznie — zmień przez czat" style={{ fontSize: 11, color: C.muted, fontWeight: 600 }}>🔒</span>
           )}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: C.text }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: isRace ? C.red : C.text }}>
             {isRemoved ? 'Dzień wolny' : d.label}
           </div>
-          {!offLike && <ZoneBar zones={d.zones} />}
-          {isOutline && !offLike && (
+          {isRace && rm && (
+            // Meta startu zamiast paska stref: dystans/przewyższenie/dyscyplina + ranga.
+            <div style={{ fontSize: 9.5, color: C.muted, marginTop: 1 }}>
+              {[rm.distanceKm ? `${rm.distanceKm} km` : null, rm.elevationM ? `${rm.elevationM} m ↑` : null, rm.discipline]
+                .filter(Boolean).join(' · ')}{rm.priority ? ` · ranga ${rm.priority}` : ''}
+            </div>
+          )}
+          {!offLike && !isRace && <ZoneBar zones={d.zones} />}
+          {isOutline && !offLike && !isRace && (
             // Zarys jest celowo nieklikalny — powiedz to na karcie, zamiast milczeć.
             <div style={{ fontSize: 9, color: C.muted, fontStyle: 'italic', marginTop: 3 }}>
               rozpiska dopnie się przed tygodniem
             </div>
           )}
         </div>
-        {isRemoved ? (
+        {isRace ? (
+          // Dzień startu: szacunki (tylda) zamiast kafli treningowych. Realne dane Strava po starcie.
+          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center' }}>
+            <Cell label="~CZAS" value={rm?.estTimeMin ? fmtDur(rm.estTimeMin) : '—'} color={C.red} />
+            <Cell label="~TSS" value={rm?.estTss ? `${rm.estTss}` : '—'} color={C.red} />
+          </div>
+        ) : isRemoved ? (
           <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>Dzień wolny — obciążenie zredukowane</div>
         ) : isOff ? (
           <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>Pełna regeneracja</div>
@@ -240,12 +281,15 @@ const ACTIVITY_SELECT =
 function computeBaseHours(days: PlanDayView[] | null, acts: Record<string, PlanActivityRow[]>): number {
   if (!days) return 1;
   const min = days
-    .filter((d) => d.type !== 'OFF' && !d.locked && !isDoneDate(acts, d.date))
+    // RACE wykluczony — suwak budżetuje czas TRENINGU, nie liczy godzin wyścigu.
+    .filter((d) => d.type !== 'OFF' && d.type !== 'RACE' && !d.locked && !isDoneDate(acts, d.date))
     .reduce((a, d) => a + d.dur_min, 0);
   return Math.round(min / 60) || 1;
 }
 
-export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }: PlanProps) {
+export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, races = [] }: PlanProps) {
+  // Mapa data→meta startu — do nałożenia dnia RACE na plan (także sprzed race-aware generatora).
+  const raceByDate = new Map(races.map((r) => [r.date, raceMetaFromRow(r)]));
   const [idx, setIdx] = useState(currentIdx);
   const [openWorkout, setOpenWorkout] = useState<PlanDayView | null>(null);
   const [openRide, setOpenRide] = useState<PlanActivityRow | null>(null);
@@ -376,7 +420,17 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
   }
 
   // Plan dnia: override po modyfikacji czatem albo wersja z bazy (props).
-  const days = override[week.weekStart] ?? week.days;
+  // Nałóż dzień startu: gdy plan_json już ma type RACE — bez zmian; gdy nie (plan sprzed
+  // race-aware generatora) a data pasuje do wyścigu — skonwertuj dzień na RACE z szacunkiem.
+  // Robione PRZED scaleWeek/statystykami, żeby suwak i kafle widziały spójny dzień startu.
+  const rawDays = override[week.weekStart] ?? week.days;
+  const days = rawDays
+    ? rawDays.map((d) => {
+        if (d.type === 'RACE') return d;
+        const rm = raceByDate.get(d.date);
+        return rm ? { ...d, type: 'RACE', label: rm.name, tss: rm.estTss, dur_min: rm.estTimeMin, race: rm } : d;
+      })
+    : rawDays;
 
   // Suwak działa TYLKO na bieżącym tygodniu. Hierarchiczne skalowanie (scaleWeek):
   // ruszamy warmup/cooldown w zakresach, przy dużych cięciach usuwamy całe sesje.
@@ -417,7 +471,8 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
   // Wykluczenie isDoneDate gwarantuje, że zaplanowany trening, który już zrobiłem, NIE liczy się
   // podwójnie (jest w "wykonane" jako jazda Stravy, a nie w "pozostało").
   const remDays = scaledDays
-    ? scaledDays.filter((d) => d.type !== 'OFF' && !d.removed && !isDoneDate(activitiesByDate, d.date))
+    // RACE poza statystykami treningu "pozostało" — pokazywany osobną kartą startu, nie w kaflach.
+    ? scaledDays.filter((d) => d.type !== 'OFF' && d.type !== 'RACE' && !d.removed && !isDoneDate(activitiesByDate, d.date))
     : [];
   const remSessions = remDays.length;
   const remDurMin = remDays.reduce((a, d) => a + d.dur_min, 0);
@@ -619,13 +674,15 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate }
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {(scaledDays ?? []).map((d, i) => {
               const list = activitiesByDate[d.date] ?? [];
-              const isTraining = d.type !== 'OFF' && !d.removed;
+              // RACE nie jest treningiem — nie "konsumuje" jazdy jako plan-match; ewentualna jazda
+              // wyścigowa pokaże się osobną kartą (plan=szacunek vs realne dane). Karta RACE sama nieklikalna.
+              const isTraining = d.type !== 'OFF' && d.type !== 'RACE' && !d.removed;
               // Trening planu "konsumuje" 1 jazdę (max TSS = lista[0]); reszta = poza planem.
-              // Dzień OFF/usunięty z jazdą → cała jazda poza planem.
+              // Dzień OFF/usunięty/RACE z jazdą → cała jazda poza planem.
               const matched = isTraining ? list[0] : undefined;
               const unplanned = isTraining ? list.slice(1) : list;
               const done = !!matched;
-              const clickable = d.type !== 'OFF' && !d.removed && (done || !d.outline);
+              const clickable = d.type !== 'OFF' && d.type !== 'RACE' && !d.removed && (done || !d.outline);
               const onClick = !clickable
                 ? undefined
                 : done

@@ -11,6 +11,7 @@
 
 # next.js
 /.next/
+**/.next/
 /out/
 
 # production
@@ -34,3 +35,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# agent scratch / diagnostyka — nigdy nie commitować
+.claude/
+scripts/diag-*
+scripts/.baseline-*
+# zagnieżdżone worktree ze spawnów agenta (+ ich build-cache .next)
+**/worktrees/
+
+# OneDrive conflict-copies (np. "Plik-Nazwa Laptop.tsx")
+*[- ]Laptop.*
