@@ -6,6 +6,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { syncActivityDetails } from '@/lib/strava/details';
 import { localTodayISO, mondayOfISO } from '@/lib/plan';
+import { findDiscrepancies, type MyRace } from '@/lib/race-verify';
+
+// Brak kolumny wieku w athletes → zawodnik M19-34 (30 lat) → reguła dystansu = Gran Fondo (max zakresu).
+// Zmiana progu 55+ (Medio) = tu jedna stała.
+const ATHLETE_AGE = 30;
 
 export interface ToolCtx {
   supabase: SupabaseClient;
@@ -106,6 +111,12 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
     name: 'get_checkin',
     description:
       "Latest wellness/recovery: this week's check-in (resting HR, sleep, HRV, fatigue score, legs feeling, motivation, notes) and the most recent daily biometrics (RHR, HRV, sleep, recovery score). Use for 'how's my recovery', 'did I sleep enough', RHR/HRV/fatigue questions.",
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'check_race_calendar',
+    description:
+      "Verify the athlete's races against the curated OFFICIAL UCI calendars (gravel + granfondo/road) — checks dates and distances. READ-ONLY: it reports discrepancies, it NEVER writes. Use when the athlete asks to check/verify/confirm their race calendar against official sources (e.g. 'sprawdź daty moich startów'). To fix a reported discrepancy, propose the correction with propose_race_change (per race, each needs the athlete's explicit confirmation).",
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
   },
 ];
@@ -325,6 +336,40 @@ async function getCheckin({ supabase, athleteId }: ToolCtx) {
   return { week: week ?? null, latest_daily: daily ?? null };
 }
 
+// READ-ONLY weryfikacja startów względem oficjalnych kalendarzy UCI. NIE zapisuje nic —
+// poprawki idą przez propose_race_change (PROPOSE NOT PERSIST). Zwraca rozjazdy po polsku.
+async function checkRaceCalendar({ supabase, athleteId }: ToolCtx) {
+  const { data } = await supabase
+    .from('race_calendar')
+    .select('id, name, date, distance_km, location')
+    .eq('athlete_id', athleteId)
+    .order('date', { ascending: true });
+  const mine: MyRace[] = (data ?? []).map((r) => ({
+    race_id: r.id as string,
+    name: r.name as string,
+    date: r.date as string,
+    distance_km: (r.distance_km as number | null) ?? null,
+    location: (r.location as string | null) ?? null,
+  }));
+  if (mine.length === 0) return { checked: 0, matched: 0, discrepancies: [], errors: [], message: 'Nie masz żadnych startów w kalendarzu do sprawdzenia.' };
+
+  const { checked, matched, discrepancies, errors } = await findDiscrepancies(mine, ATHLETE_AGE);
+  return {
+    checked,
+    matched,
+    discrepancies: discrepancies.map((d) => ({
+      race_id: d.race_id,
+      race_name: d.race_name,
+      field: d.field === 'date' ? 'data' : 'dystans',
+      moja_wartosc: d.mine,
+      oficjalna_wartosc: d.official,
+      zrodlo_url: d.source_url,
+    })),
+    errors,
+    note: 'To weryfikacja read-only — niczego nie zapisałem. Aby poprawić rozjazd, zaproponuj zmianę przez propose_race_change (osobno per start, każda z potwierdzeniem usera).',
+  };
+}
+
 // ── Dispatcher ──────────────────────────────────────────────────────────────────
 export async function dispatch(name: string, input: Record<string, unknown>, ctx: ToolCtx): Promise<unknown> {
   switch (name) {
@@ -336,6 +381,7 @@ export async function dispatch(name: string, input: Record<string, unknown>, ctx
     case 'get_weekly_plan': return getWeeklyPlan(ctx, input);
     case 'get_races': return getRaces(ctx, input);
     case 'get_checkin': return getCheckin(ctx);
+    case 'check_race_calendar': return checkRaceCalendar(ctx);
     default: throw new Error(`unknown tool: ${name}`);
   }
 }
