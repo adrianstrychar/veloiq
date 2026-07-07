@@ -248,7 +248,7 @@ async function proposeRaceChange({ supabase, athleteId }: ToolCtx, input: Record
   return { ok: false, error: 'Nieznana operacja (add/edit/delete).' };
 }
 
-async function cancelChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
+export async function cancelChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
   const changeId = str(input.change_id);
   if (!changeId) return { ok: false, error: 'Brak change_id.' };
   const { data: pend } = await supabase.from('pending_changes').select('id').eq('id', changeId).eq('athlete_id', athleteId).maybeSingle();
@@ -257,7 +257,7 @@ async function cancelChange({ supabase, athleteId }: ToolCtx, input: Record<stri
   return { ok: true, cancelled: true, message: 'Propozycja odrzucona.' };
 }
 
-async function commitChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
+export async function commitChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
   const changeId = typeof input.change_id === 'string' ? input.change_id : '';
   if (!changeId) return { ok: false, error: 'Brak change_id.' };
 
