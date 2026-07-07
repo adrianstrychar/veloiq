@@ -1,7 +1,20 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+// GFM (tabele, ~strike~, task-listy) renderowane poprawnie zamiast surowego Markdown.
+// Tabela zawinięta w overflow-x-auto — na wąskim viewporcie (iPhone) scrolluje, nie rozpycha bąbla.
+const mdComponents: Components = {
+  table: ({ node, ...props }) => (
+    <div className="overflow-x-auto">
+      <table className="border-collapse text-xs" {...props} />
+    </div>
+  ),
+  th: ({ node, ...props }) => <th className="border border-border px-2 py-1 text-left font-semibold" {...props} />,
+  td: ({ node, ...props }) => <td className="border border-border px-2 py-1 align-top" {...props} />,
+};
 
 type PendingStatus = 'pending' | 'committed' | 'cancelled' | 'expired';
 interface PendingCard {
@@ -151,7 +164,7 @@ export default function ChatPage() {
                   : 'self-start bg-card border border-border text-foreground prose prose-invert prose-sm max-w-none'
               }`}
             >
-              {m.role === 'user' ? m.content : <ReactMarkdown>{m.content}</ReactMarkdown>}
+              {m.role === 'user' ? m.content : <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{m.content}</ReactMarkdown>}
             </div>
 
             {m.pendings?.map((p) => (
