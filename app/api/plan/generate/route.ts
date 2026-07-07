@@ -12,7 +12,7 @@ import {
   type RaceContext,
   type RaceMeta,
 } from '@/lib/ai/plan-generate';
-import { estimateRaceDay, taperDaysFor, taperVolumeFactor, taperLast48hViolation, type RacePriority } from '@/lib/race-taper';
+import { estimateRaceDay, taperDaysFor, taperVolumeFactor, taperLast48hViolation, outlineTaperPlaceholders, type RacePriority } from '@/lib/race-taper';
 
 // dow (1=Pn..7=Nd) daty w tygodniu zaczynającym się od weekStart (Mon), albo null gdy poza tygodniem.
 function dowInWeek(weekStart: string, dateIso: string): number | null {
@@ -128,6 +128,9 @@ export async function POST(req: NextRequest) {
   const raceDowNext = raceInWindow ? dowInWeek(nextWeek, raceInWindow.date) : null;
   // Taper aktywny w bieżącym (szczegółowym) tygodniu, gdy zawiera on start rangi z taperem (A/B).
   const taperInCurrent = raceDowCurrent != null && raceInWindow != null && taperDaysFor(raceInWindow.priority) > 0;
+  // Wyścig A w tygodniu ZARYSU (next) — minimum ochronne −1/−2 przez post-processing (nie taper/retry).
+  // Tylko A: B (mini-taper) nie wymaga głębokiej ochrony w zarysie, dopina się w bieżącym.
+  const taperInNext = raceDowNext != null && raceInWindow != null && raceInWindow.priority === 'A';
 
   const raceCtx: RaceContext | null = selRace
     ? {
@@ -213,6 +216,20 @@ export async function POST(req: NextRequest) {
         const meta = raceMetaOf(raceInWindow);
         if (raceDowCurrent != null) injectRaceDay(v.current.days, raceDowCurrent, meta, raceInWindow.date);
         if (raceDowNext != null) injectRaceDay(v.next.days, raceDowNext, meta, raceInWindow.date);
+      }
+      // OCHRONA −1/−2 W ZARYSIE (wyścig A w tygodniu next/outline): pełny taper jeszcze się nie
+      // odpalił (bramka taperInCurrent), więc model mógł dać LONG/OU/THR na −1/−2 zarysu. Nadpisujemy
+      // je lekkim placeholderem (post-processing, NIE retry — zarys jest przybliżony). Whitelist
+      // {OFF,Z1,Z2} respektowana z definicji. Pełny taper przyjdzie przy promocji next→current.
+      if (taperInNext && raceDowNext != null) {
+        for (const p of outlineTaperPlaceholders(raceDowNext, raceInWindow!.priority)) {
+          const i = p.dow - 1;
+          v.next.days[i] = {
+            ...v.next.days[i], dow: p.dow, type: p.type as PlanDay['type'], label: p.label,
+            tss: p.tss, dur_min: p.dur_min, watt: '–', hr: '–', zones: [0, 0, 0, 0, 0],
+            structure: null, race: null, outline: true,
+          };
+        }
       }
       current = v.current;
       next = v.next;
