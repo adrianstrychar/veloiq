@@ -1,5 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { Plan, type PlanDayView, type WeekSlot, type PlanActivityRow } from '@/components/veloiq/Plan';
+import { Plan, type PlanDayView, type WeekSlot, type PlanActivityRow, type PlanRaceRow } from '@/components/veloiq/Plan';
 import { localTodayISO, mondayOfISO, addWeeks, weekKind } from '@/lib/plan';
 
 export const dynamic = 'force-dynamic';
@@ -82,6 +82,16 @@ export default async function PlanPage() {
     .eq('athlete_id', athlete?.id ?? '')
     .gte('activity_date', lowerBound);
 
+  // Starty w oknie planu — nakładane jako dzień RACE (spójne z wstrzykiwaniem w generatorze,
+  // działa też dla planów sprzed race-aware). Zakres = całe okno 4 tygodni.
+  const windowEnd = (() => { const d = new Date(weekStarts[weekStarts.length - 1] + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 6); return d.toISOString().slice(0, 10); })();
+  const { data: raceRows } = await supabase
+    .from('race_calendar')
+    .select('date, name, priority, distance_km, elevation_m, discipline')
+    .eq('athlete_id', athlete?.id ?? '')
+    .gte('date', weekStarts[0])
+    .lte('date', windowEnd);
+
   const activitiesByDate: Record<string, PlanActivityRow[]> = {};
   for (const a of (actRows ?? []) as unknown as PlanActivityRow[]) {
     const key = localDateOf(a as never);
@@ -109,7 +119,7 @@ export default async function PlanPage() {
         <span className="text-lg font-bold">Plan tygodnia</span>
       </header>
 
-      <Plan weeks={weeks} currentIdx={CURRENT_IDX} todayISO={todayISO} ftp={ftp} ctl={ctl} activitiesByDate={activitiesByDate} />
+      <Plan weeks={weeks} currentIdx={CURRENT_IDX} todayISO={todayISO} ftp={ftp} ctl={ctl} activitiesByDate={activitiesByDate} races={(raceRows ?? []) as PlanRaceRow[]} />
     </div>
   );
 }

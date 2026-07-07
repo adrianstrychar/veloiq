@@ -9,9 +9,23 @@ import {
   type DayStructure,
 } from '@/lib/structure';
 import { sessionStructure } from '@/lib/workout';
+import { buildTaperGuidance, type RacePriority } from '@/lib/race-taper';
 
-export const WORKOUT_TYPES = ['OFF', 'Z1', 'Z2', 'SST', 'THR', 'OU', 'VO2', 'LONG'] as const;
+// RACE = dzień startu (nie trening). Dyskryminator dnia jak OFF/Z2; metadane startu (nazwa,
+// szacunki) niesie osobny obiekt `race` na PlanDay, bo nie mieszczą się w polach treningowych.
+export const WORKOUT_TYPES = ['OFF', 'Z1', 'Z2', 'SST', 'THR', 'OU', 'VO2', 'LONG', 'RACE'] as const;
 export type WorkoutType = (typeof WORKOUT_TYPES)[number];
+
+// Metadane dnia startu — liczone server-side (estimateRaceDay), nie przez AI.
+export interface RaceMeta {
+  name: string;
+  priority: RacePriority;
+  distanceKm: number | null;
+  elevationM: number | null;
+  discipline: string | null;
+  estTimeMin: number;   // szacowany czas jazdy
+  estTss: number;       // szacowany TSS (tylda — realne dane Strava zastąpią po starcie)
+}
 
 export interface PlanDay {
   dow: number;        // 1=Pn ... 7=Nd
@@ -28,6 +42,21 @@ export interface PlanDay {
   // Parametry substruktury sesji (SST/THR/OU/VO2). null/brak = dzień jednolity albo stary plan
   // sprzed kontraktu → render/insight używają fallbacku. Jedno źródło prawdy dla label+profil+insight.
   structure?: DayStructure | null;
+  // Metadane startu — obecne WYŁĄCZNIE gdy type==='RACE'. Wstrzykiwane server-side.
+  race?: RaceMeta | null;
+}
+
+// Kontekst wyścigu dla generatora — wybór wyścigu i jego pozycja w oknie liczone w route.
+export interface RaceContext {
+  name: string;
+  date: string;              // ISO
+  priority: RacePriority;
+  distanceKm: number | null;
+  elevationM: number | null;
+  discipline: string | null;
+  daysToRace: number;        // od dziś (kontekst ogólny)
+  raceDowCurrent: number | null; // dow (1-7) startu w BIEŻĄCYM (szczegółowym) tygodniu, else null
+  taperInCurrent: boolean;   // czy bieżący tydzień jest tygodniem startowym (taper aktywny)
 }
 
 export interface GeneratorInputs {
@@ -38,9 +67,7 @@ export interface GeneratorInputs {
   ctl: number | null;
   atl: number | null;
   tsb: number | null;
-  raceName: string | null;
-  raceDate: string | null;    // ISO
-  daysToRace: number | null;
+  race: RaceContext | null;   // null = brak wyścigu w zasięgu → budowanie
   weeklyTssTarget: number;        // cel TSS tygodnia bieżącego
   nextWeeklyTssTarget: number;    // cel TSS tygodnia zarysu (next)
 }
@@ -78,18 +105,24 @@ export function nextWeekStart(weekStart: string): string {
 // ── Prompt (dwa tygodnie) ─────────────────────────────────────────────────────
 
 export function buildTwoWeekPrompt(inp: GeneratorInputs): { system: string; user: string } {
+  // Tryb taperu (tydzień startowy w bieżącym tygodniu) ZNOSI reguły budowania — inaczej model
+  // próbuje POGODZIĆ "min 2 sesje jakościowe + progresja CTL" z redukcją taperu i grzęźnie w
+  // sprzecznym rozumowaniu, wyczerpując budżet tokenów zanim wyemituje JSON (zaobserwowane).
+  const isTaper = !!(inp.race && inp.race.taperInCurrent && inp.race.raceDowCurrent != null);
   const system = [
     'Jesteś doświadczonym trenerem kolarstwa. Budujesz horyzont DWÓCH tygodni:',
     'BIEŻĄCY tydzień w pełnym SZCZEGÓLE oraz NASTĘPNY tydzień jako ZARYS (kierunek, dopnie się po sesjach).',
-    'Zawodnik: Adrian — puncheur. GŁÓWNA SŁABOŚĆ: próg utrzymany 20–60 min. To priorytet rozwojowy:',
-    'w BIEŻĄCYM tygodniu zaplanuj min. 2 sesje jakościowe (THR/SST/OU) celujące w utrzymany wysiłek progowy 20–60 min.',
+    isTaper
+      ? 'Zawodnik: Adrian — puncheur (67 kg). BIEŻĄCY tydzień to TYDZIEŃ STARTOWY (tapering) — NIE stosuj reguł budowania: pomiń wymóg 2 sesji jakościowych i progresji CTL. Jedynym źródłem struktury bieżącego tygodnia jest OPIS TAPERU niżej — wypełnij dni dokładnie wg niego.'
+      : 'Zawodnik: Adrian — puncheur. GŁÓWNA SŁABOŚĆ: próg utrzymany 20–60 min. To priorytet rozwojowy: w BIEŻĄCYM tygodniu zaplanuj min. 2 sesje jakościowe (THR/SST/OU) celujące w utrzymany wysiłek progowy 20–60 min.',
     'ZASADY ROZGRZEWKI (wlicz w dur_min i w rozkład stref): min 20 min spokojnej rozgrzewki przed Z2/SST,',
     'min 25 min przed THR/OU/VO2. Każda jakościowa sesja ma rozgrzewkę + część główną + schłodzenie.',
     'TWARDA REGUŁA dla zones[] (tylko tydzień bieżący): rozgrzewka i schłodzenie MUSZĄ być widoczne w strefach.',
     'Dla THR/OU/VO2 udział Z1+Z2 (zones[0]+zones[1]) >= round(25 / dur_min * 100)%.',
     'Dla Z2/SST udział Z1+Z2 >= round(20 / dur_min * 100)%. Przykład: THR 90 min → Z1+Z2 >= 28%.',
-    'Buduj progresywnie względem CTL. Zostaw regenerację: dni OFF/Z1 i jedną długą LONG w weekend.',
-    'OBOWIĄZKOWO 2 dni OFF w tygodniu. Jeden zwykle w poniedziałek (regeneracja po weekendzie), drugi w środku tygodnia (czwartek lub piątek — przed lub po sesji jakościowej). Nigdy dwa OFF z rzędu. Sesje jakościowe (THR/OU/VO2) nigdy bezpośrednio obok siebie — zawsze Z1/Z2/OFF między nimi.',
+    isTaper
+      ? 'NIE buduj progresywnie i NIE wymuszaj układu 2 OFF — tydzień startowy rządzi się OPISEM TAPERU niżej (liczba i rozkład dni wolnych wynika z niego). Dzień startu (RACE) zostaw jako OFF, serwer go wypełni.'
+      : 'Buduj progresywnie względem CTL. Zostaw regenerację: dni OFF/Z1 i jedną długą LONG w weekend. OBOWIĄZKOWO 2 dni OFF w tygodniu. Jeden zwykle w poniedziałek (regeneracja po weekendzie), drugi w środku tygodnia (czwartek lub piątek — przed lub po sesji jakościowej). Nigdy dwa OFF z rzędu. Sesje jakościowe (THR/OU/VO2) nigdy bezpośrednio obok siebie — zawsze Z1/Z2/OFF między nimi.',
     'MINIMALNY czas sesji to 45 min (dur_min >= 45). Sesje poniżej 45 min nie mają sensu treningowego — jeśli budżet jest za mały, lepiej dać OFF niż krótką sesję. Nie planuj Z1/Z2/regeneracji poniżej 45 min.',
     'Typy: OFF=wolne, Z1=regeneracja, Z2=endurance, SST=sweet spot, THR=threshold, OU=over-under, VO2=vo2max, LONG=długa.',
     'STRUKTURA SESJI (tylko tydzień bieżący): każdy dzień SST/THR/OU/VO2 MUSI mieć pole "structure" z PARAMETRAMI interwałów (liczby całkowite, waty absolutne):',
@@ -105,12 +138,19 @@ export function buildTwoWeekPrompt(inp: GeneratorInputs): { system: string; user
     'Przykłady poprawnych labeli: "Long gravel", "Endurance", "Regeneracja aktywna", "Odpoczynek"; w zarysie też np. "Threshold 2×15min".',
     'INSIGHT (oba tygodnie): MAX 1-2 zdania, prosty codzienny język. Krótko: co to za tydzień i na co zwrócić uwagę.',
     'NIE tłumacz każdej sesji po kolei, nie pisz o TSS ani szczegółów — to ma być zwięzła myśl, nie rozprawka.',
-    'KRYTYCZNE: wszystkie obliczenia (TSS, minuty, strefy) wykonaj PO CICHU. Cała odpowiedź to JEDEN obiekt JSON — zero tekstu przed "{" i po "}", bez markdown.',
+    'KRYTYCZNE: wszystkie obliczenia (TSS, minuty, strefy) wykonaj PO CICHU i ZWIĘŹLE. NIE rozpisuj planu prozą dzień po dniu przed JSON — długie rozumowanie ucina odpowiedź. Cała odpowiedź to JEDEN obiekt JSON — zero tekstu przed "{" i po "}", bez markdown.',
   ].join(' ');
 
-  const raceLine = inp.raceName && inp.daysToRace != null
-    ? `Najbliższy wyścig: ${inp.raceName} za ${inp.daysToRace} dni (${inp.raceDate}). Faza budowania.`
-    : 'Brak nadchodzącego wyścigu — budowanie ogólnej formy.';
+  // Faza tygodnia zależy od wyścigu: TYDZIEŃ STARTOWY → tapering ze strukturą wstecz od startu
+  // (znosi dawne bezwarunkowe "Faza budowania"); poza taperem → budowanie z kontekstem startu.
+  let raceLine: string;
+  if (inp.race && inp.race.taperInCurrent && inp.race.raceDowCurrent != null) {
+    raceLine = buildTaperGuidance(inp.race.name, inp.race.priority, inp.race.raceDowCurrent);
+  } else if (inp.race) {
+    raceLine = `Najbliższy wyścig: ${inp.race.name} (ranga ${inp.race.priority}) za ${inp.race.daysToRace} dni (${inp.race.date}). Poza fazą taperu — buduj formę, ale bez wyniszczających bloków tuż przed startem.`;
+  } else {
+    raceLine = 'Brak nadchodzącego wyścigu w zasięgu — budowanie ogólnej formy.';
+  }
 
   const [curLo, curHi] = tssBand(inp.weeklyTssTarget);
   const [nxtLo, nxtHi] = tssBand(inp.nextWeeklyTssTarget);
@@ -161,19 +201,25 @@ export function buildModifyPrompt(
   const planJson = JSON.stringify(
     currentDays.map((d) => ({
       dow: d.dow, type: d.type, label: d.label, tss: d.tss, dur_min: d.dur_min, watt: d.watt, hr: d.hr, zones: d.zones,
-      structure: d.structure ?? null,
+      structure: d.structure ?? null, race: d.race ?? null,
     }))
   );
+
+  const raceDay = currentDays.find((d) => d.type === 'RACE');
 
   const system = [
     'Jesteś trenerem kolarstwa VeloIQ modyfikującym istniejący plan tygodniowy zawodnika.',
     `Zawodnik: Adrian — puncheur, FTP ${ctx.ftp}W${ctx.ctl != null ? `, CTL ${Math.round(ctx.ctl)}` : ''}.`,
     'GŁÓWNA SŁABOŚĆ: próg utrzymany 20–60 min — CHROŃ sesje THR/OU, nie usuwaj ich bez wyraźnej prośby.',
-    ctx.raceName && ctx.daysToRace != null
+    raceDay
+      ? `TYDZIEŃ STARTOWY: dow ${raceDay.dow} to WYŚCIG "${raceDay.label}" (type RACE) — to faza taperingu/szczytowania, NIE budowania.`
+      : ctx.raceName && ctx.daysToRace != null
       ? `Najbliższy wyścig: ${ctx.raceName} za ${ctx.daysToRace} dni — trzymaj kierunek budowania formy.`
       : 'Brak najbliższego wyścigu w kalendarzu.',
-    'Modyfikuj PODANY plan zgodnie z prośbą — zachowaj sens treningowy, nie generuj od zera.',
-    'ZASADY (twarde): dokładnie 7 dni Pn–Nd (dow 1..7). Typy: OFF/Z1/Z2/SST/THR/OU/VO2/LONG.',
+    raceDay
+      ? `Dzień dow ${raceDay.dow} (RACE) PRZEPISZ BEZ ZMIAN (type, race, tss, dur_min) — nie zamieniaj go na trening ani OFF, chyba że user JAWNIE prosi o zmianę wyścigu. Chroń tapering: nie dokładaj ciężkich sesji tuż przed startem.`
+      : 'Modyfikuj PODANY plan zgodnie z prośbą — zachowaj sens treningowy, nie generuj od zera.',
+    'ZASADY (twarde): dokładnie 7 dni Pn–Nd (dow 1..7). Typy: OFF/Z1/Z2/SST/THR/OU/VO2/LONG/RACE.',
     'Jeśli user chce wolny dzień → type OFF (tss 0, dur_min 0, watt/hr "–", zones [0,0,0,0,0]).',
     'Dni, które user JAWNIE wskazał jako wolne (też wielodniowe, np. cały weekend So+Nd), wypisz w polu "off".',
     'NIE przenoś obciążenia z dnia OFF na inne dni — suma TSS tygodnia ma SPAŚĆ (wolne realnie zmniejsza obciążenie).',
@@ -278,8 +324,25 @@ export function validateWeek(
     zones = zones.map((z) => Math.max(0, Math.min(100, z)));
 
     let structure: DayStructure | null = null;
+    let race: RaceMeta | null = null;
 
-    if (opts.outline) {
+    if (type === 'RACE') {
+      // Dzień startu — nie trening. tss/dur zachowane (wstrzyknięte server-side), reszta martwa.
+      // W trybie modify AI ma przepisać RACE bez zmian; carry meta z surowego dnia jeśli jest.
+      watt = '–'; hr = '–'; zones = [0, 0, 0, 0, 0];
+      const rawRace = d.race as Record<string, unknown> | null | undefined;
+      if (rawRace && typeof rawRace.name === 'string') {
+        race = {
+          name: rawRace.name,
+          priority: (['A', 'B', 'C'].includes(String(rawRace.priority)) ? rawRace.priority : 'A') as RacePriority,
+          distanceKm: rawRace.distanceKm != null ? Number(rawRace.distanceKm) : null,
+          elevationM: rawRace.elevationM != null ? Number(rawRace.elevationM) : null,
+          discipline: typeof rawRace.discipline === 'string' ? rawRace.discipline : null,
+          estTimeMin: Math.max(0, Math.round(Number(rawRace.estTimeMin) || 0)),
+          estTss: Math.max(0, Math.round(Number(rawRace.estTss) || 0)),
+        };
+      }
+    } else if (opts.outline) {
       // ZARYS: tylko type + label + tss + ~dur. Reszta pusta. Bez kontroli stref, bez structure.
       watt = '–'; hr = '–'; zones = [0, 0, 0, 0, 0];
       if (type === 'OFF') { tss = 0; durMin = 0; }
@@ -314,6 +377,8 @@ export function validateWeek(
       type,
       label: structure
         ? buildLabel(type, structure)
+        : race
+        ? race.name
         : typeof d.label === 'string' && d.label.trim() ? d.label.trim() : type,
       tss,
       dur_min: durMin,
@@ -322,6 +387,7 @@ export function validateWeek(
       zones,
       outline: opts.outline,
       structure,
+      race,
     });
   }
 

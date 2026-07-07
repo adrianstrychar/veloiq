@@ -9,7 +9,39 @@ import {
   nextWeekStart,
   type GeneratorInputs,
   type PlanDay,
+  type RaceContext,
+  type RaceMeta,
 } from '@/lib/ai/plan-generate';
+import { estimateRaceDay, taperDaysFor, taperVolumeFactor, taperLast48hViolation, type RacePriority } from '@/lib/race-taper';
+
+// dow (1=Pn..7=Nd) daty w tygodniu zaczynającym się od weekStart (Mon), albo null gdy poza tygodniem.
+function dowInWeek(weekStart: string, dateIso: string): number | null {
+  const ws = new Date(weekStart + 'T00:00:00Z').getTime();
+  const d = new Date(dateIso + 'T00:00:00Z').getTime();
+  const diff = Math.round((d - ws) / 86400000);
+  return diff >= 0 && diff <= 6 ? diff + 1 : null;
+}
+
+// Buduje RaceMeta dla dnia startu (szacunek deterministyczny; braki danych → zera, UI pokaże "—").
+function raceMetaOf(r: { name: string; priority: RacePriority; distance_km: number | null; elevation_m: number | null; discipline: string | null }): RaceMeta {
+  const est = estimateRaceDay(r.distance_km, r.elevation_m, r.discipline, r.priority);
+  return {
+    name: r.name, priority: r.priority,
+    distanceKm: r.distance_km, elevationM: r.elevation_m, discipline: r.discipline,
+    estTimeMin: est?.estTimeMin ?? 0, estTss: est?.estTss ?? 0,
+  };
+}
+
+// Wstawia dzień RACE w miejsce dow (1-based) — zastępuje to, co AI dało na ten dzień.
+function injectRaceDay(days: PlanDay[], dow: number, meta: RaceMeta, dateIso: string): void {
+  const i = dow - 1;
+  if (i < 0 || i >= days.length) return;
+  days[i] = {
+    ...days[i], dow, date: dateIso, type: 'RACE', label: meta.name,
+    tss: meta.estTss, dur_min: meta.estTimeMin, watt: '–', hr: '–',
+    zones: [0, 0, 0, 0, 0], structure: null, race: meta,
+  };
+}
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -39,7 +71,7 @@ export async function POST(req: NextRequest) {
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const [{ data: fm }, { data: race }] = await Promise.all([
+  const [{ data: fm }, { data: races }] = await Promise.all([
     supabase
       .from('fitness_metrics')
       .select('ctl, atl, tsb')
@@ -47,14 +79,13 @@ export async function POST(req: NextRequest) {
       .order('date', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Pełne pola startów (ranga steruje głębokością taperu, dystans/przewyższenie → szacunek TSS).
     supabase
       .from('race_calendar')
-      .select('name, date')
+      .select('name, date, priority, distance_km, elevation_m, discipline')
       .eq('athlete_id', athleteId)
       .gte('date', todayIso)
-      .order('date', { ascending: true })
-      .limit(1)
-      .maybeSingle(),
+      .order('date', { ascending: true }),
   ]);
 
   // Anchor: week_start z body (przycisk "Wygeneruj" dla konkretnego tygodnia) albo bieżący tydzień.
@@ -81,13 +112,41 @@ export async function POST(req: NextRequest) {
     }
   }
   const ctl = fm?.ctl != null ? Number(fm.ctl) : null;
-  const daysToRace = race?.date
-    ? Math.round((new Date(race.date).getTime() - new Date(todayIso).getTime()) / 86400000)
+  const nextWeek = nextWeekStart(weekStart);
+
+  // ── Wybór wyścigu dla okna planu (bieżący + next tydzień) ──
+  // Preferuj wyścig, którego data wypada w oknie [weekStart, nextWeek+6]. Jeśli w oknie jest kilka —
+  // najwcześniejszy. Brak w oknie → najbliższy przyszły (kontekst budowania, bez taperu/wstrzyknięcia).
+  type RaceRow = { name: string; date: string; priority: RacePriority; distance_km: number | null; elevation_m: number | null; discipline: string | null };
+  const raceRows = (races ?? []) as RaceRow[];
+  const nextWeekEnd = (() => { const d = new Date(nextWeek + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 6); return d.toISOString().slice(0, 10); })();
+  const raceInWindow = raceRows.find((r) => r.date >= weekStart && r.date <= nextWeekEnd) ?? null;
+  const nearestRace = raceRows[0] ?? null;
+  const selRace = raceInWindow ?? nearestRace;
+
+  const raceDowCurrent = raceInWindow ? dowInWeek(weekStart, raceInWindow.date) : null;
+  const raceDowNext = raceInWindow ? dowInWeek(nextWeek, raceInWindow.date) : null;
+  // Taper aktywny w bieżącym (szczegółowym) tygodniu, gdy zawiera on start rangi z taperem (A/B).
+  const taperInCurrent = raceDowCurrent != null && raceInWindow != null && taperDaysFor(raceInWindow.priority) > 0;
+
+  const raceCtx: RaceContext | null = selRace
+    ? {
+        name: selRace.name, date: selRace.date, priority: selRace.priority,
+        distanceKm: selRace.distance_km, elevationM: selRace.elevation_m, discipline: selRace.discipline,
+        daysToRace: Math.round((new Date(selRace.date).getTime() - new Date(todayIso).getTime()) / 86400000),
+        raceDowCurrent, taperInCurrent,
+      }
     : null;
-  // Cel tygodniowy: override z body albo CTL*7*intensity (domyślnie 1.1); fallback gdy brak CTL
+
+  // Cel tygodniowy: override z body albo CTL*7*intensity (domyślnie 1.1); fallback gdy brak CTL.
+  // Tydzień startowy: redukcja objętości treningowej wg rangi (dzień RACE liczony osobno, wstrzykiwany).
+  // Post-race (start w bieżącym → next = regeneracja): next celuje niżej, nie w progresję +5%.
   const baseTarget = ctl != null ? Math.round(ctl * 7 * intensityMul) : 350;
-  const weeklyTssTarget = overrideTarget ?? baseTarget;
-  const nextWeeklyTssTarget = Math.round(weeklyTssTarget * 1.05); // sensowna progresja, nie skok
+  const taperFactor = taperInCurrent && raceInWindow ? taperVolumeFactor(raceInWindow.priority) : 1;
+  const weeklyTssTarget = overrideTarget ?? Math.round(baseTarget * taperFactor);
+  const nextWeeklyTssTarget = raceDowCurrent != null
+    ? Math.round(baseTarget * 0.7) // start w tym tygodniu → następny tydzień regeneracyjny
+    : Math.round((overrideTarget ?? baseTarget) * 1.05);
 
   const inputs: GeneratorInputs = {
     weekStart,
@@ -97,14 +156,11 @@ export async function POST(req: NextRequest) {
     ctl,
     atl: fm?.atl != null ? Number(fm.atl) : null,
     tsb: fm?.tsb != null ? Number(fm.tsb) : null,
-    raceName: (race?.name as string | null) ?? null,
-    raceDate: (race?.date as string | null) ?? null,
-    daysToRace,
+    race: raceCtx,
     weeklyTssTarget,
     nextWeeklyTssTarget,
   };
 
-  const nextWeek = nextWeekStart(weekStart);
   const { system, user } = buildTwoWeekPrompt(inputs);
 
   // ── Wywołanie AI (jedno, zwraca oba tygodnie) z 1 retry przy błędzie walidacji ──
@@ -118,7 +174,7 @@ export async function POST(req: NextRequest) {
     try {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
-        max_tokens: 16000, // structure + reguła spójności minut → model liczy w prozie (bywa >8k tokenów) przed JSON-em; walidator wycina sam JSON (kotwica "current")
+        max_tokens: 16000, // pułap bezpieczny dla non-streaming (SDK blokuje >~16k jako "może trwać >10 min"). Rozumowanie trzymane w ryzach nudge'em o zwięzłość, inaczej proza ucina JSON — patrz KRYTYCZNE w prompt. Walidator wycina sam JSON (kotwica "current")
         system,
         messages: [{ role: 'user', content: user }],
       });
@@ -132,8 +188,9 @@ export async function POST(req: NextRequest) {
       }
       // Walidacja przedziału TSS — bezpieczny bufor ±10/+15% (szerszy niż prompt),
       // ale blokuje rozjazd typu +36%. Poza przedziałem → retry jak błąd struktury.
-      const sumCur = v.current.days.reduce((a, d) => a + d.tss, 0);
-      const sumNext = v.next.days.reduce((a, d) => a + d.tss, 0);
+      // Dzień startu WYKLUCZONY z sumy (jego TSS jest wstrzykiwany osobno, nie z celu treningowego).
+      const sumCur = v.current.days.reduce((a, d) => a + (d.dow === raceDowCurrent ? 0 : d.tss), 0);
+      const sumNext = v.next.days.reduce((a, d) => a + (d.dow === raceDowNext ? 0 : d.tss), 0);
       const [curLo, curHi] = tssBand(weeklyTssTarget, 0.90, 1.15);
       const [nxtLo, nxtHi] = tssBand(nextWeeklyTssTarget, 0.90, 1.15);
       if (sumCur < curLo || sumCur > curHi) {
@@ -143,6 +200,19 @@ export async function POST(req: NextRequest) {
       if (sumNext < nxtLo || sumNext > nxtHi) {
         lastErr = `następny TSS ${sumNext} poza przedziałem ${nxtLo}–${nxtHi}`;
         continue;
+      }
+      // TWARDA OCHRONA OSTATNICH 48h przed startem A (dow −1/−2 tylko Z1/Z2/OFF). Nie ufamy,
+      // że model posłucha promptu — intensywność na −1/−2 niszczy szczytowanie → retry jak przy TSS.
+      // Sprawdzane na dniach AI PRZED wstrzyknięciem RACE (injection dotyka tylko dnia startu).
+      if (taperInCurrent && raceInWindow && raceDowCurrent != null) {
+        const viol = taperLast48hViolation(v.current.days, raceDowCurrent, raceInWindow.priority);
+        if (viol) { lastErr = `tapering: ${viol}`; continue; }
+      }
+      // Wstrzyknij dzień startu (deterministyczny szacunek) w miejsce dnia OFF, który AI zostawiło.
+      if (raceInWindow) {
+        const meta = raceMetaOf(raceInWindow);
+        if (raceDowCurrent != null) injectRaceDay(v.current.days, raceDowCurrent, meta, raceInWindow.date);
+        if (raceDowNext != null) injectRaceDay(v.next.days, raceDowNext, meta, raceInWindow.date);
       }
       current = v.current;
       next = v.next;

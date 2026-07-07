@@ -10,6 +10,7 @@ export const ZONE_COLORS = ['#3A4A5C', C.green, C.cyan, C.yellow, C.red];
 const TYPE_COLORS: Record<string, string> = {
   OFF: C.muted, Z1: C.muted, Z2: C.green, SST: C.yellow,
   THR: C.yellow, OU: '#C68A4E', VO2: C.red, LONG: C.cyan,
+  RACE: C.red, // dzień startu — akcent wyróżniony (nie kolor treningowy)
 };
 export function typeColor(type: string): string {
   return TYPE_COLORS[type] ?? C.muted;
@@ -126,7 +127,8 @@ export function maxAchievableMin<T extends ScalableDay>(days: T[], isDone: (date
   let base = 0;
   let headroom = 0;
   for (const d of days) {
-    if (d.type === 'OFF' || isDone(d.date) || isPast(d.date) || d.locked) continue;
+    // RACE nieskalowalny jak OFF — suwak godzin nie rusza dnia startu.
+    if (d.type === 'OFF' || d.type === 'RACE' || isDone(d.date) || isPast(d.date) || d.locked) continue;
     const ss = sessionStructure(d.type);
     base += d.dur_min;
     headroom += (ss.cooldownMax - ss.cooldownDefault) + (ss.warmupMax - ss.warmupDefault);
@@ -148,7 +150,8 @@ export function scaleWeek<T extends ScalableDay>(
   // Stan roboczy per dzień (kopie). Skalowalne = NOT done, NOT OFF, NOT past, NOT locked.
   type W = { idx: number; type: string; core: number; w: number; c: number; origDur: number; origTss: number; removed: boolean };
   const work: (W | null)[] = days.map((d, idx) => {
-    if (d.type === 'OFF' || isDone(d.date) || isPast(d.date) || d.locked) return null; // przeszłe/done/locked nietykalne
+    // RACE traktowany jak OFF — nieskalowalny (dzień startu ma stały szacunek, nie warmup/cooldown).
+    if (d.type === 'OFF' || d.type === 'RACE' || isDone(d.date) || isPast(d.date) || d.locked) return null; // przeszłe/done/locked nietykalne
     const ss = sessionStructure(d.type);
     const core = Math.max(0, d.dur_min - ss.warmupDefault - ss.cooldownDefault);
     return { idx, type: d.type, core, w: ss.warmupDefault, c: ss.cooldownDefault, origDur: d.dur_min, origTss: d.tss, removed: false };
