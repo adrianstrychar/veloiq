@@ -8,6 +8,8 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
   const error = searchParams.get('error');
+  // Strava zwraca przyznany scope w callbacku — zapisujemy, by wiedzieć czy jest activity:write.
+  const grantedScope = searchParams.get('scope');
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
 
@@ -35,6 +37,7 @@ export async function GET(request: NextRequest) {
         strava_access_token: tokenData.access_token,
         strava_refresh_token: tokenData.refresh_token,
         strava_token_expires_at: new Date(tokenData.expires_at * 1000).toISOString(),
+        strava_scope: grantedScope, // przyznany scope → bramka write-backu (activity:write?)
         name: `${tokenData.athlete.firstname} ${tokenData.athlete.lastname}`.trim(),
       },
       { onConflict: 'strava_id' }

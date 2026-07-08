@@ -99,6 +99,42 @@ export async function fetchStravaAthleteStats(
   return response.json();
 }
 
+// Szczegóły JEDNEJ aktywności — potrzebne `description` (endpoint listy go nie zwraca), żeby
+// DOPISAĆ naszą linię zamiast nadpisać. Read (activity:read_all wystarcza).
+export async function fetchStravaActivityDetail(
+  accessToken: string,
+  activityId: number | string
+): Promise<{ id: number; name: string; description: string | null }> {
+  const response = await fetch(
+    `https://www.strava.com/api/v3/activities/${activityId}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!response.ok) {
+    throw new Error(`Strava activity detail failed: ${response.status}`);
+  }
+  const a = await response.json();
+  return { id: a.id, name: a.name, description: a.description ?? null };
+}
+
+// WRITE: aktualizuje opis aktywności. Wymaga scope activity:write — bez niego Strava zwraca 403.
+// PUT /activities/{id} z polem description (application/json). Zwraca status HTTP do rozróżnienia
+// 403 (brak scope → CTA re-connect) od innych błędów.
+export async function updateStravaActivity(
+  accessToken: string,
+  activityId: number | string,
+  patch: { description: string }
+): Promise<{ ok: boolean; status: number }> {
+  const response = await fetch(
+    `https://www.strava.com/api/v3/activities/${activityId}`,
+    {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: patch.description }),
+    }
+  );
+  return { ok: response.ok, status: response.status };
+}
+
 // Pobiera aktywności z konta Stravy (sekcja 15)
 export async function fetchStravaActivities(
   accessToken: string,

@@ -292,6 +292,96 @@ function BlockCard({ laps, summary }: { laps: ClassifiedLap[]; summary: { count:
   );
 }
 
+// ── Write-back opisu do Stravy (Etap 1: przycisk → podgląd → potwierdzenie → PUT) ──
+type WbState =
+  | { s: 'idle' }
+  | { s: 'loading' }
+  | { s: 'preview'; preview: string; canWrite: boolean }
+  | { s: 'no_session' }
+  | { s: 'saving' }
+  | { s: 'done'; message: string }
+  | { s: 'error'; message: string; reconnect: boolean };
+
+function WriteBackButton({ activityId }: { activityId: number }) {
+  const [st, setSt] = useState<WbState>({ s: 'idle' });
+
+  async function call(action: 'preview' | 'commit') {
+    const r = await fetch(`/api/activities/${activityId}/describe`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }),
+    });
+    return r.json();
+  }
+
+  async function doPreview() {
+    setSt({ s: 'loading' });
+    try {
+      const d = await call('preview');
+      if (!d.ok) {
+        if (d.reason === 'no_session') return setSt({ s: 'no_session' });
+        return setSt({ s: 'error', message: d.message ?? 'Nie udało się przygotować.', reconnect: d.reason === 'no_write_scope' });
+      }
+      if (d.alreadyDescribed) return setSt({ s: 'done', message: 'Ta jazda jest już opisana przez VeloIQ.' });
+      setSt({ s: 'preview', preview: d.preview, canWrite: !!d.canWrite });
+    } catch { setSt({ s: 'error', message: 'Błąd połączenia ze Stravą.', reconnect: false }); }
+  }
+
+  async function doCommit() {
+    setSt({ s: 'saving' });
+    try {
+      const d = await call('commit');
+      if (d.ok) return setSt({ s: 'done', message: d.saved ? '✓ Opisano w Strava' : (d.message ?? 'Już opisano.') });
+      setSt({ s: 'error', message: d.message ?? 'Nie udało się zapisać.', reconnect: d.reason === 'no_write_scope' });
+    } catch { setSt({ s: 'error', message: 'Błąd połączenia ze Stravą.', reconnect: false }); }
+  }
+
+  const btn: React.CSSProperties = { border: 'none', borderRadius: 9, padding: '9px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
+  const reconnectCta = (
+    <a href="/api/strava/auth" style={{ ...btn, background: '#FC4C02', color: '#fff', textDecoration: 'none', display: 'inline-block' }}>
+      Rozszerz uprawnienia Strava (zapis opisów)
+    </a>
+  );
+
+  if (st.s === 'no_session') return null; // nie sesja dnia → brak nazwy treningu, nic nie pokazujemy
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {st.s === 'idle' && (
+        <button onClick={doPreview} style={{ ...btn, background: C.card, border: `1px solid ${C.border}`, color: C.text, alignSelf: 'flex-start' }}>
+          🔗 Opisz w Strava
+        </button>
+      )}
+      {st.s === 'loading' && <div style={{ fontSize: 12, color: C.muted, fontStyle: 'italic' }}>Przygotowuję podgląd…</div>}
+
+      {st.s === 'preview' && (
+        <>
+          <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: '1px' }}>Podgląd opisu w Strava</div>
+          <pre style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontSize: 12.5, color: C.text, whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit' }}>{st.preview}</pre>
+          {st.canWrite ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={doCommit} style={{ ...btn, background: C.green, color: C.bg }}>Zatwierdź zapis do Strava</button>
+              <button onClick={() => setSt({ s: 'idle' })} style={{ ...btn, background: C.card, border: `1px solid ${C.border}`, color: C.muted }}>Anuluj</button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 11.5, color: C.yellow }}>Zapis opisów wymaga rozszerzenia uprawnień Strava (jednorazowo).</div>
+              {reconnectCta}
+            </div>
+          )}
+        </>
+      )}
+
+      {st.s === 'saving' && <div style={{ fontSize: 12, color: C.muted, fontStyle: 'italic' }}>Zapisuję do Strava…</div>}
+      {st.s === 'done' && <div style={{ fontSize: 13, color: C.green, fontWeight: 600 }}>{st.message}</div>}
+      {st.s === 'error' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 12.5, color: C.red }}>{st.message}</div>
+          {st.reconnect && reconnectCta}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── RideAnalysis ────────────────────────────────────────────────────────────────
 
 export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysisProps) {
@@ -341,6 +431,9 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
 
         {/* AI Insight */}
         <AiInsight activityId={activityId} activity={activity} ftp={ftp} />
+
+        {/* Write-back opisu do Stravy — przycisk + podgląd + potwierdzenie (Etap 1) */}
+        <WriteBackButton activityId={activityId} />
 
         {/* Statystyki */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
