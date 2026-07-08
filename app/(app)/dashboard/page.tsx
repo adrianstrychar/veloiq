@@ -125,8 +125,8 @@ export default async function DashboardPage() {
         </a>
       )}
 
-      {/* 1. EngineCards: FTP + VO2max */}
-      <EngineCards ftp={ftpData} vo2max={(athlete as any)?.vo2max ?? null} />
+      {/* 1. EngineCards: FTP (kafel VO2max ukryty — statyczna liczba bez estymaty) */}
+      <EngineCards ftp={ftpData} />
 
       {/* 2. ReadinessModule: gotowość z TSB + rozwijany RawMetrics (CTL/ATL/TSB) */}
       {readiness && <ReadinessModule readiness={readiness} pmc={pmc} />}

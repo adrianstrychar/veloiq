@@ -1,4 +1,5 @@
 import { C } from '@/lib/theme';
+import { wkgCategoryTitle } from '@/lib/fitness-level';
 
 export type FtpSource = 'measured' | 'estimated' | 'none';
 
@@ -35,6 +36,9 @@ export function ftpDisplay(
 ): FtpDisplay {
   const wkg = (val: number | null) =>
     val && mass ? (val / mass).toFixed(2) : null;
+  // Kategoria poziomu z W/kg (jedno źródło z FtpHero) zamiast zaszytego "top 4% · VeloIQ".
+  // Brak wagi/FTP → null → badge bez kategorii (fallback, nie crashuje).
+  const levelOf = (val: number | null) => (val && mass ? wkgCategoryTitle(val / mass) : null);
 
   switch (source) {
     case 'measured': {
@@ -42,13 +46,14 @@ export function ftpDisplay(
       // gdy różnica jest znacząca. Silnik NIE nadpisuje ftp_watts bez tej akceptacji.
       const est = ftpEst != null ? Math.round(ftpEst) : null;
       const pending = est != null && ftp != null && Math.abs(est - ftp) >= PENDING_ESTIMATE_MIN_DELTA_W ? est : null;
+      const level = levelOf(ftp);
       return {
         value: ftp,
         wkg: wkg(ftp),
         tag: '● zmierzone',
         tagColor: C.green,
-        badge: 'Zawodnik',
-        badgeSub: 'top 4% · VeloIQ',
+        badge: level ?? 'Zmierzone',                                  // kategoria z W/kg (np. "Poziom wyścigowy")
+        badgeSub: wkg(ftp) ? `${wkg(ftp)} W/kg` : '—',                 // twarda liczba, nie percentyl
         est: false,
         empty: false,
         sinceLabel: sinceLabelOf(ftpUpdatedAt),

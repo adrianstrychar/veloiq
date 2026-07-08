@@ -3,6 +3,7 @@
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 import { C } from '@/lib/theme';
 import type { ProgressStats } from '@/lib/progressStats';
+import { wkgLabel } from '@/lib/fitness-level';
 
 export interface FtpPoint {
   date: string;
@@ -18,63 +19,6 @@ interface ProgressProps {
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
-}
-
-// Heurystyka W/kg → percentyl (NIE realne dane populacyjne — przybliżenie do czasu
-// zebrania prawdziwych statystyk użytkowników). 4.40 W/kg ≈ top 4%.
-function wkgPercentile(wkg: number): number {
-  const pts: [number, number][] = [
-    [2.0, 20], [2.5, 40], [3.0, 55], [3.5, 72], [4.0, 88], [4.4, 96], [4.8, 98], [5.5, 99.5],
-  ];
-  if (wkg <= pts[0][0]) return pts[0][1];
-  if (wkg >= pts[pts.length - 1][0]) return pts[pts.length - 1][1];
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [x0, y0] = pts[i];
-    const [x1, y1] = pts[i + 1];
-    if (wkg >= x0 && wkg <= x1) {
-      return Math.round(y0 + ((wkg - x0) / (x1 - x0)) * (y1 - y0));
-    }
-  }
-  return 90;
-}
-
-// ── CompareBar (mockup 972-996): skala z markerem + marki ──────────────────────
-function CompareBar({
-  label, value, color, min, max, marks, verdict,
-}: {
-  label: string; value: number; color: string; min: number; max: number;
-  marks: { v: number; t: string }[]; verdict: string;
-}) {
-  const pct = clamp(((value - min) / (max - min)) * 100, 0, 100);
-  return (
-    <div style={{ marginTop: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-        <span style={{ fontSize: 10, color: C.muted, letterSpacing: '0.08em', fontWeight: 600 }}>{label.toUpperCase()}</span>
-        <span style={{ fontSize: 11, fontWeight: 600, color }}>{verdict}</span>
-      </div>
-      <div style={{
-        position: 'relative', height: 8, borderRadius: 4,
-        background: `linear-gradient(90deg, ${C.border} 0%, ${color}55 60%, ${color} 100%)`, marginBottom: 6,
-      }}>
-        <div style={{
-          position: 'absolute', left: `${pct}%`, top: '50%', transform: 'translate(-50%,-50%)',
-          width: 14, height: 14, borderRadius: '50%', background: color,
-          border: `2px solid ${C.bg}`, boxShadow: `0 0 0 1px ${color}`,
-        }} />
-      </div>
-      <div style={{ position: 'relative', height: 14 }}>
-        {marks.map((m, i) => {
-          const mp = clamp(((m.v - min) / (max - min)) * 100, 0, 100);
-          return (
-            <span key={i} style={{
-              position: 'absolute', left: `${mp}%`, transform: 'translateX(-50%)',
-              fontSize: 8.5, color: C.muted, whiteSpace: 'nowrap',
-            }}>{m.t}</span>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 // ── FTP hero (mockup 1011-1054) ────────────────────────────────────────────────
@@ -106,8 +50,8 @@ function FtpHero({ ftpHistory, weightKg }: { ftpHistory: FtpPoint[]; weightKg: n
     mt = new Date(mt.getFullYear(), mt.getMonth() + 1, 15);
   }
 
-  const percentile = wkg ? wkgPercentile(wkg) : null;
-  const topPct = percentile != null ? Math.max(1, Math.round(100 - percentile)) : null;
+  // Podpis poziomu z W/kg — ta sama funkcja co kafel FTP (koniec rozjazdu percentyla).
+  const levelLabel = wkg != null ? wkgLabel(wkg) : null;
 
   return (
     <div style={{ background: C.bg, borderRadius: 12, border: `1px solid ${C.border}`, padding: 16, marginBottom: 12 }}>
@@ -157,19 +101,12 @@ function FtpHero({ ftpHistory, weightKg }: { ftpHistory: FtpPoint[]; weightKg: n
         </LineChart>
       </ResponsiveContainer>
 
-      {/* Skala percentylowa (heurystyka z W/kg, nie realna populacja) */}
-      {percentile != null && wkg != null && (
-        <>
-          <CompareBar
-            label="Wśród użytkowników VeloIQ"
-            value={percentile} color={C.cyan} min={0} max={100}
-            marks={[{ v: 25, t: 'Rekreacyjny' }, { v: 50, t: 'Średnia' }, { v: 75, t: 'Zaawansowany' }, { v: 95, t: 'Zawodnik' }]}
-            verdict={`Zawodnik · top ${topPct}%`}
-          />
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 8, lineHeight: 1.45 }}>
-            {wkg.toFixed(2)} W/kg stawia Cię w <b style={{ color: C.text }}>najlepszych {topPct}%</b> — przeciętny trenujący kolarz ma ok. 3.2 W/kg. To poziom zawodnika ścigającego się w wyścigach UCI.
-          </div>
-        </>
+      {/* Poziom z W/kg — kategoria z weryfikowalnej tabeli progów (nie percentyl populacyjny). */}
+      {levelLabel != null && (
+        <div style={{ marginTop: 14, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+          <span style={{ fontSize: 10, color: C.muted, letterSpacing: '0.08em', fontWeight: 600 }}>POZIOM (W/KG)</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.cyan }}>{levelLabel}</span>
+        </div>
       )}
     </div>
   );
