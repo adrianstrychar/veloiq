@@ -9,6 +9,7 @@ import {
 import { calculateTSSfromHR, calculateTSSfromPower, calculateFitnessHistory } from '@/lib/fitness';
 import { computeBestEfforts } from '@/lib/strava/details';
 import { estimateFtp, decideFtpDisplayUpdate, type EffortRide } from '@/lib/ftp-engine';
+import { estimateVo2 } from '@/lib/vo2-engine';
 
 const SYNC_COOLDOWN_MINUTES = 60;
 const DEFAULT_LOOKBACK_DAYS = 90;
@@ -199,6 +200,40 @@ export async function recalculateFtpEstimate(
   }
 }
 
+// Przelicza estymatę VO2max z 5-min mocy (ACSM) i zapisuje vo2_estimate. Bliźniak
+// recalculateFtpEstimate — ten sam best_efforts, to samo okno 28 dni. Osobna kolumna: statyczny
+// vo2max (seed) NIE ruszany. Best effort: błąd (np. brak kolumn przed migracją 011) nie wysadza syncu.
+export async function recalculateVo2Estimate(
+  supabase: SupabaseClient,
+  athleteId: string
+): Promise<void> {
+  try {
+    const since = new Date(Date.now() - FTP_WINDOW_DAYS * 24 * 3600 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const { data: rides } = await supabase
+      .from('strava_activities')
+      .select('activity_date, type, best_efforts')
+      .eq('athlete_id', athleteId)
+      .gte('activity_date', since);
+
+    const { data: ath } = await supabase.from('athletes').select('weight_kg').eq('id', athleteId).single();
+    const est = estimateVo2((rides ?? []) as EffortRide[], ath?.weight_kg != null ? Number(ath.weight_kg) : null);
+    if (!est) return; // brak 5-min / brak wagi — zostaw poprzednią estymatę (kafel ukryty)
+
+    const { error } = await supabase
+      .from('athletes')
+      .update({ vo2_estimate: est.vo2, vo2_estimated_at: new Date().toISOString() })
+      .eq('id', athleteId);
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    console.error(
+      `vo2 estimate failed (sync kontynuowany), athlete ${athleteId}:`,
+      e instanceof Error ? e.message : e
+    );
+  }
+}
+
 // Pobiera nowe aktywności ze Stravy i zapisuje do strava_activities
 export async function syncStravaActivities(
   supabase: SupabaseClient,
@@ -304,6 +339,7 @@ export async function syncStravaActivities(
     console.error('syncBestEfforts failed (sync kontynuowany):', e instanceof Error ? e.message : e);
   }
   await recalculateFtpEstimate(supabase, athlete.id);
+  await recalculateVo2Estimate(supabase, athlete.id); // bliźniak — ten sam best_efforts, best effort
 
   return { skipped: false, synced: rows.length };
 }

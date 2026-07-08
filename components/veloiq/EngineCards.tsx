@@ -7,6 +7,7 @@ import type { FtpDisplay } from '@/lib/ftp';
 
 interface EngineCardsProps {
   ftp: FtpDisplay;
+  vo2Estimate: number | null; // z silnika VO2 (vo2_estimate); null = brak danych → kafel ukryty
 }
 
 function IconBox({ children, bg, border }: { children: string; bg: string; border: string }) {
@@ -125,12 +126,32 @@ function FtpCard({ f }: { f: FtpDisplay }) {
   );
 }
 
-// Kafel VO2max ukryty: vo2max to statyczna liczba w bazie bez obliczeń (brak silnika VO2,
-// brak wieku/płci do kategorii). "top 5% · M30" było zmyślone. Wróci przy realnej estymacie.
+// ── Kafel VO2max ──────────────────────────────────────────────────────────────
+// Wartość z silnika (estymata ACSM z 5-min mocy) — oznaczona "szacunek", bo to nie pomiar lab.
+// Bez percentyla, bez "M30" (nie mamy wieku/płci), bez "top X%". null → kafel się nie renderuje.
+function Vo2Card({ vo2Estimate }: { vo2Estimate: number }) {
+  return (
+    <CardShell>
+      <IconBox bg={C.green + '1A'} border={C.green + '44'}>🫁</IconBox>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Pułap tlenowy
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <span style={{ fontSize: 28, fontWeight: 700, color: C.green, lineHeight: 1 }}>{vo2Estimate}</span>
+          <span style={{ fontSize: 11, color: C.muted }}>ml/kg/min</span>
+        </div>
+      </div>
+
+      <RightBadge badge="Szacunek" sub="z mocy 5-min" />
+    </CardShell>
+  );
+}
 
 // ── EngineCards ───────────────────────────────────────────────────────────────
 
-export function EngineCards({ ftp }: EngineCardsProps) {
+export function EngineCards({ ftp, vo2Estimate }: EngineCardsProps) {
   return (
     <div style={{
       display: 'grid',
@@ -138,6 +159,7 @@ export function EngineCards({ ftp }: EngineCardsProps) {
       gap: 10,
     }}>
       <FtpCard f={ftp} />
+      {vo2Estimate != null && <Vo2Card vo2Estimate={vo2Estimate} />}
     </div>
   );
 }

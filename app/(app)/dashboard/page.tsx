@@ -20,7 +20,7 @@ export default async function DashboardPage() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, name, strava_id, ftp_watts, ftp_estimate, ftp_updated_at, has_power_meter, weight_kg, vo2max, training_mode, season_km_goal, ytd_ride_km')
+    .select('id, name, strava_id, ftp_watts, ftp_estimate, ftp_updated_at, has_power_meter, weight_kg, vo2max, vo2_estimate, training_mode, season_km_goal, ytd_ride_km')
     .eq('user_id', user?.id ?? '')
     .single();
 
@@ -125,8 +125,8 @@ export default async function DashboardPage() {
         </a>
       )}
 
-      {/* 1. EngineCards: FTP (kafel VO2max ukryty — statyczna liczba bez estymaty) */}
-      <EngineCards ftp={ftpData} />
+      {/* 1. EngineCards: FTP + VO2max (estymata z 5-min mocy; null → kafel VO2 ukryty) */}
+      <EngineCards ftp={ftpData} vo2Estimate={(athlete as any)?.vo2_estimate != null ? Math.round(Number((athlete as any).vo2_estimate)) : null} />
 
       {/* 2. ReadinessModule: gotowość z TSB + rozwijany RawMetrics (CTL/ATL/TSB) */}
       {readiness && <ReadinessModule readiness={readiness} pmc={pmc} />}
