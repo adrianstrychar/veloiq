@@ -79,11 +79,42 @@ export function computeBestEfforts(watts: number[], time: number[] | undefined):
   return result;
 }
 
+// Rekord segmentu (tylko PR-y). Pełne 43 efforty NIE zapisujemy — kom_rank (top-10) i tak
+// zawsze null po zmianach API Stravy (zweryfikowane), więc trzymamy sam podzbiór z pr_rank.
+export interface PrEffort {
+  name: string;
+  distance: number | null;   // metry
+  elev: number | null;       // m (z segmentu: high-low), null gdy brak
+  time: number | null;       // sekundy
+  watts: number | null;
+  pr_rank: number;           // 1=złoto, 2=srebro, 3=brąz
+}
+
+interface RawSegmentEffort {
+  name?: string; distance?: number; moving_time?: number; elapsed_time?: number;
+  average_watts?: number; pr_rank?: number | null;
+  segment?: { elevation_high?: number; elevation_low?: number };
+}
+
+export function extractPrEfforts(segmentEfforts: RawSegmentEffort[] | undefined): PrEffort[] {
+  return (segmentEfforts ?? [])
+    .filter((e) => e.pr_rank != null)
+    .map((e) => ({
+      name: e.name ?? '—',
+      distance: e.distance != null ? Math.round(e.distance) : null,
+      elev: e.segment?.elevation_high != null && e.segment?.elevation_low != null
+        ? Math.round(e.segment.elevation_high - e.segment.elevation_low) : null,
+      time: e.moving_time ?? e.elapsed_time ?? null,
+      watts: e.average_watts != null ? Math.round(e.average_watts) : null,
+      pr_rank: e.pr_rank as number,
+    }));
+}
+
 export async function syncActivityDetails(
   supabase: SupabaseClient,
   stravaActivityId: string,
   userId: string
-): Promise<{ laps: unknown; best_efforts: Record<string, number | null> }> {
+): Promise<{ laps: unknown; best_efforts: Record<string, number | null>; calories: number | null; pr_efforts: PrEffort[] }> {
   // 1. Pobierz athletę i token
   const { data: athlete, error: athErr } = await supabase
     .from('athletes')
@@ -109,13 +140,20 @@ export async function syncActivityDetails(
     }).eq('id', athlete.id);
   }
 
-  // 3. Pobierz lapy
-  const lapsRes = await fetch(
-    `https://www.strava.com/api/v3/activities/${stravaActivityId}/laps`,
+  // 3. Pobierz DETAL aktywności jednym callem: laps + segment_efforts (pr_rank) + calories.
+  //    Zastępuje osobny /laps (lista go nie zwraca; calories i PR-y też są tylko tutaj).
+  const detailRes = await fetch(
+    `https://www.strava.com/api/v3/activities/${stravaActivityId}?include_all_efforts=true`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
-  if (!lapsRes.ok) throw new Error(`Strava laps fetch failed: ${lapsRes.status}`);
-  const laps = await lapsRes.json();
+  if (!detailRes.ok) throw new Error(`Strava activity detail failed: ${detailRes.status}`);
+  const detail = await detailRes.json();
+  const laps = detail.laps ?? [];
+  const calories: number | null = detail.calories != null ? Math.round(detail.calories) : null;
+  // pr_efforts ZAWSZE tablica (min []), nawet gdy jazda nie ma żadnego PR-a: [] = sentinel
+  // "detal przetworzony", null (w DB) = "nigdy nie pobrany". Gate backfillu polega na tym
+  // rozróżnieniu (pr_efforts IS NULL) — dlatego gwarancja tablicy jest w kodzie, nie w konwencji.
+  const pr_efforts: PrEffort[] = extractPrEfforts(detail.segment_efforts) ?? [];
 
   // 4. Pobierz strumień mocy + czasu (time potrzebny do poprawnych okien — Strava
   //    próbkuje nierównomiernie, więc nie można liczyć okien po indeksie punktów)
@@ -135,12 +173,14 @@ export async function syncActivityDetails(
   }
   // Jeśli brak miernika (403 lub brak danych) — best_efforts zostanie pusty obiekt
 
-  // 5. Zapisz do DB
+  // 5. Zapisz do DB (laps + best_efforts jak dotąd + NOWE: calories, pr_efforts)
   const { error: updateErr } = await supabase
     .from('strava_activities')
     .update({
       laps,
       best_efforts: bestEfforts,
+      calories,
+      pr_efforts,
       details_synced_at: new Date().toISOString(),
     })
     .eq('strava_activity_id', stravaActivityId)
@@ -148,5 +188,5 @@ export async function syncActivityDetails(
 
   if (updateErr) throw new Error(`DB update failed: ${updateErr.message}`);
 
-  return { laps, best_efforts: bestEfforts };
+  return { laps, best_efforts: bestEfforts, calories, pr_efforts };
 }

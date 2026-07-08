@@ -6,7 +6,7 @@ import { CalendarView } from '@/components/veloiq/CalendarView';
 // Pełny zestaw kolumn aktywności — potrzebny żeby klik w dniu kalendarza
 // otworzył RideAnalysis bez dociągania danych.
 const ACTIVITY_SELECT =
-  'strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at';
+  'strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, avg_cadence, normalized_power, intensity_factor, calories, avg_speed:raw_data->average_speed, max_speed:raw_data->max_speed, kilojoules:raw_data->kilojoules';
 
 export default async function CalendarPage() {
   const supabase = createServerSupabaseClient();

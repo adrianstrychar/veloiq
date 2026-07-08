@@ -18,7 +18,7 @@ interface LastActivityCardProps {
 
 // Kolumny dociągane po sync-details (te same pola co RideActivity)
 const ACTIVITY_SELECT =
-  'name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, strava_activity_id';
+  'name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, strava_activity_id, avg_cadence, normalized_power, intensity_factor, calories, avg_speed:raw_data->average_speed, max_speed:raw_data->max_speed, kilojoules:raw_data->kilojoules';
 
 export function LastActivityCard({ activity, ftp }: LastActivityCardProps) {
   const [open, setOpen] = useState(false);
