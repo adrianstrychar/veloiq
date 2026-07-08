@@ -5,7 +5,63 @@ import { ZoneBar } from './ZoneBar';
 import { WorkoutProfile } from './WorkoutProfile';
 import { typeColor, fmtDur, dowLabel, dateLabel, ZONE_COLORS } from '@/lib/plan';
 import { buildWorkout } from '@/lib/workout';
+import { buildSessionSteps, type SessionStep, type CycleSeg } from '@/lib/session-detail';
 import type { PlanDayView } from './Plan';
+
+const zoneColor = (z: number) => ZONE_COLORS[z - 1] ?? ZONE_COLORS[0];
+
+// Wiersz pojedynczego odcinka cyklu (under/over/work): czas · waty · strefa — odczucie.
+function CycleRow({ c }: { c: CycleSeg }) {
+  const roleTag = c.role === 'under' ? 'under' : c.role === 'over' ? 'over' : null;
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 0' }}>
+      <div style={{ width: 6, height: 6, borderRadius: '50%', background: zoneColor(c.zone), marginTop: 5, flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, color: '#fff', fontWeight: 600 }}>
+          {roleTag && <span style={{ color: zoneColor(c.zone), marginRight: 6 }}>{roleTag}</span>}
+          {c.min} min · {c.watts}W <span style={{ color: zoneColor(c.zone), fontWeight: 600 }}>Z{c.zone}</span>
+        </div>
+        <div style={{ fontSize: 10.5, color: C.muted, marginTop: 1 }}>{c.feeling}</div>
+      </div>
+    </div>
+  );
+}
+
+// Jeden krok sesji: prosty odcinek albo seria powtarzalnych jednostek (bloki/interwały).
+function StepCard({ step }: { step: SessionStep }) {
+  if (step.kind === 'simple') {
+    return (
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '11px 14px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, background: zoneColor(step.zone), flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{step.title}</div>
+          <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2 }}>{step.feeling}</div>
+        </div>
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: zoneColor(step.zone) }}>{step.min} min</div>
+          <div style={{ fontSize: 10.5, color: '#C2C7CF', marginTop: 1 }}>{step.watts}W · Z{step.zone}</div>
+        </div>
+      </div>
+    );
+  }
+  // seria
+  const cyc = step.cycleCount > 1 ? `${step.cycleCount}× w każdym ${step.unitLabel}u` : null;
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '11px 14px', marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
+          {step.count}× {step.unitLabel}{step.count > 1 ? (step.unitLabel === 'blok' ? 'i' : 'y') : ''}
+          <span style={{ fontSize: 10, color: '#C99A4E', marginLeft: 6, fontWeight: 600 }}>● interwały</span>
+        </div>
+        {step.restMin != null && <div style={{ fontSize: 10.5, color: C.muted }}>przerwa {step.restMin} min Z1</div>}
+      </div>
+      {cyc && <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2 }}>{cyc}:</div>}
+      <div style={{ marginTop: 4, paddingLeft: 2 }}>
+        {step.cycles.map((c, i) => <CycleRow key={i} c={c} />)}
+      </div>
+    </div>
+  );
+}
 
 interface WorkoutDetailProps {
   day: PlanDayView;
@@ -24,6 +80,8 @@ function SectionTitle({ color, children }: { color: string; children: string }) 
 export function WorkoutDetail({ day, ftp, onClose }: WorkoutDetailProps) {
   const tc = typeColor(day.type);
   const wk = buildWorkout({ type: day.type, label: day.label, dur_min: day.dur_min, warmup: day.warmup, cooldown: day.cooldown, structure: day.structure }, ftp);
+  // Granularna rozpiska "minuta po minucie" z tego samego expanded, co karmi profil (spójność).
+  const steps = buildSessionSteps(wk.expanded, ftp);
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: C.bg, overflowY: 'auto', color: C.text }}>
@@ -72,26 +130,15 @@ export function WorkoutDetail({ day, ftp, onClose }: WorkoutDetailProps) {
           </>
         )}
 
-        {/* Struktura sesji */}
-        <SectionTitle color={tc}>Struktura sesji</SectionTitle>
-        <div style={{ marginBottom: 16 }}>
-          {wk.segs.map((s, i) => (
-            <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, background: s.c, flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
-                  {s.k}{s.reps && <span style={{ fontSize: 10, color: s.c, marginLeft: 6, fontWeight: 600 }}>● interwały</span>}
-                </div>
-                {s.note && <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2 }}>{s.note}</div>}
-              </div>
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: s.c }}>{s.t}</div>
-                <div style={{ fontSize: 10.5, color: '#C2C7CF', marginTop: 1 }}>{s.w}</div>
-                {s.hr && <div style={{ fontSize: 9, color: C.muted, marginTop: 1 }}>{s.hr} bpm</div>}
-              </div>
+        {/* Struktura sesji — minuta po minucie (segmenty ze structure + strefy + odczucia) */}
+        {steps.length > 0 && (
+          <>
+            <SectionTitle color={tc}>Rozpiska minuta po minucie</SectionTitle>
+            <div style={{ marginBottom: 16 }}>
+              {steps.map((s, i) => <StepCard key={i} step={s} />)}
             </div>
-          ))}
-        </div>
+          </>
+        )}
 
         {/* Wskazówki wykonania */}
         <SectionTitle color={tc}>Wskazówki wykonania</SectionTitle>

@@ -28,9 +28,11 @@ export interface Nutrition {
 export interface ExpandedSeg {
   kind: 'warmup' | 'cooldown' | 'rest' | 'work' | 'under' | 'over' | 'steady';
   min: number;      // czas → SZEROKOŚĆ
-  pctFtp: number;   // średnia moc %FTP → WYSOKOŚĆ
+  pctFtp: number;   // średnia moc %FTP → WYSOKOŚĆ (całkowity % — do rysunku)
   color: string;
   label?: string;   // tylko dla zgrupowanego bloku, np. "10×1min"
+  watts?: number;   // DOKŁADNE waty ze structure (bez round-tripu przez %). Ustawiane w buildFromStructure
+                    // dla segmentów pracy; lista i profil pokazują je 1:1 z planem (fidelity co do wata).
 }
 
 export interface Workout {
@@ -67,11 +69,11 @@ function buildFromStructure(d: WorkoutInput, s: DayStructure, ftp: number): Expa
   if (isOU(s)) {
     for (let b = 0; b < s.reps; b++) {
       if (s.cycles > REPS_GROUP_THRESHOLD) {
-        segs.push({ kind: 'over', min: ouBlockMin(s), pctFtp: pct(s.over_w), color: PC.over, label: `${s.cycles}×${s.under_min}/${s.over_min}` });
+        segs.push({ kind: 'over', min: ouBlockMin(s), pctFtp: pct(s.over_w), watts: s.over_w, color: PC.over, label: `${s.cycles}×${s.under_min}/${s.over_min}` });
       } else {
         for (let j = 0; j < s.cycles; j++) {
-          segs.push({ kind: 'under', min: s.under_min, pctFtp: pct(s.under_w), color: PC.yellow });
-          segs.push({ kind: 'over', min: s.over_min, pctFtp: pct(s.over_w), color: PC.over });
+          segs.push({ kind: 'under', min: s.under_min, pctFtp: pct(s.under_w), watts: s.under_w, color: PC.yellow });
+          segs.push({ kind: 'over', min: s.over_min, pctFtp: pct(s.over_w), watts: s.over_w, color: PC.over });
         }
       }
       if (b < s.reps - 1) segs.push({ kind: 'rest', min: s.rest_min, pctFtp: 50, color: PC.gray });
@@ -80,10 +82,10 @@ function buildFromStructure(d: WorkoutInput, s: DayStructure, ftp: number): Expa
     const workColor = d.type === 'VO2' ? PC.vo2 : PC.yellow;
     if (s.reps > REPS_GROUP_THRESHOLD) {
       const totalWork = s.reps * s.work_min + (s.reps - 1) * s.rest_min;
-      segs.push({ kind: 'work', min: totalWork, pctFtp: pct(s.work_w), color: workColor, label: `${s.reps}×${s.work_min}min` });
+      segs.push({ kind: 'work', min: totalWork, pctFtp: pct(s.work_w), watts: s.work_w, color: workColor, label: `${s.reps}×${s.work_min}min` });
     } else {
       for (let i = 0; i < s.reps; i++) {
-        segs.push({ kind: 'work', min: s.work_min, pctFtp: pct(s.work_w), color: workColor });
+        segs.push({ kind: 'work', min: s.work_min, pctFtp: pct(s.work_w), watts: s.work_w, color: workColor });
         if (i < s.reps - 1) segs.push({ kind: 'rest', min: s.rest_min, pctFtp: 50, color: PC.gray });
       }
     }

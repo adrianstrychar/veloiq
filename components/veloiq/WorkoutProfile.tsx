@@ -74,8 +74,11 @@ export function WorkoutProfile({ expanded, ftp }: { expanded: ExpandedSeg[]; ftp
   }
 
   const hasOu = expanded.some((s) => s.kind === 'over');
-  const ouUnderPct = expanded.find((s) => s.kind === 'under')?.pctFtp ?? 95;
-  const ouOverPct = expanded.find((s) => s.kind === 'over')?.pctFtp ?? 110;
+  const ouUnder = expanded.find((s) => s.kind === 'under');
+  const ouOver = expanded.find((s) => s.kind === 'over');
+  // Dokładne waty ze structure w legendzie (spójne z listą segmentów); fallback z %FTP.
+  const ouUnderW = ouUnder?.watts ?? watt(ouUnder?.pctFtp ?? 95);
+  const ouOverW = ouOver?.watts ?? watt(ouOver?.pctFtp ?? 110);
 
   return (
     <div>
@@ -91,7 +94,7 @@ export function WorkoutProfile({ expanded, ftp }: { expanded: ExpandedSeg[]; ftp
               <rect x={x} y={y} width={w} height={h} fill={s.color} rx={1.5} />
               {showWatt && (
                 <text x={x + w / 2} y={y + 15} fontSize={11} fontWeight={600} fill={C.bg} textAnchor="middle">
-                  {watt(s.pctFtp)}W
+                  {s.watts ?? watt(s.pctFtp)}W
                 </text>
               )}
               {s.label && w > 26 && (
@@ -117,8 +120,8 @@ export function WorkoutProfile({ expanded, ftp }: { expanded: ExpandedSeg[]; ftp
 
       {hasOu && (
         <div style={{ display: 'flex', gap: 18, justifyContent: 'center', marginTop: 4 }}>
-          <Legend color="#C99A4E" label={`under · ${watt(ouUnderPct)}W`} />
-          <Legend color="#C68A4E" label={`over · ${watt(ouOverPct)}W`} />
+          <Legend color="#C99A4E" label={`under · ${ouUnderW}W`} />
+          <Legend color="#C68A4E" label={`over · ${ouOverW}W`} />
         </div>
       )}
     </div>
