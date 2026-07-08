@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 // Kolumny jazdy potrzebne do RideAnalysis + identyfikacja/flaga details.
 // raw_data: do odczytu start_date_local (data lokalna, nie UTC) — workaround b1.
 const ACTIVITY_SELECT =
-  'strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, normalized_power, avg_hr, best_efforts, laps, details_synced_at, raw_data';
+  'strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, normalized_power, avg_hr, best_efforts, laps, details_synced_at, raw_data, avg_cadence, intensity_factor, calories, avg_speed:raw_data->average_speed, max_speed:raw_data->max_speed, kilojoules:raw_data->kilojoules';
 
 // Data lokalna jazdy (start_date_local z raw_data); fallback do activity_date (UTC).
 function localDateOf(a: { activity_date: string; raw_data?: { start_date_local?: string } | null }): string {

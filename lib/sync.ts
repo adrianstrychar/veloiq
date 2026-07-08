@@ -7,7 +7,7 @@ import {
   type StravaActivity,
 } from '@/lib/strava';
 import { calculateTSSfromHR, calculateTSSfromPower, calculateFitnessHistory } from '@/lib/fitness';
-import { computeBestEfforts } from '@/lib/strava/details';
+import { computeBestEfforts, syncActivityDetails } from '@/lib/strava/details';
 import { estimateFtp, decideFtpDisplayUpdate, type EffortRide } from '@/lib/ftp-engine';
 import { estimateVo2 } from '@/lib/vo2-engine';
 
@@ -18,6 +18,11 @@ const DEFAULT_LOOKBACK_DAYS = 90;
 // bezpiecznik rate limitu (typowo 1-2 nowe jazdy; pierwszy sync po wdrożeniu = backfill ~9).
 const FTP_WINDOW_DAYS = 28;
 const BEST_EFFORTS_MAX_PER_SYNC = 30;
+
+// Backfill detalu (calories + pr_efforts) dla starych jazd. Detail+streams = 2 calle Strava
+// na jazdę, więc cap trzyma się poniżej limitu 100 req/15 min łącznie z resztą syncu; cron
+// 5:00 dociąga resztę w kolejnych dniach. Newest-first: najświeższe jazdy dostają detal pierwsze.
+const DETAIL_BACKFILL_MAX_PER_SYNC = 15;
 
 interface AthleteRow {
   id: string;
@@ -136,6 +141,41 @@ export async function syncBestEfforts(
       fetched++;
     } catch (e) {
       console.error(`best_efforts fetch failed (jazda ${id}, kontynuuję):`, e instanceof Error ? e.message : e);
+    }
+  }
+  return fetched;
+}
+
+// Dociąga DETAL (laps + calories + pr_efforts) dla starych jazd, którym go brakuje: sprzed
+// wdrożenia detalu (details_synced_at IS NULL) ALBO sprzed kolumny pr_efforts (pr_efforts IS NULL,
+// czyli jazda zsynchronizowana zanim PR-y istniały). Reuse syncActivityDetails — ta sama ścieżka
+// co lazy sync-details po kliknięciu, więc pr_efforts ląduje zawsze jako tablica (min [] = sentinel
+// "przetworzone", null = "nigdy nie pobrane") i details_synced_at zostaje ustawione.
+// GATE CELOWO nie patrzy na calories — calories bywa u Stravy legalnie puste (null), więc gate na
+// calories == null pętliłby refetch tej samej jazdy przy KAŻDYM synce. pr_efforts=[] domyka temat.
+// CAP DETAIL_BACKFILL_MAX_PER_SYNC najnowszych na przebieg (rate limit). Błąd jednej jazdy nie
+// wysadza reszty (try/catch per jazda), spójnie z syncBestEfforts.
+export async function syncActivityDetailsBackfill(
+  supabase: SupabaseClient,
+  athleteId: string,
+  userId: string
+): Promise<number> {
+  const { data: missing } = await supabase
+    .from('strava_activities')
+    .select('strava_activity_id')
+    .eq('athlete_id', athleteId)
+    .or('details_synced_at.is.null,pr_efforts.is.null')
+    .order('activity_date', { ascending: false })
+    .limit(DETAIL_BACKFILL_MAX_PER_SYNC);
+
+  let fetched = 0;
+  for (const ride of missing ?? []) {
+    const id = ride.strava_activity_id as number;
+    try {
+      await syncActivityDetails(supabase, String(id), userId);
+      fetched++;
+    } catch (e) {
+      console.error(`detail backfill failed (jazda ${id}, kontynuuję):`, e instanceof Error ? e.message : e);
     }
   }
   return fetched;
@@ -338,6 +378,17 @@ export async function syncStravaActivities(
   } catch (e) {
     console.error('syncBestEfforts failed (sync kontynuowany):', e instanceof Error ? e.message : e);
   }
+
+  // Backfill detalu (calories + pr_efforts) dla starych jazd — best effort, nie wysadza syncu.
+  // syncActivityDetails potrzebuje userId (rozwiązuje po nim atletę+token), a tu mamy tylko
+  // athlete.id → dociągamy user_id jednym selectem.
+  try {
+    const { data: owner } = await supabase.from('athletes').select('user_id').eq('id', athlete.id).single();
+    if (owner?.user_id) await syncActivityDetailsBackfill(supabase, athlete.id, String(owner.user_id));
+  } catch (e) {
+    console.error('syncActivityDetailsBackfill failed (sync kontynuowany):', e instanceof Error ? e.message : e);
+  }
+
   await recalculateFtpEstimate(supabase, athlete.id);
   await recalculateVo2Estimate(supabase, athlete.id); // bliźniak — ten sam best_efforts, best effort
 

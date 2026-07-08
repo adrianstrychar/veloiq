@@ -275,7 +275,7 @@ function UnplannedCard({ activity, loading, onClick }: { activity: PlanActivityR
 
 // Kolumny do odczytu świeżego wiersza po sync-details (jak w LastActivityCard).
 const ACTIVITY_SELECT =
-  'name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, strava_activity_id';
+  'name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, strava_activity_id, avg_cadence, normalized_power, intensity_factor, calories, avg_speed:raw_data->average_speed, max_speed:raw_data->max_speed, kilojoules:raw_data->kilojoules';
 
 // baseHours = Σ dur_min dni NOT done i NOT OFF / 60 (zaokrąglone). done = istnienie jazdy.
 function computeBaseHours(days: PlanDayView[] | null, acts: Record<string, PlanActivityRow[]>): number {

@@ -26,6 +26,15 @@ export interface RideActivity {
   avg_hr: number | null;
   best_efforts: Record<string, number> | null;
   laps: RideLap[] | null;
+  // Metryki rozszerzone (PR1) — OPCJONALNE, żeby istniejące call-site'y (Plan/Calendar/LastActivity)
+  // kompilowały się bez zmian; producent selectuje je → karta pokazuje, brak → "—".
+  avg_cadence?: number | null;
+  normalized_power?: number | null;   // NP z kolumny (spójne z PMC) — NIE liczymy ze streamów
+  intensity_factor?: number | null;
+  calories?: number | null;           // z detail endpointu
+  avg_speed?: number | null;          // m/s (raw_data->average_speed)
+  max_speed?: number | null;          // m/s
+  kilojoules?: number | null;         // raw_data->kilojoules
 }
 
 interface RideAnalysisProps {
@@ -384,9 +393,39 @@ function WriteBackButton({ activityId }: { activityId: number }) {
 
 // ── RideAnalysis ────────────────────────────────────────────────────────────────
 
+// Rozszerzone metryki (PR1) — obok istniejących 4 kafli. Kadencja/prędkość/kJ/kalorie z danych,
+// NP/IF z kolumn (spójne z PMC). Renderujemy tylko kafle z wartością (brak → pomijamy, layout stabilny).
+function ExtendedMetrics({ activity }: { activity: RideActivity }) {
+  const kmh = (ms: number | null | undefined) => (ms != null ? Math.round(ms * 3.6 * 10) / 10 : null);
+  const cells: { label: string; value: string }[] = [];
+  if (activity.normalized_power != null) cells.push({ label: 'NP', value: `${activity.normalized_power} W` });
+  if (activity.intensity_factor != null) cells.push({ label: 'IF', value: activity.intensity_factor.toFixed(2) });
+  if (activity.avg_cadence != null) cells.push({ label: 'Kadencja', value: `${activity.avg_cadence} rpm` });
+  const avgKmh = kmh(activity.avg_speed);
+  if (avgKmh != null) cells.push({ label: 'Prędkość śr', value: `${avgKmh} km/h` });
+  const maxKmh = kmh(activity.max_speed);
+  if (maxKmh != null) cells.push({ label: 'Prędkość max', value: `${maxKmh} km/h` });
+  if (activity.kilojoules != null) cells.push({ label: 'Praca', value: `${Math.round(activity.kilojoules)} kJ` });
+  if (activity.calories != null) cells.push({ label: 'Kalorie', value: `${activity.calories} kcal` });
+
+  if (cells.length === 0) return null;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+      {cells.map((c) => <StatCard key={c.label} label={c.label} value={c.value} />)}
+    </div>
+  );
+}
+
 export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysisProps) {
   const laps = activity.laps ?? [];
   const structure: SessionElement[] = buildSessionStructure(laps, ftp);
+
+  // Warm-up streams (on-demand + persist): przy otwarciu dociąga i utrwala streams_json.
+  // Fire-and-forget — PR1 nic z tego nie renderuje (wykres/mapa/strefy = PR2). Endpoint sam
+  // cache'uje (2. otwarcie = zero calla Stravy). Błąd nie wpływa na kartę.
+  useEffect(() => {
+    void fetch(`/api/activities/${activityId}/streams`, { method: 'POST' }).catch(() => {});
+  }, [activityId]);
 
   return (
     <div
@@ -442,6 +481,9 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
           <StatCard label="Czas"      value={activity.duration_seconds != null ? formatDuration(activity.duration_seconds) : '—'} />
           <StatCard label="Obciążenie" value={activity.tss != null ? `${Math.round(activity.tss)}` : '—'} color={C.yellow} />
         </div>
+
+        {/* Metryki rozszerzone (PR1) — NP/IF/kadencja/prędkość/kJ/kalorie; puste kafle pomijane */}
+        <ExtendedMetrics activity={activity} />
 
         {/* Profil mocy */}
         <div>

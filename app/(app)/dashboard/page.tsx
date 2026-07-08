@@ -37,7 +37,7 @@ export default async function DashboardPage() {
     // Najnowsza jazda — po dacie aktywności malejąco.
     supabase
       .from('strava_activities')
-      .select('strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at')
+      .select('strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, avg_cadence, normalized_power, intensity_factor, calories, avg_speed:raw_data->average_speed, max_speed:raw_data->max_speed, kilojoules:raw_data->kilojoules')
       .eq('athlete_id', athleteId)
       .order('activity_date', { ascending: false })
       .limit(1)
