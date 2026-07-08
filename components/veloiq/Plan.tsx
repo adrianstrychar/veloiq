@@ -611,9 +611,6 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
             )}
           </div>
 
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>
-            Skaluje tylko <b style={{ color: C.text }}>nadchodzące</b> sesje — wykonane treningi i dzisiejsza jazda zostają bez zmian.
-          </div>
           {atCap && (
             <div style={{ fontSize: 11, color: C.yellow, marginTop: 6 }}>
               Maks ~{(maxMin / 60).toFixed(1)}h w tym układzie — odblokuj {cappingLockedDays.map((d) => dowLabel(d.date)).join(', ')}, by dodać więcej.
