@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { C } from '@/lib/theme';
 import { formatPolishDate, formatDuration } from '@/lib/format';
 import {
@@ -9,6 +10,12 @@ import {
   type ClassifiedLap,
   type SessionElement,
 } from '@/lib/laps';
+import { hasGps, hasWatts } from '@/lib/streams-view';
+import type { StreamsJson } from '@/lib/strava/streams';
+import PowerChart from './PowerChart';
+
+// Leaflet nie zna SSR (dotyka window przy imporcie) — mapa ładowana wyłącznie client-side.
+const RideMap = dynamic(() => import('./RideMap'), { ssr: false });
 
 // ── Typy ──────────────────────────────────────────────────────────────────────
 
@@ -131,9 +138,9 @@ function AiInsight({ activityId, activity, ftp }: { activityId: number; activity
         ✨ AI Insight
       </div>
       {loading ? (
-        <div style={{ fontSize: 13, color: C.muted, fontStyle: 'italic' }}>Analizuję jazdę…</div>
+        <div style={{ fontSize: 16, color: C.muted, fontStyle: 'italic' }}>Analizuję jazdę…</div>
       ) : (
-        <div style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>{text}</div>
+        <div style={{ fontSize: 16, color: C.text, lineHeight: 1.5 }}>{text}</div>
       )}
     </div>
   );
@@ -144,7 +151,7 @@ function AiInsight({ activityId, activity, ftp }: { activityId: number; activity
 function PowerProfile({ efforts, ftp }: { efforts: Record<string, number> | null; ftp: number | null }) {
   if (!efforts || Object.keys(efforts).length === 0) {
     return (
-      <div style={{ fontSize: 13, color: C.muted, padding: '8px 0' }}>
+      <div style={{ fontSize: 16, color: C.muted, padding: '8px 0' }}>
         Brak danych mocy — jazda na tętnie
       </div>
     );
@@ -393,8 +400,9 @@ function WriteBackButton({ activityId }: { activityId: number }) {
 
 // ── RideAnalysis ────────────────────────────────────────────────────────────────
 
-// Rozszerzone metryki (PR1) — obok istniejących 4 kafli. Kadencja/prędkość/kJ/kalorie z danych,
-// NP/IF z kolumn (spójne z PMC). Renderujemy tylko kafle z wartością (brak → pomijamy, layout stabilny).
+// Rozszerzone metryki (PR1) — skondensowane do dwukolumnowej listy label–wartość
+// (feedback: "za wiele okien"; grid dużych kafli rozpychał kartę). Kadencja/prędkość/kJ/kalorie
+// z danych, NP/IF z kolumn (spójne z PMC). Tylko wiersze z wartością (brak → pomijamy).
 function ExtendedMetrics({ activity }: { activity: RideActivity }) {
   const kmh = (ms: number | null | undefined) => (ms != null ? Math.round(ms * 3.6 * 10) / 10 : null);
   const cells: { label: string; value: string }[] = [];
@@ -410,8 +418,50 @@ function ExtendedMetrics({ activity }: { activity: RideActivity }) {
 
   if (cells.length === 0) return null;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-      {cells.map((c) => <StatCard key={c.label} label={c.label} value={c.value} />)}
+    <div style={{
+      background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
+      padding: '10px 12px', display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16, rowGap: 6,
+    }}>
+      {cells.map((c) => (
+        <div key={c.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            {c.label}
+          </span>
+          <span style={{ fontSize: 16, fontWeight: 600, color: C.text }}>{c.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Streams (mapa + wykres) ─────────────────────────────────────────────────────
+
+type StreamsState =
+  | { s: 'loading' }
+  | { s: 'ready'; streams: StreamsJson }
+  | { s: 'unavailable' };
+
+// Sekcja mapy: loading → skeleton; GPS → mapa; unavailable → placeholder z retry W MIEJSCU
+// (klik ponawia POST bez zamykania karty). Jazda bez GPS (trenażer) → parent pomija sekcję.
+function MapPlaceholder({ loading, onRetry }: { loading: boolean; onRetry: () => void }) {
+  return (
+    <div
+      onClick={loading ? undefined : onRetry}
+      role={loading ? undefined : 'button'}
+      style={{
+        height: 280, borderRadius: 12, border: `1px dashed ${C.border}`, background: C.card,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 6, cursor: loading ? 'default' : 'pointer',
+      }}
+    >
+      {loading ? (
+        <div style={{ fontSize: 16, color: C.muted, fontStyle: 'italic' }}>Ładuję trasę…</div>
+      ) : (
+        <>
+          <div style={{ fontSize: 16, color: C.muted }}>Otwórz ponownie, aby załadować mapę</div>
+          <div style={{ fontSize: 16, color: C.cyan }}>albo dotknij tutaj, żeby spróbować teraz</div>
+        </>
+      )}
     </div>
   );
 }
@@ -420,12 +470,28 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
   const laps = activity.laps ?? [];
   const structure: SessionElement[] = buildSessionStructure(laps, ftp);
 
-  // Warm-up streams (on-demand + persist): przy otwarciu dociąga i utrwala streams_json.
-  // Fire-and-forget — PR1 nic z tego nie renderuje (wykres/mapa/strefy = PR2). Endpoint sam
-  // cache'uje (2. otwarcie = zero calla Stravy). Błąd nie wpływa na kartę.
-  useEffect(() => {
-    void fetch(`/api/activities/${activityId}/streams`, { method: 'POST' }).catch(() => {});
+  // Streams (on-demand + persist) — PR2 konsumuje odpowiedź (mapa + wykres). Endpoint sam
+  // cache'uje (2. otwarcie = zero calla Stravy). Błąd → placeholder z retry, karta działa dalej.
+  const [streamsState, setStreamsState] = useState<StreamsState>({ s: 'loading' });
+  const loadStreams = useCallback(async () => {
+    setStreamsState({ s: 'loading' });
+    try {
+      const res = await fetch(`/api/activities/${activityId}/streams`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok && data.streams && (data.streams as StreamsJson).n > 0) {
+        setStreamsState({ s: 'ready', streams: data.streams as StreamsJson });
+      } else {
+        setStreamsState({ s: 'unavailable' });
+      }
+    } catch {
+      setStreamsState({ s: 'unavailable' });
+    }
   }, [activityId]);
+  useEffect(() => { void loadStreams(); }, [loadStreams]);
+
+  const streams = streamsState.s === 'ready' ? streamsState.streams : null;
+  const showMap = streams ? hasGps(streams) : streamsState.s !== 'ready'; // bez GPS → sekcja znika
+  const showChart = streams != null && hasWatts(streams);
 
   return (
     <div
@@ -468,11 +534,15 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
           </button>
         </div>
 
-        {/* AI Insight */}
-        <AiInsight activityId={activityId} activity={activity} ftp={ftp} />
+        {/* Mapa trasy — główny element (strefy mocy; bez GPS → sekcja znika) */}
+        {showMap && (
+          streams
+            ? <RideMap streams={streams} ftp={ftp} />
+            : <MapPlaceholder loading={streamsState.s === 'loading'} onRetry={loadStreams} />
+        )}
 
-        {/* Write-back opisu do Stravy — przycisk + podgląd + potwierdzenie (Etap 1) */}
-        <WriteBackButton activityId={activityId} />
+        {/* Wykres mocy (30 s) + linia FTP; jazda na HR → brak sekcji */}
+        {showChart && streams && <PowerChart streams={streams} ftp={ftp} />}
 
         {/* Statystyki */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
@@ -482,8 +552,14 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
           <StatCard label="Obciążenie" value={activity.tss != null ? `${Math.round(activity.tss)}` : '—'} color={C.yellow} />
         </div>
 
-        {/* Metryki rozszerzone (PR1) — NP/IF/kadencja/prędkość/kJ/kalorie; puste kafle pomijane */}
+        {/* Metryki rozszerzone (PR1) — skondensowana lista 2-kolumnowa; puste wiersze pomijane */}
         <ExtendedMetrics activity={activity} />
+
+        {/* AI Insight */}
+        <AiInsight activityId={activityId} activity={activity} ftp={ftp} />
+
+        {/* Write-back opisu do Stravy — przycisk + podgląd + potwierdzenie (Etap 1) */}
+        <WriteBackButton activityId={activityId} />
 
         {/* Profil mocy */}
         <div>
@@ -495,7 +571,7 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
         <div>
           <SectionTitle>Struktura sesji · Okrążenia</SectionTitle>
           {structure.length === 0 ? (
-            <div style={{ fontSize: 13, color: C.muted }}>Brak danych o okrążeniach</div>
+            <div style={{ fontSize: 16, color: C.muted }}>Brak danych o okrążeniach</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {structure.map((el, i) =>
