@@ -55,6 +55,14 @@ export function zonePowerColor(z: PowerZone): string {
   }
 }
 
+// Kolor akcentu lapu wg jego średniej mocy → strefa. Brak mocy/FTP (jazda na HR, e-bike
+// neutralizowany przez call-site, krótki lap) → neutralny szary. Ten sam zonePowerColor
+// co mapa i pasek stref — jedna paleta wszędzie, gdzie strefy.
+export function lapZoneColor(watts: number | null, ftp: number | null): string {
+  const z = powerZone(watts, ftp);
+  return z ? zonePowerColor(z) : C.muted;
+}
+
 // Kolor punktu trasy/mapy. Brak FTP → jednolity neutralny cyan (bez stref — nie zgadujemy progu).
 // Punkt bez watts (pauza) → szary. W przeciwnym razie kolor strefy z powerZone.
 export function zoneColor(watts: number | null, ftp: number | null): string {
