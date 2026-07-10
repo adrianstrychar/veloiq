@@ -10,7 +10,7 @@ import {
   type ClassifiedLap,
   type SessionElement,
 } from '@/lib/laps';
-import { hasGps, hasWatts } from '@/lib/streams-view';
+import { hasGps, hasWatts, lapZoneColor } from '@/lib/streams-view';
 import type { StreamsJson } from '@/lib/strava/streams';
 import PowerChart from './PowerChart';
 import PowerZoneBar from './PowerZoneBar';
@@ -207,10 +207,10 @@ function LapCell({ label, value, color }: { label: string; value: string; color?
   );
 }
 
-function SingleLapCard({ cl }: { cl: ClassifiedLap }) {
+function SingleLapCard({ cl, accent }: { cl: ClassifiedLap; accent: string }) {
   return (
     <div style={{
-      background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
+      background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${accent}`, borderRadius: 10,
       padding: '12px', display: 'flex', flexDirection: 'column', gap: 10,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -238,13 +238,13 @@ function SingleLapCard({ cl }: { cl: ClassifiedLap }) {
 
 // ── Lapy: rozwijalny blok interwałowy ────────────────────────────────────────────
 
-function IntervalRow({ cl }: { cl: ClassifiedLap }) {
+function IntervalRow({ cl, accent }: { cl: ClassifiedLap; accent: string }) {
   const isRecovery = cl.cls === 'recovery';
   const color = isRecovery ? C.muted : ftpColor(cl.pctFtp);
   return (
     <div style={{
       display: 'grid', gridTemplateColumns: '20px 1fr auto auto', gap: 10, alignItems: 'center',
-      padding: '7px 8px', borderRadius: 6,
+      padding: '7px 8px', borderRadius: 6, borderLeft: `3px solid ${accent}`,
       background: isRecovery ? 'transparent' : C.dim,
       opacity: isRecovery ? 0.55 : 1,
     }}>
@@ -266,7 +266,7 @@ function IntervalRow({ cl }: { cl: ClassifiedLap }) {
   );
 }
 
-function BlockCard({ laps, summary }: { laps: ClassifiedLap[]; summary: { count: number; avgWatts: number | null; totalTimeSec: number; label: string } }) {
+function BlockCard({ laps, summary, accentOf }: { laps: ClassifiedLap[]; summary: { count: number; avgWatts: number | null; totalTimeSec: number; label: string }; accentOf: (cl: ClassifiedLap) => string }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -304,7 +304,7 @@ function BlockCard({ laps, summary }: { laps: ClassifiedLap[]; summary: { count:
           padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: 4,
           borderTop: `1px solid ${C.border}`, paddingTop: 10, marginTop: 0,
         }}>
-          {laps.map((cl) => <IntervalRow key={cl.n} cl={cl} />)}
+          {laps.map((cl) => <IntervalRow key={cl.n} cl={cl} accent={accentOf(cl)} />)}
         </div>
       )}
     </div>
@@ -475,6 +475,12 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
   const laps = activity.laps ?? [];
   const structure: SessionElement[] = buildSessionStructure(laps, ftp);
 
+  // Akcent strefowy lapu: średnia moc → strefa → kolor (ta sama paleta co mapa/pasek). E-bike
+  // → moc z silnika zafałszowałaby strefę, więc neutralny szary (spójnie z resztą karty).
+  // Brak mocy/FTP → szary (fallback HR poza zakresem — karta nie ma HRmax).
+  const isEbike = activity.type === 'EBikeRide';
+  const lapAccent = (cl: ClassifiedLap) => (isEbike ? C.muted : lapZoneColor(cl.watts, ftp));
+
   // Streams (on-demand + persist) — PR2 konsumuje odpowiedź (mapa + wykres). Endpoint sam
   // cache'uje (2. otwarcie = zero calla Stravy). Błąd → placeholder z retry, karta działa dalej.
   const [streamsState, setStreamsState] = useState<StreamsState>({ s: 'loading' });
@@ -584,8 +590,8 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {structure.map((el, i) =>
                 el.type === 'single'
-                  ? <SingleLapCard key={`s${el.lap.n}`} cl={el.lap} />
-                  : <BlockCard key={`b${i}`} laps={el.laps} summary={el.summary} />
+                  ? <SingleLapCard key={`s${el.lap.n}`} cl={el.lap} accent={lapAccent(el.lap)} />
+                  : <BlockCard key={`b${i}`} laps={el.laps} summary={el.summary} accentOf={lapAccent} />
               )}
             </div>
           )}
