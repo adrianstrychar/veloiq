@@ -2,17 +2,25 @@
 
 import { useMemo, useState } from 'react';
 import { C } from '@/lib/theme';
+import { typeColor, fmtDur } from '@/lib/plan';
+import { countryFlag, cleanLocation } from '@/lib/country-flag';
 import { RideAnalysis, type RideActivity } from './RideAnalysis';
+import { WorkoutDetail } from './WorkoutDetail';
+import { type PlanDayView } from './Plan';
 import { type RaceRow } from './Races';
 
 // Aktywność w kalendarzu = pełny RideActivity + identyfikacja i flaga analizy.
+// sport_type z raw_data — kolumna type ma 'Ride' także dla graveli (kolory wg sportu).
 export interface CalActivity extends RideActivity {
   strava_activity_id: number;
   details_synced_at: string | null;
+  sport_type?: string | null;
 }
 
+// Dzień planu w kalendarzu: PlanDayView + outline (następny tydzień = zarys).
+export type CalPlanDay = PlanDayView & { outline?: boolean };
+
 // Zdarzenie kalendarza — dyskryminowane po kind.
-// TODO Etap 5: dojdzie kind:'training' z tabeli planu treningowego (weekly_plans / training_sessions).
 type CalEvent =
   | {
       kind: 'activity';
@@ -21,6 +29,16 @@ type CalEvent =
       color: string;
       tss: number | null;
       activity: CalActivity;
+      clickable: boolean;
+    }
+  | {
+      kind: 'training';
+      date: string;
+      label: string;
+      color: string;
+      tss: number | null;
+      day: CalPlanDay;
+      outline: boolean;
       clickable: boolean;
     }
   | {
@@ -35,6 +53,7 @@ type CalEvent =
 interface CalendarProps {
   activities: CalActivity[];
   races: RaceRow[];
+  planDays: CalPlanDay[];
   ftp: number | null;
   onRaceClick: () => void;
 }
@@ -52,10 +71,12 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Kolor aktywności wg typu: gravel=yellow, reszta (szosa/trener)=cyan.
-// TODO: sport_type leży w raw_data — doprecyzować gravel vs road po nim.
-function activityColor(type: string | null): string {
-  if (type && type.toLowerCase().includes('gravel')) return C.yellow;
+// Kolor aktywności wg sportu (mockup dayDot): Gravel=yellow, Virtual/Zwift=purple, reszta=cyan.
+// Po sport_type z raw_data — kolumna type ma 'Ride' także dla graveli (30 jazd w bazie
+// renderowało się błędnie cyan, bo stary warunek type.includes('gravel') nigdy nie odpalał).
+function activityColor(sportType: string | null | undefined): string {
+  if (sportType === 'GravelRide') return C.yellow;
+  if (sportType === 'VirtualRide') return C.purple;
   return C.cyan;
 }
 
@@ -63,7 +84,7 @@ function monthIndex(y: number, m: number): number {
   return y * 12 + m;
 }
 
-export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps) {
+export function Calendar({ activities, races, planDays, ftp, onRaceClick }: CalendarProps) {
   const todayStr = ymd(new Date());
 
   // Domyślny miesiąc: bieżący, ale przycięty do zakresu sezonu.
@@ -80,6 +101,7 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
   const [cursor, setCursor] = useState(initial);
   const [hovered, setHovered] = useState<string | null>(null);
   const [openActivity, setOpenActivity] = useState<CalActivity | null>(null);
+  const [openWorkout, setOpenWorkout] = useState<CalPlanDay | null>(null);
 
   // Zbuduj zdarzenia z obu źródeł i pogrupuj po dacie.
   const eventsByDate = useMemo(() => {
@@ -90,10 +112,30 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
         kind: 'activity',
         date: a.activity_date,
         label: a.name ?? a.type ?? 'Jazda',
-        color: activityColor(a.type),
+        color: activityColor(a.sport_type),
         tss: a.tss,
         activity: a,
         clickable: !!a.details_synced_at,
+      });
+    }
+
+    // Treningi z planu (Etap 5): tylko dziś i przyszłość — przeszłe dni pokazują wykonane
+    // jazdy (jak mockup). Kolejność push (jazdy → treningi → wyścigi) = priorytet main
+    // w komórce: jazda > trening > wyścig; dzisiejsza poranna jazda nie usuwa treningu
+    // z eventów — oba współistnieją (osobne wpisy na liście 14 dni).
+    for (const d of planDays) {
+      if (!d.date || d.date < todayStr) continue;
+      const outline = !!d.outline;
+      events.push({
+        kind: 'training',
+        date: d.date,
+        label: d.type === 'OFF' ? 'Odpoczynek' : d.label,
+        color: typeColor(d.type),
+        tss: d.tss > 0 ? d.tss : null,
+        day: d,
+        outline,
+        // Rozpiska (WorkoutDetail) tylko dla szczegółu: nie zarys, nie OFF, FTP w profilu.
+        clickable: !outline && d.type !== 'OFF' && ftp != null,
       });
     }
 
@@ -108,8 +150,6 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
       });
     }
 
-    // TODO Etap 5: tutaj wepną się treningi z planu (kind:'training').
-
     const map = new Map<string, CalEvent[]>();
     for (const e of events) {
       const key = e.date.slice(0, 10);
@@ -117,7 +157,7 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
       map.get(key)!.push(e);
     }
     return map;
-  }, [activities, races]);
+  }, [activities, races, planDays, todayStr, ftp]);
 
   // Statystyki bieżącego miesiąca.
   const monthStats = useMemo(() => {
@@ -182,8 +222,13 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
     const clickableRide = evs.find((e) => e.kind === 'activity' && e.clickable) as
       | Extract<CalEvent, { kind: 'activity' }>
       | undefined;
+    const clickableWorkout = evs.find((e) => e.kind === 'training' && e.clickable) as
+      | Extract<CalEvent, { kind: 'training' }>
+      | undefined;
     if (clickableRide) {
       setOpenActivity(clickableRide.activity);
+    } else if (clickableWorkout) {
+      setOpenWorkout(clickableWorkout.day);
     } else if (race) {
       onRaceClick();
     }
@@ -238,19 +283,27 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
           const isPast = dateKey < todayStr;
           const dayNum = Number(dateKey.slice(8, 10));
           const first = evs[0];
+          // Zarys (mockup): main = trening z kolejnego tygodnia → dashed + przygaszenie.
+          const isOutline = first?.kind === 'training' && first.outline && !hasRace;
+          const canClick = evs.some(
+            (e) => e.kind === 'race' || ((e.kind === 'activity' || e.kind === 'training') && e.clickable)
+          );
 
           let bg = 'transparent';
           let border = `1px solid transparent`;
           if (hasRace) {
             bg = C.red + '14';
             border = `1px solid ${C.red}44`;
+          } else if (isOutline) {
+            bg = C.card + '80';
+            border = `1px dashed ${C.border}`;
           } else if (hasEvent) {
             bg = C.card;
             border = `1px solid ${C.border}`;
           }
           if (isToday) border = `1.5px solid ${C.cyan}`;
 
-          const opacity = !hasEvent && isPast ? 0.25 : 1;
+          const opacity = !hasEvent && isPast ? 0.25 : isOutline ? 0.6 : 1;
 
           return (
             <div
@@ -267,7 +320,7 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 2,
-                cursor: hasEvent ? 'pointer' : 'default',
+                cursor: canClick ? 'pointer' : 'default',
                 opacity,
                 position: 'relative',
               }}
@@ -279,6 +332,7 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
                 <div
                   style={{
                     fontSize: 9,
+                    fontWeight: first.kind === 'training' ? 600 : 400,
                     color: first.color,
                     lineHeight: 1.15,
                     overflow: 'hidden',
@@ -287,7 +341,11 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
                     WebkitBoxOrient: 'vertical',
                   }}
                 >
-                  {first.label}
+                  {first.kind === 'training'
+                    ? (first.day.type === 'OFF' ? 'Odpocz.' : first.day.type)
+                    : first.kind === 'race'
+                      ? [countryFlag(first.race.location), first.label].filter(Boolean).join(' ')
+                      : first.label}
                 </div>
               )}
               <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -321,13 +379,15 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
                   {evs.map((e, idx) => (
                     <div key={idx} style={{ marginBottom: idx < evs.length - 1 ? 6 : 0 }}>
                       <div style={{ fontSize: 9, color: e.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                        {e.kind === 'race' ? 'Wyścig' : (e.activity.type ?? 'Jazda')}
+                        {e.kind === 'race' ? 'Wyścig' : e.kind === 'training' ? `Plan · ${e.day.type}` : (e.activity.type ?? 'Jazda')}
                       </div>
                       <div style={{ fontSize: 12, color: C.text }}>{e.label}</div>
                       <div style={{ fontSize: 10, color: C.muted }}>
                         {e.kind === 'race'
-                          ? [e.race.location, e.race.distance_km ? `${e.race.distance_km} km` : null].filter(Boolean).join(' · ')
-                          : [e.activity.distance_km ? `${e.activity.distance_km} km` : null, e.tss ? `${Math.round(e.tss)} TSS` : null].filter(Boolean).join(' · ')}
+                          ? [cleanLocation(e.race.location), e.race.distance_km ? `${e.race.distance_km} km` : null].filter(Boolean).join(' · ')
+                          : e.kind === 'training'
+                            ? (e.day.type === 'OFF' ? 'Pełna regeneracja' : [e.day.dur_min ? fmtDur(e.day.dur_min) : null, e.tss ? `~TSS ${Math.round(e.tss)}` : null, e.outline ? 'zarys' : null].filter(Boolean).join(' · '))
+                            : [e.activity.distance_km ? `${e.activity.distance_km} km` : null, e.tss ? `${Math.round(e.tss)} TSS` : null].filter(Boolean).join(' · ')}
                       </div>
                     </div>
                   ))}
@@ -341,11 +401,13 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
         })}
       </div>
 
-      {/* Legenda */}
+      {/* Legenda (1:1 z mockupu) */}
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 10, color: C.muted }}>
         <LegendDot color={C.red} label="Wyścig" />
+        <LegendDot color={C.cyan} label="Plan" />
         <LegendDot color={C.yellow} label="Gravel" />
         <LegendDot color={C.cyan} label="Szosa" />
+        <LegendDot color={C.purple} label="Zwift" />
       </div>
 
       {/* Plan na najbliższe 14 dni */}
@@ -357,16 +419,39 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
           <div style={{ fontSize: 12, color: C.muted }}>Brak zaplanowanych wydarzeń w najbliższych 14 dniach.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {next14.map((e, i) => (
-              <EventRow
-                key={i}
-                event={e}
-                onClick={() => {
-                  if (e.kind === 'activity' && e.clickable) setOpenActivity(e.activity);
-                  else if (e.kind === 'race') onRaceClick();
-                }}
-              />
-            ))}
+            {(() => {
+              // 7 dni szczegółu + 7 zarysu; separator przed pierwszym eventem spoza tygodnia.
+              const detailEnd = new Date(todayStr + 'T00:00:00');
+              detailEnd.setDate(detailEnd.getDate() + 7);
+              const detailStr = ymd(detailEnd);
+              const rows: React.ReactNode[] = [];
+              let outlineStarted = false;
+              next14.forEach((e, i) => {
+                if (e.date.slice(0, 10) > detailStr && !outlineStarted) {
+                  outlineStarted = true;
+                  rows.push(
+                    <div key="sep" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '6px 2px 2px' }}>
+                      <div style={{ flex: 1, height: 1, background: C.border }} />
+                      <span style={{ fontSize: 9, color: C.muted, fontWeight: 600, letterSpacing: '0.1em' }}>ZARYS · KOLEJNY TYDZIEŃ</span>
+                      <div style={{ flex: 1, height: 1, background: C.border }} />
+                    </div>
+                  );
+                }
+                rows.push(
+                  <EventRow
+                    key={i}
+                    event={e}
+                    todayStr={todayStr}
+                    onClick={() => {
+                      if (e.kind === 'activity' && e.clickable) setOpenActivity(e.activity);
+                      else if (e.kind === 'training' && e.clickable) setOpenWorkout(e.day);
+                      else if (e.kind === 'race') onRaceClick();
+                    }}
+                  />
+                );
+              });
+              return rows;
+            })()}
           </div>
         )}
       </div>
@@ -378,6 +463,10 @@ export function Calendar({ activities, races, ftp, onRaceClick }: CalendarProps)
           ftp={ftp}
           onClose={() => setOpenActivity(null)}
         />
+      )}
+
+      {openWorkout && ftp != null && (
+        <WorkoutDetail day={openWorkout} ftp={ftp} onClose={() => setOpenWorkout(null)} />
       )}
     </div>
   );
@@ -415,14 +504,50 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
-function EventRow({ event, onClick }: { event: CalEvent; onClick: () => void }) {
-  const clickable = event.kind === 'race' || (event.kind === 'activity' && event.clickable);
-  const d = new Date(event.date + 'T00:00:00');
-  const dateLabel = d.toLocaleDateString('pl-PL', { weekday: 'short', day: '2-digit', month: '2-digit' });
+const MONTH_ABBR = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
+
+// Wiersz listy 14 dni — 1:1 z mockupu (EventRow): data | tag + nazwa + meta | odliczanie dni.
+// Zarys: lewy border 3px dashed + opacity 0.7; szczegół/jazda/wyścig: 3px solid.
+function EventRow({ event, todayStr, onClick }: { event: CalEvent; todayStr: string; onClick: () => void }) {
+  const clickable =
+    event.kind === 'race' || ((event.kind === 'activity' || event.kind === 'training') && event.clickable);
+  const isOutline = event.kind === 'training' && event.outline;
+  const d = new Date(event.date.slice(0, 10) + 'T00:00:00');
+  const days = Math.round((d.getTime() - new Date(todayStr + 'T00:00:00').getTime()) / 86_400_000);
+  const c = event.color;
+
+  const tag =
+    event.kind === 'race'
+      ? (event.date.slice(0, 10) < todayStr ? 'WYŚCIG ✓' : 'WYŚCIG')
+      : event.kind === 'training'
+        ? `PLAN · ${event.day.type}`
+        : event.activity.sport_type === 'GravelRide'
+          ? 'GRAVEL'
+          : event.activity.sport_type === 'VirtualRide'
+            ? 'ZWIFT'
+            : event.activity.sport_type === 'Ride'
+              ? 'SZOSA'
+              : 'JAZDA';
+
+  const label =
+    event.kind === 'race'
+      ? [countryFlag(event.race.location), event.label].filter(Boolean).join(' ')
+      : event.label;
+
   const meta =
     event.kind === 'race'
-      ? [event.race.location, event.race.distance_km ? `${event.race.distance_km} km` : null].filter(Boolean).join(' · ')
-      : [event.activity.distance_km ? `${event.activity.distance_km} km` : null, event.tss ? `${Math.round(event.tss)} TSS` : null].filter(Boolean).join(' · ');
+      ? [cleanLocation(event.race.location), event.race.series, event.race.distance_km ? `${event.race.distance_km} km` : null]
+          .filter(Boolean)
+          .join(' · ')
+      : event.kind === 'training'
+        ? (event.day.type === 'OFF'
+            ? 'Pełna regeneracja'
+            : [event.day.dur_min ? fmtDur(event.day.dur_min) : null, event.tss ? `~TSS ${Math.round(event.tss)}` : null, isOutline ? 'zarys' : null]
+                .filter(Boolean)
+                .join(' · '))
+        : [event.activity.distance_km ? `${event.activity.distance_km} km` : null, event.tss ? `${Math.round(event.tss)} TSS` : null]
+            .filter(Boolean)
+            .join(' · ');
 
   return (
     <div
@@ -430,22 +555,40 @@ function EventRow({ event, onClick }: { event: CalEvent; onClick: () => void }) 
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 10,
+        gap: 12,
         background: C.card,
         border: `1px solid ${C.border}`,
-        borderRadius: 8,
+        borderLeft: isOutline ? `3px dashed ${c}` : `3px solid ${c}`,
+        borderRadius: '0 8px 8px 0',
         padding: '10px 12px',
         cursor: clickable ? 'pointer' : 'default',
+        opacity: isOutline ? 0.7 : 1,
       }}
     >
-      <span style={{ width: 8, height: 8, borderRadius: '50%', background: event.color, flexShrink: 0 }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, color: C.text, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {event.label}
-        </div>
-        {meta && <div style={{ fontSize: 11, color: C.muted }}>{meta}</div>}
+      <div style={{ width: 42, textAlign: 'center', flexShrink: 0 }}>
+        <div style={{ fontSize: 17, fontWeight: 600, color: c, lineHeight: 1 }}>{d.getDate()}</div>
+        <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase' }}>{MONTH_ABBR[d.getMonth()]}</div>
       </div>
-      <div style={{ fontSize: 11, color: C.muted, flexShrink: 0 }}>{dateLabel}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+          <span style={{ fontSize: 8, fontWeight: 600, letterSpacing: '0.08em', color: c, background: c + '18', border: `1px solid ${c}44`, borderRadius: 4, padding: '1px 6px', flexShrink: 0 }}>
+            {tag}
+          </span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {label}
+          </span>
+        </div>
+        {meta && <div style={{ fontSize: 10, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{meta}</div>}
+      </div>
+      <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: days === 0 ? C.cyan : c }}>
+            {days === 0 ? 'dziś' : days > 0 ? `+${days}` : days}
+          </div>
+          {days !== 0 && <div style={{ fontSize: 9, color: C.muted }}>dni</div>}
+        </div>
+        {clickable && <span style={{ fontSize: 14, color: c }}>›</span>}
+      </div>
     </div>
   );
 }
