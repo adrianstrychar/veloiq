@@ -25,16 +25,43 @@ export function smoothWatts(
   return out;
 }
 
-// Kolor strefy wg % FTP — te same progi co ftpColor w karcie (spójność best efforts ↔ mapa):
-// >105% czerwony, 90–105% żółty, <90% zielony. Brak watts w punkcie → szary.
-// Brak FTP w profilu → jednolity neutralny akcent motywu (bez stref — nie zgadujemy progu).
+// Strefy treningowe 6-stopniowe wg % FTP. Progi: Z1 <55 | Z2 55–75 | Z3 75–90 | Z4 90–105
+// | Z5 105–120 | Z6 >120. Granica należy do WYŻSZEJ strefy (55→Z2, 105→Z5). null gdy brak watts/ftp.
+export type PowerZone = 'Z1' | 'Z2' | 'Z3' | 'Z4' | 'Z5' | 'Z6';
+export const ZONES: PowerZone[] = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6'];
+
+export function powerZone(watts: number | null, ftp: number | null): PowerZone | null {
+  if (watts == null || ftp == null || ftp <= 0) return null;
+  const pct = (watts / ftp) * 100;
+  if (pct < 55) return 'Z1';
+  if (pct < 75) return 'Z2';
+  if (pct < 90) return 'Z3';
+  if (pct < 105) return 'Z4';
+  if (pct < 120) return 'Z5';
+  return 'Z6';
+}
+
+// Kolory stref: Z1 szary, Z2 niebieski, Z3 zielony, Z4 żółty, Z5 pomarańcz (motyw nie ma tokenu —
+// literał lokalnie), Z6 czerwony. Jedno źródło koloru dla mapy i paska stref.
+const ZONE5_ORANGE = '#D98A3D';
+export function zonePowerColor(z: PowerZone): string {
+  switch (z) {
+    case 'Z1': return C.muted;
+    case 'Z2': return C.cyan;
+    case 'Z3': return C.green;
+    case 'Z4': return C.yellow;
+    case 'Z5': return ZONE5_ORANGE;
+    case 'Z6': return C.red;
+  }
+}
+
+// Kolor punktu trasy/mapy. Brak FTP → jednolity neutralny cyan (bez stref — nie zgadujemy progu).
+// Punkt bez watts (pauza) → szary. W przeciwnym razie kolor strefy z powerZone.
 export function zoneColor(watts: number | null, ftp: number | null): string {
   if (ftp == null || ftp <= 0) return C.cyan;
   if (watts == null) return C.muted;
-  const pct = (watts / ftp) * 100;
-  if (pct > 105) return C.red;
-  if (pct >= 90) return C.yellow;
-  return C.green;
+  const z = powerZone(watts, ftp);
+  return z ? zonePowerColor(z) : C.muted;
 }
 
 export interface RouteSegment {
@@ -86,4 +113,18 @@ export function hasGps(streams: StreamsJson): boolean {
 // Czy jest moc do wykresu (jazda na HR → brak sekcji wykresu).
 export function hasWatts(streams: StreamsJson): boolean {
   return streams.series.watts.some((w) => w != null);
+}
+
+// Rozkład czasu w strefach — 6 koszy (Z1..Z6), liczba próbek per strefa. Liczony z mocy
+// WYGŁADZONEJ 30 s (to samo źródło co kolor mapy → pasek i mapa zgodne). Nulle/pauzy pomijane.
+// Brak FTP → same zera (pasek stref znika). Kaller liczy % z sumy (każda próbka = dt sekund).
+export function zoneDistribution(streams: StreamsJson, ftp: number | null): number[] {
+  const counts = [0, 0, 0, 0, 0, 0];
+  if (ftp == null || ftp <= 0) return counts;
+  const smoothed = smoothWatts(streams.series.watts, streams.dt);
+  for (let i = 0; i < streams.n; i++) {
+    const z = powerZone(smoothed[i], ftp);
+    if (z) counts[ZONES.indexOf(z)]++;
+  }
+  return counts;
 }

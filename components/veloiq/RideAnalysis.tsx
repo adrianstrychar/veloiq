@@ -13,6 +13,7 @@ import {
 import { hasGps, hasWatts } from '@/lib/streams-view';
 import type { StreamsJson } from '@/lib/strava/streams';
 import PowerChart from './PowerChart';
+import PowerZoneBar from './PowerZoneBar';
 
 // Leaflet nie zna SSR (dotyka window przy imporcie) — mapa ładowana wyłącznie client-side.
 const RideMap = dynamic(() => import('./RideMap'), { ssr: false });
@@ -408,12 +409,14 @@ function ExtendedMetrics({ activity }: { activity: RideActivity }) {
   const cells: { label: string; value: string }[] = [];
   if (activity.normalized_power != null) cells.push({ label: 'NP', value: `${activity.normalized_power} W` });
   if (activity.intensity_factor != null) cells.push({ label: 'IF', value: activity.intensity_factor.toFixed(2) });
+  // Moc śr — e-bike ukryte (avg_watts = moc silnika, nierzetelna; spójnie z insight/best efforts).
+  if (activity.avg_watts != null && activity.type !== 'EBikeRide') cells.push({ label: 'Moc śr', value: `${activity.avg_watts} W` });
+  if (activity.avg_hr != null) cells.push({ label: 'Tętno śr', value: `${activity.avg_hr} bpm` });
   if (activity.avg_cadence != null) cells.push({ label: 'Kadencja', value: `${activity.avg_cadence} rpm` });
   const avgKmh = kmh(activity.avg_speed);
   if (avgKmh != null) cells.push({ label: 'Prędkość śr', value: `${avgKmh} km/h` });
   const maxKmh = kmh(activity.max_speed);
   if (maxKmh != null) cells.push({ label: 'Prędkość max', value: `${maxKmh} km/h` });
-  if (activity.kilojoules != null) cells.push({ label: 'Praca', value: `${Math.round(activity.kilojoules)} kJ` });
   if (activity.calories != null) cells.push({ label: 'Kalorie', value: `${activity.calories} kcal` });
 
   if (cells.length === 0) return null;
@@ -543,6 +546,9 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
 
         {/* Wykres mocy (30 s) + linia FTP; jazda na HR → brak sekcji */}
         {showChart && streams && <PowerChart streams={streams} ftp={ftp} />}
+
+        {/* Pasek rozkładu stref mocy pod wykresem (te same watts wygładzone 30 s co mapa) */}
+        {showChart && streams && <PowerZoneBar streams={streams} ftp={ftp} />}
 
         {/* Statystyki */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
