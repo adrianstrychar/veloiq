@@ -52,8 +52,10 @@ interface RideAnalysisProps {
   onClose: () => void;
 }
 
-// Stała kolejność okien best_effort
-const EFFORT_ORDER = ['5s', '15s', '1min', '5min', '8min', '10min', '20min', '30min', '1h'];
+// Okna best_effort pokazywane w karcie (6 — PR4). Warstwa danych (computeBestEfforts) liczy
+// nadal wszystkie okna dla silnika FTP; tu tniemy tylko WYŚWIETLANIE. Brak danych dla okna
+// (krótka jazda) → kafel pomijany filtrem efforts[k] != null poniżej.
+const EFFORT_ORDER = ['15s', '1min', '5min', '10min', '20min', '30min'];
 
 // Kolor wg % FTP
 function ftpColor(pct: number | null): string {
@@ -537,10 +539,10 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
           </button>
         </div>
 
-        {/* Mapa trasy — główny element (strefy mocy; bez GPS → sekcja znika) */}
+        {/* Mapa trasy — główny element (animowane rysowanie trasy; bez GPS → sekcja znika) */}
         {showMap && (
           streams
-            ? <RideMap streams={streams} ftp={ftp} />
+            ? <RideMap streams={streams} />
             : <MapPlaceholder loading={streamsState.s === 'loading'} onRetry={loadStreams} />
         )}
 
