@@ -581,9 +581,10 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
         {/* Pasek rozkładu stref mocy pod wykresem (te same watts wygładzone 30 s co mapa) */}
         {showChart && streams && <PowerZoneBar streams={streams} ftp={ftp} />}
 
-        {/* Pierścień realizacji celu dnia — przy głównych kaflach; brak planu/mocy → ukryty */}
-        {ring.available && (
-          <ExecutionRing pct={ring.pct} doneMin={ring.doneMin} targetMin={ring.targetMin} />
+        {/* Pierścień realizacji celu dnia — przy głównych kaflach; brak planu/mocy → ukryty.
+            `planned` gwarantowane niepuste, bo ring.available wynika z planned && streams. */}
+        {ring.available && planned && (
+          <ExecutionRing pct={ring.pct} planned={planned} />
         )}
 
         {/* Statystyki */}
