@@ -26,6 +26,8 @@ export interface PlannedWorkout {
   hr: string;     // zakres np. "175–185" lub "–"
   tss: number;
   dur_min: number;
+  warmup?: number;    // nadpisanie z suwaka (scaleWeek); brak → default z sessionStructure. Do celu ringu.
+  cooldown?: number;
   structure?: DayStructure | null; // parametry substruktury z plan_json (brak = stary plan → fallback z labela)
 }
 
