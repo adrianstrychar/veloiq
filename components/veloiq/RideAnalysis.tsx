@@ -12,8 +12,11 @@ import {
 } from '@/lib/laps';
 import { hasGps, hasWatts, lapZoneColor } from '@/lib/streams-view';
 import type { StreamsJson } from '@/lib/strava/streams';
+import { computeExecutionRing } from '@/lib/execution-ring';
+import type { PlannedWorkout } from '@/lib/ai/insight';
 import PowerChart from './PowerChart';
 import PowerZoneBar from './PowerZoneBar';
+import ExecutionRing from './ExecutionRing';
 
 // Leaflet nie zna SSR (dotyka window przy imporcie) — mapa ładowana wyłącznie client-side.
 const RideMap = dynamic(() => import('./RideMap'), { ssr: false });
@@ -504,6 +507,26 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
   const showMap = streams ? hasGps(streams) : streamsState.s !== 'ready'; // bez GPS → sekcja znika
   const showChart = streams != null && hasWatts(streams);
 
+  // Zaplanowany dzień (ten sam matcher po dacie co AI Insight) — do pierścienia realizacji.
+  // undefined = ładowanie, null = brak planu/OFF/niezaplanowana. Błąd → null (ring ukryty).
+  const [planned, setPlanned] = useState<PlannedWorkout | null | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/activities/${activityId}/planned`, { method: 'POST' });
+        const data = await res.json();
+        if (!cancelled) setPlanned(data.ok ? (data.planned as PlannedWorkout | null) : null);
+      } catch {
+        if (!cancelled) setPlanned(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activityId]);
+
+  // Pierścień realizacji celu — dostępny tylko gdy jest plan + streams z mocą (logika w helperze).
+  const ring = planned && streams ? computeExecutionRing(planned, streams, ftp, isEbike) : { available: false as const };
+
   return (
     <div
       onClick={onClose}
@@ -557,6 +580,11 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
 
         {/* Pasek rozkładu stref mocy pod wykresem (te same watts wygładzone 30 s co mapa) */}
         {showChart && streams && <PowerZoneBar streams={streams} ftp={ftp} />}
+
+        {/* Pierścień realizacji celu dnia — przy głównych kaflach; brak planu/mocy → ukryty */}
+        {ring.available && (
+          <ExecutionRing pct={ring.pct} doneMin={ring.doneMin} targetMin={ring.targetMin} />
+        )}
 
         {/* Statystyki */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
