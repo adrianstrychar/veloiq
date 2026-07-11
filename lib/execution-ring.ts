@@ -16,6 +16,14 @@ export type ExecutionRing =
   | { available: false; reason?: RingReason }
   | { available: true; pct: number; doneMin: number; targetMin: number };
 
+// Status słowem — JEDNO źródło dla karty (ExecutionRing.tsx) i naklejki share (renderSticker).
+// Progi spójne z kolorami ringu: 90+/75–90/<75.
+export function ringHeadline(pct: number): string {
+  if (pct >= 90) return 'Idealnie';
+  if (pct >= 75) return 'Blisko celu';
+  return 'Poniżej celu';
+}
+
 // Sekundy próbek w oknie mocy [centerW×(1−band), centerW×(1+band)] — PO CAŁEJ jeździe (elapsed).
 // Bez segmentacji lapów: streams są elapsed-indexed z konstrukcji, więc moving_time nie ma jak wejść.
 export function timeInPowerWindowSec(streams: StreamsJson, centerW: number, band = WINDOW_BAND): number {

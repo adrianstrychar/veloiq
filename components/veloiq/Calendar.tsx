@@ -13,7 +13,7 @@ import { buildCalendarEvents, type CalActivity, type CalPlanDay, type CalEvent }
 // slim CalActivity bez jsonb). Ten sam zestaw kolumn co LastActivityCard.
 type FullActivity = RideActivity & { strava_activity_id: number; details_synced_at: string | null };
 const FULL_ACTIVITY_SELECT =
-  'name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, strava_activity_id, avg_cadence, normalized_power, intensity_factor, calories, avg_speed:raw_data->average_speed, max_speed:raw_data->max_speed, kilojoules:raw_data->kilojoules';
+  'name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, strava_activity_id, avg_cadence, normalized_power, intensity_factor, calories, avg_speed:raw_data->average_speed, max_speed:raw_data->max_speed, kilojoules:raw_data->kilojoules, map_polyline:raw_data->map->summary_polyline';
 
 // Typy zdarzeń żyją w lib/calendar-events (builder wyodrębniony do testów). Re-eksport, bo
 // calendar/page.tsx importuje CalActivity/CalPlanDay z tego komponentu.

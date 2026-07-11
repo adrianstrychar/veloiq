@@ -47,6 +47,8 @@ export interface RideActivity {
   avg_speed?: number | null;          // m/s (raw_data->average_speed)
   max_speed?: number | null;          // m/s
   kilojoules?: number | null;         // raw_data->kilojoules
+  map_polyline?: string | null;       // raw_data->map->summary_polyline (naklejka 'trasa')
+  raw_data?: { map?: { summary_polyline?: string | null } | null } | null; // fallback (plan/page selectuje raw_data w całości)
 }
 
 interface RideAnalysisProps {
@@ -649,11 +651,18 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
       {/* Share story (Instagram sticker) — bottom sheet nad kartą */}
       {shareOpen && (
         <ShareSheet
-          ride={{
-            label: activity.name ?? 'Jazda',
-            distanceKm: activity.distance_km ?? 0,
-            elevationM: activity.elevation_m ?? 0,
-            movingTimeS: activity.duration_seconds ?? 0,
+          data={{
+            ride: {
+              distanceKm: activity.distance_km ?? 0,
+              elevationM: activity.elevation_m ?? 0,
+              movingTimeS: activity.duration_seconds ?? 0,
+              polyline: activity.map_polyline ?? activity.raw_data?.map?.summary_polyline ?? null,
+            },
+            // Wariant 'plan' tylko gdy dzień miał plan i ring jest dostępny — % i status
+            // z computeExecutionRing (to samo źródło co karta), struktura dnia → profil.
+            plan: ring.available && planned
+              ? { label: planned.label, pct: ring.pct, planned }
+              : null,
           }}
           onClose={() => setShareOpen(false)}
         />
