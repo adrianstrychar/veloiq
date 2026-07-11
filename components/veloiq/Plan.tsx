@@ -438,7 +438,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
   // Dynamiczny sufit suwaka z AKTUALNEGO stanu (blokady go obniżają). maxAchievableMin = mirror
   // pojemności UP w scaleWeek, więc cap = realnie osiągalny czas (suwak nie głuchnie ani nie kłamie).
   const maxMin = days ? maxAchievableMin(days, (date) => isDoneDate(activitiesByDate, date), todayISO) : 960;
-  const dynamicMaxHours = Math.max(3, Math.min(16, Math.ceil(maxMin / 60)));
+  const dynamicMaxHours = Math.max(3, Math.min(18, Math.ceil(maxMin / 60)));
   const hoursClamped = Math.min(hours, dynamicMaxHours);
   // Dni, których lock REALNIE ogranicza cap (odblokowanie każdego z nich podnosi maxAchievableMin):
   // locked treningowy traci base+headroom, locked OFF traci konwersję +60. locked+done wykluczamy —
@@ -481,8 +481,13 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
   const durApprox = isCurrent && Math.abs(remDurMin - hoursClamped * 60) > 10;
 
   // Rekomendacja AI godzin: ile jeszcze do celu, licząc od FAKTYCZNIE wykonanego TSS.
-  const futureBaseTSS = remDays.reduce((a, d) => a + d.tss, 0);
-  const futureBaseDur = remDays.reduce((a, d) => a + d.dur_min, 0);
+  // KOTWICA (P1 fix): gęstość TSS/h z planu BAZOWEGO (days, przed scaleWeek), nie z remDays/scaledDays
+  // — inaczej recHours przesuwałby się z pozycją suwaka (bug). Filtr dni ten sam (nie OFF/RACE/removed/done).
+  const baseRecDays = days
+    ? days.filter((d) => d.type !== 'OFF' && d.type !== 'RACE' && !d.removed && !isDoneDate(activitiesByDate, d.date))
+    : [];
+  const futureBaseTSS = baseRecDays.reduce((a, d) => a + d.tss, 0);
+  const futureBaseDur = baseRecDays.reduce((a, d) => a + d.dur_min, 0);
   const tssPerH = futureBaseDur > 0 ? futureBaseTSS / (futureBaseDur / 60) : 42;
   const targetWeeklyTSS = ctl * 7 * 1.15;
   // Fallback: brak CTL (pusta baza fitness_metrics) → rekomendacja = baseHours (marker pokrywa suwak).
