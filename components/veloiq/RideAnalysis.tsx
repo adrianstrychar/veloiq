@@ -17,6 +17,7 @@ import type { PlannedWorkout } from '@/lib/ai/insight';
 import PowerChart from './PowerChart';
 import PowerZoneBar from './PowerZoneBar';
 import ExecutionRing from './ExecutionRing';
+import ShareSheet from '../share/ShareSheet';
 
 // Leaflet nie zna SSR (dotyka window przy imporcie) — mapa ładowana wyłącznie client-side.
 const RideMap = dynamic(() => import('./RideMap'), { ssr: false });
@@ -486,6 +487,7 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
 
   // Streams (on-demand + persist) — PR2 konsumuje odpowiedź (mapa + wykres). Endpoint sam
   // cache'uje (2. otwarcie = zero calla Stravy). Błąd → placeholder z retry, karta działa dalej.
+  const [shareOpen, setShareOpen] = useState(false);
   const [streamsState, setStreamsState] = useState<StreamsState>({ s: 'loading' });
   const loadStreams = useCallback(async () => {
     setStreamsState({ s: 'loading' });
@@ -555,17 +557,34 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
               {formatPolishDate(activity.activity_date)}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
-              width: 32, height: 32, color: C.muted, fontSize: 18, lineHeight: 1,
-              cursor: 'pointer', flexShrink: 0,
-            }}
-            aria-label="Zamknij"
-          >
-            ×
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button
+              onClick={() => setShareOpen(true)}
+              style={{
+                background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
+                width: 32, height: 32, color: C.muted, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+              aria-label="Udostępnij"
+            >
+              {/* ikona share (iOS: strzałka z ramki) */}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v12M8 7l4-4 4 4" />
+                <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+              </svg>
+            </button>
+            <button
+              onClick={onClose}
+              style={{
+                background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
+                width: 32, height: 32, color: C.muted, fontSize: 18, lineHeight: 1,
+                cursor: 'pointer',
+              }}
+              aria-label="Zamknij"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         {/* Mapa trasy — główny element (animowane rysowanie trasy; bez GPS → sekcja znika) */}
@@ -626,6 +645,19 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
           )}
         </div>
       </div>
+
+      {/* Share story (Instagram sticker) — bottom sheet nad kartą */}
+      {shareOpen && (
+        <ShareSheet
+          ride={{
+            label: activity.name ?? 'Jazda',
+            distanceKm: activity.distance_km ?? 0,
+            elevationM: activity.elevation_m ?? 0,
+            movingTimeS: activity.duration_seconds ?? 0,
+          }}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
     </div>
   );
 }
