@@ -1,14 +1,13 @@
 'use client';
 
-// Bottom sheet udostępniania story (Instagram sticker, wariant A). Czysty frontend:
-// render 1080×1920 na canvasie (lib/share/renderStoryImage), share przez Web Share API
-// z fallbackiem do pobrania (lib/share/shareImage). Wzorzec overlaya jak karty w appce
-// (fixed inset + stopPropagation), ale zakotwiczony do dołu (mobile-first, safe-area).
-import { useEffect, useRef, useState } from 'react';
-import { renderStoryImage, type StoryRide } from '@/lib/share/renderStoryImage';
+// Bottom sheet naklejek Instagram (3 warianty: plan/stats/trasa). Miniatury renderowane
+// TĄ SAMĄ renderSticker co finalny plik (drawImage do małego canvasa) — na szachownicy,
+// żeby alfa PNG była widoczna. Jeden CTA „Zapisz naklejkę" → cache'owany blob 2× →
+// istniejące shareImage() (bez zmian).
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { renderSticker, type StickerData, type StickerVariant } from '@/lib/share/renderSticker';
 import { shareImage } from '@/lib/share/shareImage';
 
-// Paleta arkusza wg spec (celowo nie motyw aplikacji).
 const S = {
   bg: '#06080A',
   card: '#10141A',
@@ -18,87 +17,84 @@ const S = {
   muted: '#8B96A0',
 };
 
-const PREVIEW_W = 270;
-const PREVIEW_H = 480;
+const THUMB_BOX = { w: 150, h: 150 }; // różne proporcje wariantów → fit z zachowaniem aspect ratio
 
-interface ShareSheetProps {
-  ride: StoryRide;
-  onClose: () => void;
+const VARIANT_LABEL: Record<StickerVariant, string> = {
+  plan: 'Plan',
+  stats: 'Statystyki',
+  trasa: 'Trasa',
+};
+
+interface Thumb {
+  variant: StickerVariant;
+  blob: Blob;
+  bmp: ImageBitmap;
+  w: number;  // rozmiar canvasa miniatury po fit
+  h: number;
 }
 
-export default function ShareSheet({ ride, onClose }: ShareSheetProps) {
-  const [photo, setPhoto] = useState<ImageBitmap | null>(null);
-  const [blob, setBlob] = useState<Blob | null>(null);   // cache renderu dla bieżącego zdjęcia
-  const [rendering, setRendering] = useState(true);
-  const [sharing, setSharing] = useState<null | 'story' | 'sticker'>(null);
-  const previewRef = useRef<HTMLCanvasElement>(null);
+export default function ShareSheet({ data, onClose }: { data: StickerData; onClose: () => void }) {
+  // Dostępność: 'plan' gdy dzień miał plan (jest ring), 'trasa' gdy summary_polyline,
+  // 'stats' zawsze. Niedostępne UKRYTE. Domyślny wybór: plan > trasa > stats.
+  const variants = useMemo<StickerVariant[]>(() => {
+    const out: StickerVariant[] = [];
+    if (data.plan) out.push('plan');
+    if (data.ride.polyline) out.push('trasa');
+    out.push('stats');
+    return out;
+  }, [data]);
 
-  // Live compositing podglądu: render pełnego 1080×1920 → przeskalowanie do ~270×480.
-  // Duże zdjęcie z telefonu może mielić ~1 s — stąd stan loading zamiast zamrożonego UI.
+  const [selected, setSelected] = useState<StickerVariant>(variants[0]);
+  const [thumbs, setThumbs] = useState<Thumb[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  const canvasRefs = useRef<Partial<Record<StickerVariant, HTMLCanvasElement | null>>>({});
+
+  // Render wszystkich dostępnych wariantów raz (pełne 2× — ten sam blob idzie potem do share).
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      setRendering(true);
-      try {
-        const b = await renderStoryImage({ photo: photo ?? undefined, ride });
-        if (cancelled) return;
-        setBlob(b);
-        const bmp = await createImageBitmap(b);
-        if (cancelled) { bmp.close(); return; }
-        const cv = previewRef.current;
-        const ctx = cv?.getContext('2d');
-        if (cv && ctx) {
-          ctx.clearRect(0, 0, cv.width, cv.height); // clear zamiast fill — alfa PNG widoczna na szachownicy
-          ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
+      const out: Thumb[] = [];
+      for (const v of variants) {
+        try {
+          const blob = await renderSticker(v, data);
+          const bmp = await createImageBitmap(blob);
+          const fit = Math.min(THUMB_BOX.w / bmp.width, THUMB_BOX.h / bmp.height);
+          out.push({ variant: v, blob, bmp, w: Math.round(bmp.width * fit), h: Math.round(bmp.height * fit) });
+        } catch {
+          // wariant nie wyrenderował się (np. uszkodzona polyline) → po prostu go nie pokazujemy
         }
-        bmp.close();
-      } catch {
-        if (!cancelled) setBlob(null);
-      } finally {
-        if (!cancelled) setRendering(false);
       }
+      if (cancelled) { out.forEach((t) => t.bmp.close()); return; }
+      setThumbs(out);
+      if (out.length && !out.some((t) => t.variant === selected)) setSelected(out[0].variant);
     })();
     return () => { cancelled = true; };
-  }, [photo, ride]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variants, data]);
 
-  async function onPickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      // imageOrientation: zdjęcia z telefonu mają EXIF rotation; starsze Safari nie zna opcji → fallback.
-      let bmp: ImageBitmap;
-      try {
-        bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-      } catch {
-        bmp = await createImageBitmap(file);
+  // drawImage bitmap → mały canvas miniatury (po tym, jak canvasy są w DOM).
+  useEffect(() => {
+    if (!thumbs) return;
+    for (const t of thumbs) {
+      const cv = canvasRefs.current[t.variant];
+      const ctx = cv?.getContext('2d');
+      if (cv && ctx) {
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(t.bmp, 0, 0, cv.width, cv.height);
       }
-      photo?.close();
-      setPhoto(bmp);
-    } catch {
-      // nieczytelny plik — zostajemy przy obecnym stanie
     }
-  }
+  }, [thumbs]);
 
-  async function doShare(kind: 'story' | 'sticker') {
-    if (sharing) return;
-    setSharing(kind);
+  async function save() {
+    const t = thumbs?.find((x) => x.variant === selected);
+    if (!t || saving) return;
+    setSaving(true);
     try {
-      if (kind === 'story' && blob) {
-        await shareImage(blob, photo ? 'veloiq-story.jpg' : 'veloiq-story.png');
-      } else if (kind === 'sticker') {
-        // Sama naklejka: ZAWSZE przezroczysty PNG (render bez zdjęcia), niezależnie od pickera.
-        const png = await renderStoryImage({ ride });
-        await shareImage(png, 'veloiq-sticker.png');
-      }
+      await shareImage(t.blob, `veloiq-${t.variant}.png`);
     } finally {
-      setSharing(null);
+      setSaving(false);
     }
   }
-
-  const btnBase: React.CSSProperties = {
-    width: '100%', border: 'none', borderRadius: 12, padding: '15px',
-    fontSize: 16, fontWeight: 600, cursor: 'pointer', minHeight: 52,
-  };
 
   return (
     <div
@@ -116,7 +112,7 @@ export default function ShareSheet({ ride, onClose }: ShareSheetProps) {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 16, fontWeight: 700, color: S.text }}>Udostępnij story</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: S.text }}>Naklejka na story</span>
           <button
             onClick={onClose}
             aria-label="Zamknij"
@@ -126,60 +122,57 @@ export default function ShareSheet({ ride, onClose }: ShareSheetProps) {
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
-          {/* Podgląd na szachownicy — przezroczystość PNG jest WIDOCZNA (kryterium akceptacji) */}
-          <div
-            style={{
-              width: PREVIEW_W / 2, height: PREVIEW_H / 2, flexShrink: 0,
-              borderRadius: 10, border: `1px solid ${S.border}`, overflow: 'hidden', position: 'relative',
-              background: 'repeating-conic-gradient(#14181E 0% 25%, #0B0E12 0% 50%) 0 0 / 20px 20px',
-            }}
-          >
-            <canvas ref={previewRef} width={PREVIEW_W} height={PREVIEW_H} style={{ width: '100%', height: '100%', display: 'block' }} />
-            {rendering && (
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(6,8,10,0.55)', color: S.muted, fontSize: 16 }}>
-                Renderuję…
-              </div>
-            )}
+        {/* Miniatury na szachownicy (alfa widoczna); wybrana z obrysem akcentu */}
+        {!thumbs ? (
+          <div style={{ fontSize: 16, color: S.muted, textAlign: 'center', padding: '28px 0' }}>Renderuję naklejki…</div>
+        ) : (
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            {thumbs.map((t) => {
+              const active = t.variant === selected;
+              return (
+                <button
+                  key={t.variant}
+                  onClick={() => setSelected(t.variant)}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                    background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: THUMB_BOX.w + 12, height: THUMB_BOX.h + 12, borderRadius: 10,
+                      border: active ? `2px solid ${S.accent}` : `1px solid ${S.border}`,
+                      background: 'repeating-conic-gradient(#14181E 0% 25%, #0B0E12 0% 50%) 0 0 / 16px 16px',
+                    }}
+                  >
+                    <canvas
+                      ref={(el) => { canvasRefs.current[t.variant] = el; }}
+                      width={t.w}
+                      height={t.h}
+                      style={{ width: t.w, height: t.h, display: 'block' }}
+                    />
+                  </span>
+                  <span style={{ fontSize: 16, fontWeight: active ? 700 : 400, color: active ? S.accent : S.muted }}>
+                    {VARIANT_LABEL[t.variant]}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, justifyContent: 'center' }}>
-            <label
-              style={{
-                ...btnBase, background: S.card, color: S.text, border: `1px solid ${S.border}`,
-                textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              {photo ? 'Zmień zdjęcie' : 'Dodaj zdjęcie z jazdy'}
-              <input type="file" accept="image/*" onChange={onPickPhoto} style={{ display: 'none' }} />
-            </label>
-            <div style={{ fontSize: 16, color: S.muted, lineHeight: 1.45 }}>
-              {photo
-                ? 'Story ze zdjęciem i statystykami jazdy.'
-                : 'Bez zdjęcia zapisze się przezroczysta naklejka — nałożysz ją na własne story.'}
-            </div>
-          </div>
-        </div>
+        )}
 
         <button
-          onClick={() => void doShare('story')}
-          disabled={rendering || sharing != null || !blob}
+          onClick={() => void save()}
+          disabled={!thumbs || saving}
           style={{
-            ...btnBase, background: S.accent, color: '#04212B',
-            opacity: rendering || sharing != null || !blob ? 0.55 : 1,
+            width: '100%', border: 'none', borderRadius: 12, padding: '15px', minHeight: 52,
+            fontSize: 16, fontWeight: 600, cursor: 'pointer',
+            background: S.accent, color: '#04212B',
+            opacity: !thumbs || saving ? 0.55 : 1,
           }}
         >
-          {sharing === 'story' ? 'Przygotowuję…' : 'Udostępnij story'}
-        </button>
-        <button
-          onClick={() => void doShare('sticker')}
-          disabled={sharing != null}
-          style={{
-            ...btnBase, background: 'transparent', color: S.accent, border: `1px solid ${S.accent}55`,
-            opacity: sharing != null ? 0.55 : 1,
-          }}
-        >
-          {sharing === 'sticker' ? 'Przygotowuję…' : 'Zapisz samą naklejkę (PNG)'}
+          {saving ? 'Przygotowuję…' : 'Zapisz naklejkę'}
         </button>
       </div>
     </div>

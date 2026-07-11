@@ -5,6 +5,7 @@
 import { useId } from 'react';
 import { C } from '@/lib/theme';
 import { isOU, ouBlockMin } from '@/lib/structure';
+import { ringHeadline } from '@/lib/execution-ring';
 import type { PlannedWorkout } from '@/lib/ai/insight';
 
 // Paleta progów (własna, WHOOP-owa: light→deep na łuku, deep na tekście). Nie z motywu — świadomie.
@@ -15,12 +16,8 @@ function toneFor(pct: number): Tone {
   return { deep: '#d64f4f', light: '#ec8585', glow: 'rgba(214,79,79,0.5)' };
 }
 
-// Główny status słowem (duży, kolor progu).
-function headline(pct: number): string {
-  if (pct >= 90) return 'Idealnie';
-  if (pct >= 75) return 'Blisko celu';
-  return 'Poniżej celu';
-}
+// Główny status słowem: współdzielony ringHeadline z lib/execution-ring (to samo źródło
+// co naklejka share — % i status IDENTYCZNE między kartą a stickerem).
 
 // Status w podpisie (przy nazwie treningu).
 function subStatus(pct: number): string {
@@ -84,7 +81,7 @@ export default function ExecutionRing({ pct, planned }: { pct: number; planned: 
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
         <div style={{ fontSize: 21, fontWeight: 700, color: t.deep, lineHeight: 1.1 }}>
-          {headline(pct)}
+          {ringHeadline(pct)}
         </div>
         <div style={{ fontSize: 12.5, color: C.muted }}>
           {planName(planned)} · {subStatus(pct)}
