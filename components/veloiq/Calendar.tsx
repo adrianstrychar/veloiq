@@ -2,53 +2,16 @@
 
 import { useMemo, useState } from 'react';
 import { C } from '@/lib/theme';
-import { typeColor, fmtDur } from '@/lib/plan';
+import { fmtDur } from '@/lib/plan';
 import { countryFlag, cleanLocation } from '@/lib/country-flag';
-import { RideAnalysis, type RideActivity } from './RideAnalysis';
+import { RideAnalysis } from './RideAnalysis';
 import { WorkoutDetail } from './WorkoutDetail';
-import { type PlanDayView } from './Plan';
 import { type RaceRow } from './Races';
+import { buildCalendarEvents, type CalActivity, type CalPlanDay, type CalEvent } from '@/lib/calendar-events';
 
-// Aktywność w kalendarzu = pełny RideActivity + identyfikacja i flaga analizy.
-// sport_type z raw_data — kolumna type ma 'Ride' także dla graveli (kolory wg sportu).
-export interface CalActivity extends RideActivity {
-  strava_activity_id: number;
-  details_synced_at: string | null;
-  sport_type?: string | null;
-}
-
-// Dzień planu w kalendarzu: PlanDayView + outline (następny tydzień = zarys).
-export type CalPlanDay = PlanDayView & { outline?: boolean };
-
-// Zdarzenie kalendarza — dyskryminowane po kind.
-type CalEvent =
-  | {
-      kind: 'activity';
-      date: string;
-      label: string;
-      color: string;
-      tss: number | null;
-      activity: CalActivity;
-      clickable: boolean;
-    }
-  | {
-      kind: 'training';
-      date: string;
-      label: string;
-      color: string;
-      tss: number | null;
-      day: CalPlanDay;
-      outline: boolean;
-      clickable: boolean;
-    }
-  | {
-      kind: 'race';
-      date: string;
-      label: string;
-      color: string;
-      tss: null;
-      race: RaceRow;
-    };
+// Typy zdarzeń żyją w lib/calendar-events (builder wyodrębniony do testów). Re-eksport, bo
+// calendar/page.tsx importuje CalActivity/CalPlanDay z tego komponentu.
+export type { CalActivity, CalPlanDay } from '@/lib/calendar-events';
 
 interface CalendarProps {
   activities: CalActivity[];
@@ -69,15 +32,6 @@ const WEEKDAYS = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'];
 
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-// Kolor aktywności wg sportu (mockup dayDot): Gravel=yellow, Virtual/Zwift=purple, reszta=cyan.
-// Po sport_type z raw_data — kolumna type ma 'Ride' także dla graveli (30 jazd w bazie
-// renderowało się błędnie cyan, bo stary warunek type.includes('gravel') nigdy nie odpalał).
-function activityColor(sportType: string | null | undefined): string {
-  if (sportType === 'GravelRide') return C.yellow;
-  if (sportType === 'VirtualRide') return C.purple;
-  return C.cyan;
 }
 
 function monthIndex(y: number, m: number): number {
@@ -103,61 +57,12 @@ export function Calendar({ activities, races, planDays, ftp, onRaceClick }: Cale
   const [openActivity, setOpenActivity] = useState<CalActivity | null>(null);
   const [openWorkout, setOpenWorkout] = useState<CalPlanDay | null>(null);
 
-  // Zbuduj zdarzenia z obu źródeł i pogrupuj po dacie.
-  const eventsByDate = useMemo(() => {
-    const events: CalEvent[] = [];
-
-    for (const a of activities) {
-      events.push({
-        kind: 'activity',
-        date: a.activity_date,
-        label: a.name ?? a.type ?? 'Jazda',
-        color: activityColor(a.sport_type),
-        tss: a.tss,
-        activity: a,
-        clickable: !!a.details_synced_at,
-      });
-    }
-
-    // Treningi z planu (Etap 5): tylko dziś i przyszłość — przeszłe dni pokazują wykonane
-    // jazdy (jak mockup). Kolejność push (jazdy → treningi → wyścigi) = priorytet main
-    // w komórce: jazda > trening > wyścig; dzisiejsza poranna jazda nie usuwa treningu
-    // z eventów — oba współistnieją (osobne wpisy na liście 14 dni).
-    for (const d of planDays) {
-      if (!d.date || d.date < todayStr) continue;
-      const outline = !!d.outline;
-      events.push({
-        kind: 'training',
-        date: d.date,
-        label: d.type === 'OFF' ? 'Odpoczynek' : d.label,
-        color: typeColor(d.type),
-        tss: d.tss > 0 ? d.tss : null,
-        day: d,
-        outline,
-        // Rozpiska (WorkoutDetail) tylko dla szczegółu: nie zarys, nie OFF, FTP w profilu.
-        clickable: !outline && d.type !== 'OFF' && ftp != null,
-      });
-    }
-
-    for (const r of races) {
-      events.push({
-        kind: 'race',
-        date: r.date,
-        label: r.name,
-        color: C.red,
-        tss: null,
-        race: r,
-      });
-    }
-
-    const map = new Map<string, CalEvent[]>();
-    for (const e of events) {
-      const key = e.date.slice(0, 10);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(e);
-    }
-    return map;
-  }, [activities, races, planDays, todayStr, ftp]);
+  // Zdarzenia pogrupowane po dacie — builder wyodrębniony (lib/calendar-events, testowalny bez React).
+  // Zawiera dedup dnia wyścigu (FIX #77): dzień z wyścigiem = tylko event race, TSS startu przeniesiony.
+  const eventsByDate = useMemo(
+    () => buildCalendarEvents(activities, races, planDays, todayStr, ftp),
+    [activities, races, planDays, todayStr, ftp]
+  );
 
   // Statystyki bieżącego miesiąca.
   const monthStats = useMemo(() => {
