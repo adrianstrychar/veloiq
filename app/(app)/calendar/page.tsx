@@ -3,13 +3,14 @@ import { type RaceRow } from '@/components/veloiq/Races';
 import { type CalActivity, type CalPlanDay } from '@/components/veloiq/Calendar';
 import { type PlanDayView } from '@/components/veloiq/Plan';
 import { CalendarView } from '@/components/veloiq/CalendarView';
+import { CALENDAR_RANGE } from '@/lib/calendar-events';
 import { localTodayISO, mondayOfISO, addWeeks } from '@/lib/plan';
 
-// Pełny zestaw kolumn aktywności — potrzebny żeby klik w dniu kalendarza
-// otworzył RideAnalysis bez dociągania danych. sport_type: kolory wg sportu
-// (gravel/szosa/zwift) — kolumna type ma 'Ride' także dla graveli, rozróżnia raw_data.
+// SLIM kolumny listy (P1-a dieta: 395 KB → kilkanaście KB): kalendarz pokazuje nazwę/kolor/
+// dystans/TSS — ciężkie jsonb (laps/best_efforts) i metryki karty NIE wchodzą; RideAnalysis
+// dociąga pełny wiersz lazy po kliknięciu (Calendar.openRide). sport_type: kolory wg sportu.
 const ACTIVITY_SELECT =
-  'strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, avg_cadence, normalized_power, intensity_factor, calories, avg_speed:raw_data->average_speed, max_speed:raw_data->max_speed, kilojoules:raw_data->kilojoules, sport_type:raw_data->sport_type';
+  'strava_activity_id, name, activity_date, type, distance_km, tss, details_synced_at, sport_type:raw_data->sport_type';
 
 export default async function CalendarPage() {
   const supabase = createServerSupabaseClient();
@@ -40,6 +41,10 @@ export default async function CalendarPage() {
       .from('strava_activities')
       .select(ACTIVITY_SELECT)
       .eq('athlete_id', athleteId)
+      // Okno dat = nawigowalny zakres siatki (MIN..MAX miesiąc w Calendar) — ‹ › nie wyjdzie
+      // poza nie, więc okno nie może zrobić pustego miesiąca.
+      .gte('activity_date', CALENDAR_RANGE.from)
+      .lte('activity_date', CALENDAR_RANGE.to)
       .order('activity_date', { ascending: true }),
     supabase
       .from('weekly_plans')

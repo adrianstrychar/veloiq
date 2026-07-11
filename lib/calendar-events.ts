@@ -2,17 +2,29 @@
 // testowalny bez przeglądarki. Trzy źródła: jazdy (activity), plan (training), wyścigi (race).
 // FIX #77 (dedup): dzień z wyścigiem emituje TYLKO event race — plan-dzień (nawet type=RACE/OFF)
 // jest wtedy pomijany, a jego TSS przenosimy na event wyścigu (licznik miesiąca bez strat).
-import type { RideActivity } from '@/components/veloiq/RideAnalysis';
 import type { PlanDayView } from '@/components/veloiq/Plan';
 import type { RaceRow } from '@/components/veloiq/Races';
 import { C } from '@/lib/theme';
 import { typeColor } from '@/lib/plan';
 
-export interface CalActivity extends RideActivity {
+// SLIM wiersz listy (P1-a dieta): kalendarz renderuje tylko nazwę/kolor/dystans/TSS — ciężkie
+// jsonb (laps/best_efforts) NIE wchodzą do listy; RideAnalysis dociąga pełny wiersz lazy po
+// kliknięciu (Calendar.openRide, wzorzec z LastActivityCard). Payload 395 KB → kilkanaście KB.
+export interface CalActivity {
   strava_activity_id: number;
+  name: string | null;
+  activity_date: string;
+  type: string | null;
+  distance_km: number | null;
+  tss: number | null;
   details_synced_at: string | null;
   sport_type?: string | null;
 }
+
+// Zakres dat query kalendarza = nawigowalny zakres siatki (Calendar MIN_MONTH..MAX_MONTH,
+// marzec–październik 2026). Nawigacja ‹ › nie wyjdzie poza ten zakres, więc puste miesiące
+// z powodu okna dat są niemożliwe z konstrukcji. Zmieniasz MIN/MAX w Calendar → zmień i to.
+export const CALENDAR_RANGE = { from: '2026-03-01', to: '2026-10-31' } as const;
 
 // Dzień planu w kalendarzu: PlanDayView + outline (następny tydzień = zarys).
 export type CalPlanDay = PlanDayView & { outline?: boolean };
