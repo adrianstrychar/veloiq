@@ -117,6 +117,12 @@ const MIN_SESSION_MIN = 45; // sesja krótsza niż 45 min nie ma sensu — usuwa
 // Priorytet ocalałego (gdy zostaje 1 sesja): VO2 najcenniejszy, LONG/Z1 najmniej.
 const SURVIVOR_PRIORITY = ['VO2', 'OU', 'THR', 'SST', 'Z2', 'LONG', 'Z1'];
 
+// Dni jednolite (steady), których RDZEŃ wolno wydłużać przy dokładaniu objętości (dźwignia UP).
+// Strukturalne (SST/THR/OU/VO2) wykluczone — dokładanie godzin nie może zmieniać bodźca interwałów.
+const STEADY_EXTENDABLE = new Set(['Z2', 'LONG']);
+const STEADY_CORE_FACTOR = 0.6; // rdzeń steady wydłużalny do +60% origDur (np. Z2 90min → 144min)
+const OFF_TO_Z1_MAX = 90;       // OFF→Z1 przy skalowaniu w górę (było 60)
+
 // ⚠️ SPRZĘŻENIE z scaleWeek: ta funkcja liczy SUFIT pojemności rozszerzania (UP) — dokładnie te
 // same dźwignie, którymi scaleWeek realnie dokłada godziny: headroom warmup/cooldown na dniach
 // skalowalnych + konwersje OFF→Z1 (dni OFF nie-locked, nie-done). Używana do dynamicznego max suwaka.
@@ -124,18 +130,24 @@ const SURVIVOR_PRIORITY = ['VO2', 'OU', 'THR', 'SST', 'Z2', 'LONG', 'Z1'];
 // TĘ funkcję, inaczej cap suwaka rozjedzie się z realnym skalowaniem (głuchy suwak albo nieosiągalny limit).
 export function maxAchievableMin<T extends ScalableDay>(days: T[], isDone: (date: string) => boolean, todayISO: string): number {
   const isPast = (date: string) => date < todayISO; // ostry '<' — dziś NIE jest przeszły (dzień trwa)
+  // BRAMKA TAPERU (sprzężona z scaleWeek): tydzień z dniem RACE → dźwignia objętości (steady-core)
+  // NIEAKTYWNA. Nie wpychamy objętości w okno startowe; zostają tylko warmup/cooldown/OFF (jak dziś).
+  const hasRace = days.some((d) => d.type === 'RACE');
   let base = 0;
   let headroom = 0;
+  let steadyHeadroom = 0;
   for (const d of days) {
     // RACE nieskalowalny jak OFF — suwak godzin nie rusza dnia startu.
     if (d.type === 'OFF' || d.type === 'RACE' || isDone(d.date) || isPast(d.date) || d.locked) continue;
     const ss = sessionStructure(d.type);
     base += d.dur_min;
     headroom += (ss.cooldownMax - ss.cooldownDefault) + (ss.warmupMax - ss.warmupDefault);
+    // NOWA dźwignia: rdzeń steady (Z2/LONG) do +60% — poza tygodniem startowym.
+    if (!hasRace && STEADY_EXTENDABLE.has(d.type)) steadyHeadroom += Math.round(STEADY_CORE_FACTOR * d.dur_min);
   }
   // Przeszłe dni OFF nie konwertują się na Z1 — suwak nie dokłada jazdy na miniony dzień.
   const convOff = days.filter((d) => d.type === 'OFF' && !isDone(d.date) && !isPast(d.date) && !d.locked).length;
-  return base + headroom + convOff * 60;
+  return base + headroom + steadyHeadroom + convOff * OFF_TO_Z1_MAX;
 }
 
 // ⚠️ SPRZĘŻENIE z maxAchievableMin: dźwignie rozszerzania (UP) tutaj MUSZĄ odpowiadać sufitowi
@@ -147,14 +159,18 @@ export function scaleWeek<T extends ScalableDay>(
   todayISO: string
 ): T[] {
   const isPast = (date: string) => date < todayISO; // ostry '<' — dziś NIE jest przeszły (dzień trwa)
+  // BRAMKA TAPERU (sprzężona z maxAchievableMin): tydzień z dniem RACE → steady-core lever nieaktywny.
+  const hasRace = days.some((d) => d.type === 'RACE');
   // Stan roboczy per dzień (kopie). Skalowalne = NOT done, NOT OFF, NOT past, NOT locked.
-  type W = { idx: number; type: string; core: number; w: number; c: number; origDur: number; origTss: number; removed: boolean };
+  // coreMax = sufit rdzenia: steady (Z2/LONG) poza tygodniem startowym → +60% origDur; reszta = core.
+  type W = { idx: number; type: string; core: number; coreMax: number; w: number; c: number; origDur: number; origTss: number; removed: boolean };
   const work: (W | null)[] = days.map((d, idx) => {
     // RACE traktowany jak OFF — nieskalowalny (dzień startu ma stały szacunek, nie warmup/cooldown).
     if (d.type === 'OFF' || d.type === 'RACE' || isDone(d.date) || isPast(d.date) || d.locked) return null; // przeszłe/done/locked nietykalne
     const ss = sessionStructure(d.type);
     const core = Math.max(0, d.dur_min - ss.warmupDefault - ss.cooldownDefault);
-    return { idx, type: d.type, core, w: ss.warmupDefault, c: ss.cooldownDefault, origDur: d.dur_min, origTss: d.tss, removed: false };
+    const coreMax = !hasRace && STEADY_EXTENDABLE.has(d.type) ? core + Math.round(STEADY_CORE_FACTOR * d.dur_min) : core;
+    return { idx, type: d.type, core, coreMax, w: ss.warmupDefault, c: ss.cooldownDefault, origDur: d.dur_min, origTss: d.tss, removed: false };
   });
 
   const scalable = work.filter((x): x is W => x !== null);
@@ -174,7 +190,13 @@ export function scaleWeek<T extends ScalableDay>(
   const converted = new Map<number, { dur: number }>(); // idx OFF → nowy Z1
 
   if (delta > 0) {
-    // UP: schłodzenie→max, potem rozgrzewka→max, potem OFF→Z1.
+    // UP (kolejność od najzdrowszej): rdzeń steady Z2/LONG → schłodzenie→max → rozgrzewka→max → OFF→Z1.
+    // Rdzeń steady tylko poza tygodniem startowym (w tygodniu z RACE coreMax=core → ta pętla nic nie robi).
+    for (const x of scalable) {
+      if (delta <= 0) break;
+      const take = Math.min(delta, x.coreMax - x.core);
+      x.core += take; delta -= take;
+    }
     for (const x of scalable) {
       if (delta <= 0) break;
       const ss = sessionStructure(x.type);
@@ -189,7 +211,7 @@ export function scaleWeek<T extends ScalableDay>(
     }
     for (const idx of offIdxs) {
       if (delta <= 0) break;
-      const add = Math.min(delta, 60);
+      const add = Math.min(delta, OFF_TO_Z1_MAX);
       converted.set(idx, { dur: add }); delta -= add;
     }
   } else if (delta < 0) {
