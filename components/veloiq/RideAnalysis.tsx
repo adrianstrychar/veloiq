@@ -17,6 +17,7 @@ import type { PlannedWorkout } from '@/lib/ai/insight';
 import PowerChart from './PowerChart';
 import PowerZoneBar from './PowerZoneBar';
 import ExecutionRing from './ExecutionRing';
+import OverloadCorrectionCard, { type OverloadCorrection } from './OverloadCorrectionCard';
 import ShareSheet from '../share/ShareSheet';
 
 // Leaflet nie zna SSR (dotyka window przy imporcie) — mapa ładowana wyłącznie client-side.
@@ -513,14 +514,20 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
 
   // Zaplanowany dzień (ten sam matcher po dacie co AI Insight) — do pierścienia realizacji.
   // undefined = ładowanie, null = brak planu/OFF/niezaplanowana. Błąd → null (ring ukryty).
+  // Ta sama odpowiedź niesie auto-korektę po przeciążeniu (pending gotowy server-side).
   const [planned, setPlanned] = useState<PlannedWorkout | null | undefined>(undefined);
+  const [correction, setCorrection] = useState<OverloadCorrection | null>(null);
+  const [correctionNotice, setCorrectionNotice] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch(`/api/activities/${activityId}/planned`, { method: 'POST' });
         const data = await res.json();
-        if (!cancelled) setPlanned(data.ok ? (data.planned as PlannedWorkout | null) : null);
+        if (cancelled) return;
+        setPlanned(data.ok ? (data.planned as PlannedWorkout | null) : null);
+        setCorrection(data.ok ? ((data.correction as OverloadCorrection | null) ?? null) : null);
+        setCorrectionNotice(data.ok ? ((data.correctionNotice as string | null) ?? null) : null);
       } catch {
         if (!cancelled) setPlanned(null);
       }
@@ -606,6 +613,14 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
             `planned` gwarantowane niepuste, bo ring.available wynika z planned && streams. */}
         {ring.available && planned && (
           <ExecutionRing pct={ring.pct} planned={planned} />
+        )}
+
+        {/* Auto-korekta po przeciążeniu — [Zatwierdź]/[Odrzuć] przez pending (#62) */}
+        {correction && <OverloadCorrectionCard correction={correction} />}
+        {!correction && correctionNotice && (
+          <div style={{ border: `1px solid ${C.yellow}55`, borderRadius: 10, background: C.card, padding: '10px 14px', fontSize: 14, color: C.yellow }}>
+            ⚠ {correctionNotice}
+          </div>
         )}
 
         {/* Statystyki */}

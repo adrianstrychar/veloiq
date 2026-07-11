@@ -14,7 +14,11 @@ import { addRace, editRace, deleteRace, getRace, type RaceRow } from '@/lib/race
 const PRIORITIES = ['A', 'B', 'C'] as const;
 const RACE_SERIES = ['GWS', 'GFWS', 'MTB', 'other'] as const;
 
-const PENDING_TTL_MS = 15 * 60 * 1000; // 15 min
+const PENDING_TTL_MS = 15 * 60 * 1000; // 15 min — propozycje z rozmowy (chat)
+// Auto-korekty po przeciążeniu (payload_json.source==='overload') żyją dłużej: propozycja
+// powstaje przy otwarciu jazdy, nie w rozmowie — user może wrócić do niej po godzinach.
+// base_hash i tak unieważnia ją przy każdej zmianie planu.
+const OVERLOAD_TTL_MS = 12 * 60 * 60 * 1000; // 12 h
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 const DOWF = ['', 'Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 const fmtDay = (d: PlanDay) => (d.type === 'OFF' ? 'OFF (wolne)' : `${d.type} ${d.dur_min} min, TSS ${d.tss}`);
@@ -264,9 +268,11 @@ export async function commitChange({ supabase, athleteId }: ToolCtx, input: Reco
   const { data: pend } = await supabase.from('pending_changes').select('*').eq('id', changeId).eq('athlete_id', athleteId).maybeSingle();
   if (!pend) return { ok: false, error: 'Ta zmiana wygasła albo została już zastosowana. Poproś o nową propozycję, jeśli chcesz coś zmienić.' };
 
-  if (Date.now() - new Date(pend.created_at as string).getTime() > PENDING_TTL_MS) {
+  const isOverload = (pend.payload_json as { source?: string } | null)?.source === 'overload';
+  const ttlMs = isOverload ? OVERLOAD_TTL_MS : PENDING_TTL_MS;
+  if (Date.now() - new Date(pend.created_at as string).getTime() > ttlMs) {
     await supabase.from('pending_changes').delete().eq('id', pend.id);
-    return { ok: false, error: 'Propozycja wygasła (ponad 15 minut). Przygotuję nową, jeśli chcesz.' };
+    return { ok: false, error: isOverload ? 'Propozycja korekty wygasła. Otwórz jazdę ponownie, jeśli chcesz nową.' : 'Propozycja wygasła (ponad 15 minut). Przygotuję nową, jeśli chcesz.' };
   }
 
   if (pend.kind === 'plan') {
