@@ -176,26 +176,37 @@ function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   );
 }
 
-// ── Wariant 'plan': ring (lewo) + nazwa/profil/logo (prawo) ─────────────────────
+// ── Wariant 'plan': ring (lewo) + nazwa/profil/dane/logo (prawo) ────────────────
 const RING_D = 400;
 const COL_GAP = 56;
 const COL_W = 830;
 const NAME_PX = 56;   const NAME_H = 64;
 const GAP_NAME_STRIP = 24;
 const STRIP_H = 120;
-const GAP_STRIP_LOGO = 28;
+const GAP_STRIP_DATA = 28;
+// Rząd danych DYSTANS/CZAS: podpis 30px ls3 → gap 10 → wartość 52px w600; kol. 2 na +300.
+const DATA_CAP_PX = 30; const DATA_CAP_LS = 3; const DATA_CAP_H = 36;
+const GAP_DATACAP_VAL = 10;
+const DATA_VAL_PX = 52; const DATA_VAL_H = 60;
+const DATA_COL2_X = 300;
+const GAP_DATA_LOGO = 28;
 const LOGO_PLAN_PX = 58; const LOGO_PLAN_H = 66;
 
 function renderPlan(data: StickerData, fam: string): HTMLCanvasElement {
   const plan = data.plan;
   if (!plan) throw new Error('renderSticker(plan) bez danych planu');
+  // Kolumna urosła o rząd danych — jest wyższa niż ring; treść = max z obu, ring i kolumna
+  // wyśrodkowane wzajemnie w tej wysokości. Ciasne przycięcie bez zmian (PAD tylko na cień).
+  const colH = NAME_H + GAP_NAME_STRIP + STRIP_H + GAP_STRIP_DATA
+    + DATA_CAP_H + GAP_DATACAP_VAL + DATA_VAL_H + GAP_DATA_LOGO + LOGO_PLAN_H;
+  const contentH = Math.max(RING_D, colH);
   const W = PAD + RING_D + COL_GAP + COL_W + PAD;   // 1398
-  const H = PAD + RING_D + PAD;                     // 512
+  const H = PAD + contentH + PAD;
   const { canvas, ctx } = makeCanvas(W, H);
 
   // Ring: tor + progress od -90°, kąt = completion%.
   const cx = PAD + RING_D / 2;
-  const cy = PAD + RING_D / 2;
+  const cy = PAD + contentH / 2;
   const r = (RING_D - 40) / 2; // promień osi toru (lw 40 mieści się w RING_D)
   ctx.lineCap = 'round';
   ctx.strokeStyle = 'rgba(0,0,0,0.4)';
@@ -218,10 +229,9 @@ function renderPlan(data: StickerData, fam: string): HTMLCanvasElement {
   ctx.font = `400 34px ${fam}`;
   ctx.fillText(ringHeadline(plan.pct), cx, cy + 34);
 
-  // Kolumna prawa — wyśrodkowana pionowo względem ringu.
+  // Kolumna prawa — wyśrodkowana pionowo względem ringu (wspólna oś w contentH).
   const colX = PAD + RING_D + COL_GAP;
-  const colH = NAME_H + GAP_NAME_STRIP + STRIP_H + GAP_STRIP_LOGO + LOGO_PLAN_H;
-  let y = PAD + (RING_D - colH) / 2;
+  let y = PAD + (contentH - colH) / 2;
 
   ctx.textAlign = 'left';
   ctx.fillStyle = WHITE;
@@ -250,7 +260,23 @@ function renderPlan(data: StickerData, fam: string): HTMLCanvasElement {
     ctx.fill();
     bx += widths[i] + GAP_BAR;
   }
-  y += STRIP_H + GAP_STRIP_LOGO;
+  y += STRIP_H + GAP_STRIP_DATA;
+
+  // Rząd danych DYSTANS/CZAS — wspólna lewa krawędź z nazwą/profilem/logo, kol. 2 na +300.
+  const dataCols = [
+    { cap: 'DYSTANS', val: fmtDistance(data.ride.distanceKm), x: colX },
+    { cap: 'CZAS', val: fmtTime(data.ride.movingTimeS), x: colX + DATA_COL2_X },
+  ];
+  for (const c of dataCols) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = CAPTION;
+    ctx.font = `400 ${DATA_CAP_PX}px ${fam}`;
+    drawSpaced(ctx, c.cap, c.x, y, DATA_CAP_LS);
+    ctx.fillStyle = WHITE;
+    ctx.font = `600 ${DATA_VAL_PX}px ${fam}`;
+    ctx.fillText(c.val, c.x, y + DATA_CAP_H + GAP_DATACAP_VAL);
+  }
+  y += DATA_CAP_H + GAP_DATACAP_VAL + DATA_VAL_H + GAP_DATA_LOGO;
 
   drawLogo(ctx, fam, colX, y, LOGO_PLAN_PX);
   return canvas;
