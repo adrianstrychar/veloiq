@@ -4,10 +4,16 @@ import { useMemo, useState } from 'react';
 import { C } from '@/lib/theme';
 import { fmtDur } from '@/lib/plan';
 import { countryFlag, cleanLocation } from '@/lib/country-flag';
-import { RideAnalysis } from './RideAnalysis';
+import { RideAnalysis, type RideActivity } from './RideAnalysis';
 import { WorkoutDetail } from './WorkoutDetail';
 import { type RaceRow } from './Races';
 import { buildCalendarEvents, type CalActivity, type CalPlanDay, type CalEvent } from '@/lib/calendar-events';
+
+// Pełny wiersz jazdy do RideAnalysis — dociągany LAZY po kliknięciu (P1-a dieta: lista niesie
+// slim CalActivity bez jsonb). Ten sam zestaw kolumn co LastActivityCard.
+type FullActivity = RideActivity & { strava_activity_id: number; details_synced_at: string | null };
+const FULL_ACTIVITY_SELECT =
+  'name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, strava_activity_id, avg_cadence, normalized_power, intensity_factor, calories, avg_speed:raw_data->average_speed, max_speed:raw_data->max_speed, kilojoules:raw_data->kilojoules';
 
 // Typy zdarzeń żyją w lib/calendar-events (builder wyodrębniony do testów). Re-eksport, bo
 // calendar/page.tsx importuje CalActivity/CalPlanDay z tego komponentu.
@@ -54,8 +60,32 @@ export function Calendar({ activities, races, planDays, ftp, onRaceClick }: Cale
 
   const [cursor, setCursor] = useState(initial);
   const [hovered, setHovered] = useState<string | null>(null);
-  const [openActivity, setOpenActivity] = useState<CalActivity | null>(null);
+  const [openActivity, setOpenActivity] = useState<FullActivity | null>(null);
   const [openWorkout, setOpenWorkout] = useState<CalPlanDay | null>(null);
+  const [loadingRideId, setLoadingRideId] = useState<number | null>(null);
+
+  // Lazy dociągnięcie pełnego wiersza (laps/best_efforts/metryki) po kliknięciu — lista jest slim.
+  // clickable wymaga details_synced_at (jak dotąd), więc szczegóły w bazie już są; to 1 lekki select (~5 KB).
+  async function openRide(a: CalActivity) {
+    if (loadingRideId != null) return; // ochrona przed podwójnym klikiem
+    setLoadingRideId(a.strava_activity_id);
+    try {
+      // Dynamiczny import: klient supabase-js NIE wchodzi do first-load JS strony (109 kB
+      // zostaje) — ładuje się dopiero przy pierwszym kliknięciu w jazdę.
+      const { createBrowserSupabaseClient } = await import('@/lib/supabase-browser');
+      const supabase = createBrowserSupabaseClient();
+      const { data } = await supabase
+        .from('strava_activities')
+        .select(FULL_ACTIVITY_SELECT)
+        .eq('strava_activity_id', a.strava_activity_id)
+        .maybeSingle();
+      if (data) setOpenActivity(data as unknown as FullActivity);
+    } catch (e) {
+      console.error('open ride failed', e);
+    } finally {
+      setLoadingRideId(null);
+    }
+  }
 
   // Zdarzenia pogrupowane po dacie — builder wyodrębniony (lib/calendar-events, testowalny bez React).
   // Zawiera dedup dnia wyścigu (FIX #77): dzień z wyścigiem = tylko event race, TSS startu przeniesiony.
@@ -131,7 +161,7 @@ export function Calendar({ activities, races, planDays, ftp, onRaceClick }: Cale
       | Extract<CalEvent, { kind: 'training' }>
       | undefined;
     if (clickableRide) {
-      setOpenActivity(clickableRide.activity);
+      void openRide(clickableRide.activity);
     } else if (clickableWorkout) {
       setOpenWorkout(clickableWorkout.day);
     } else if (race) {
@@ -348,7 +378,7 @@ export function Calendar({ activities, races, planDays, ftp, onRaceClick }: Cale
                     event={e}
                     todayStr={todayStr}
                     onClick={() => {
-                      if (e.kind === 'activity' && e.clickable) setOpenActivity(e.activity);
+                      if (e.kind === 'activity' && e.clickable) void openRide(e.activity);
                       else if (e.kind === 'training' && e.clickable) setOpenWorkout(e.day);
                       else if (e.kind === 'race') onRaceClick();
                     }}
