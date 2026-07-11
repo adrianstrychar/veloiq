@@ -1,6 +1,10 @@
 'use client';
 
 import { C } from '@/lib/theme';
+import { computeRacePrep, type CtlPoint } from '@/lib/race-prep';
+import type { RacePriority } from '@/lib/race-taper';
+import { countryFlag } from '@/lib/country-flag';
+import RacePrepCard from './RacePrepCard';
 
 export interface RaceRow {
   id: string;
@@ -12,10 +16,14 @@ export interface RaceRow {
   elevation_m: number | null;
   discipline: string | null;
   priority: string | null; // 'A' | 'B' | 'C'
+  target_ctl?: number | null;          // B1: ręczne nadpisanie targetu (null → default z race-prep)
+  qualification_goal?: string | null;  // B1: tekst celu kwalifikacyjnego
 }
 
 interface RacesProps {
   races: RaceRow[];
+  ctlSeries: CtlPoint[]; // dzienne CTL (fitness_metrics) — do pierścienia prep + sparkline
+  today: string;         // 'YYYY-MM-DD' lokalne
 }
 
 // Liczba pełnych dni od dziś (UTC-safe, bez wpływu strefy) do daty wyścigu.
@@ -35,13 +43,30 @@ function formatDate(dateStr: string): string {
 
 const PRIORITY_LABEL: Record<string, string> = { A: 'CEL', B: 'WAŻNY', C: 'TRENINGOWY' };
 
-export function Races({ races }: RacesProps) {
+const RACE_PRIORITIES = new Set(['A', 'B', 'C']);
+
+export function Races({ races, ctlSeries, today }: RacesProps) {
   // Najbliższy start = pierwsza data >= dziś (lista przychodzi posortowana rosnąco).
   const nextRace = races.find((r) => daysUntil(r.date) >= 0);
   // Cel sezonu = priority 'A' z najdalszą datą (MŚ Nannup).
   const goalRace = races
     .filter((r) => r.priority === 'A')
     .reduce<RaceRow | null>((acc, r) => (!acc || r.date > acc.date ? r : acc), null);
+
+  // Karta "NAJBLIŻSZY CEL" dla najbliższego startu z priorytetem (A/B/C) i danymi CTL.
+  const prep = nextRace && RACE_PRIORITIES.has(nextRace.priority ?? '') && ctlSeries.length
+    ? computeRacePrep({
+        ctlSeries,
+        raceDate: nextRace.date,
+        priority: nextRace.priority as RacePriority,
+        targetOverride: nextRace.target_ctl ?? null,
+        today,
+      })
+    : null;
+  const sparkline = ctlSeries.slice(-21).map((p) => {
+    const d = new Date(p.date);
+    return { label: `${d.getUTCDate()}.${d.getUTCMonth() + 1}`, ctl: p.ctl };
+  });
 
   if (races.length === 0) {
     return (
@@ -53,6 +78,9 @@ export function Races({ races }: RacesProps) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Karta "NAJBLIŻSZY CEL" nad listą */}
+      {prep && nextRace && <RacePrepCard race={nextRace} prep={prep} sparkline={sparkline} />}
+
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 18, fontWeight: 700, color: C.text }}>Starty</span>
         <span style={{ fontSize: 12, color: C.muted }}>{races.length} w kalendarzu</span>
@@ -63,10 +91,10 @@ export function Races({ races }: RacesProps) {
         const isNext = nextRace?.id === race.id;
         const isGoal = goalRace?.id === race.id;
         const isPast = days < 0;
-        const isPriorityA = race.priority === 'A';
 
-        // Kolor akcentu: cel sezonu = yellow, najbliższy = cyan, A = purple, reszta = border.
-        const accent = isGoal ? C.yellow : isNext ? C.cyan : isPriorityA ? C.purple : C.border;
+        // Akcenty jak w mockupie: cel sezonu = red, najbliższy = green, reszta = cyan.
+        const accent = isGoal ? C.red : isNext ? C.green : C.cyan;
+        const flag = countryFlag(race.location);
 
         return (
           <div
@@ -84,12 +112,12 @@ export function Races({ races }: RacesProps) {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 {isGoal && (
-                  <span style={{ fontSize: 9, fontWeight: 700, color: C.yellow, letterSpacing: '0.08em' }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: C.red, letterSpacing: '0.08em' }}>
                     🏆 CEL SEZONU
                   </span>
                 )}
                 {isNext && !isGoal && (
-                  <span style={{ fontSize: 9, fontWeight: 700, color: C.cyan, letterSpacing: '0.08em' }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: C.green, letterSpacing: '0.08em' }}>
                     NAJBLIŻSZY START
                   </span>
                 )}
@@ -104,9 +132,9 @@ export function Races({ races }: RacesProps) {
               </span>
             </div>
 
-            {/* Nazwa */}
+            {/* Nazwa (z flagą kraju) */}
             <div style={{ fontSize: isNext ? 18 : 14, fontWeight: 700, color: C.text }}>
-              {race.name}
+              {flag ? `${flag} ` : ''}{race.name}
             </div>
 
             {/* Meta: data · lokalizacja · seria */}
