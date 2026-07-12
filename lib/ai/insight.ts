@@ -1,6 +1,7 @@
 import { buildSessionStructure, type LapInput, type SessionElement } from '@/lib/laps';
 import { parseStructure, sessionStructure } from '@/lib/workout';
 import { isOU, ouBlockMin, type DayStructure } from '@/lib/structure';
+import type { FormSignals } from '@/lib/ai/insight-context';
 
 export interface InsightActivity {
   name: string | null;
@@ -61,11 +62,14 @@ function describeStructure(structure: SessionElement[], hidePower: boolean): str
 }
 
 // Buduje prompt (system + user) po polsku: ocena REALIZACJI treningu (plan ↔ wykonanie).
+// signals = warstwa interpretacyjna (trend/EF/HR@moc/ring%) — insight MA o niej mówić,
+// a NIE recytować liczb z kafli (dystans/TSS/waty user już widzi na karcie).
 export function buildInsightPrompt(
   activity: InsightActivity,
   ftp: number | null,
   trainingMode: string | null,
-  planned: PlannedWorkout | null = null
+  planned: PlannedWorkout | null = null,
+  signals: FormSignals | null = null
 ): { system: string; user: string } {
   // e-bike → moc z silnika, nierzetelna: wycinamy ją CAŁKOWICIE z promptu (nie podajemy watów,
   // żeby model nie miał czego komentować — spójnie z hrTSS dla e-bike).
@@ -78,12 +82,11 @@ export function buildInsightPrompt(
     : `Brak wiarygodnych danych mocy (e-bike lub trening po tętnie) — analizuj WYŁĄCZNIE po tętnie, TSS i odczuciu. NIE wymyślaj wartości w watach.`;
 
   const system = [
-    'Jesteś wymagającym trenerem kolarstwa. Mówisz do zawodnika (Adrian) na "Ty".',
-    'Zadanie: ocena REALIZACJI treningu — czy zlecona sesja została wykonana. MAKS 4 zdania.',
-    'Gdy podany jest ZAPLANOWANY trening: porównaj go z WYKONANIEM. Każde "zabrakło/spadło/przekroczyłeś" MUSI wskazywać konkretną liczbę z porównania (interwały, waty, HR, TSS) — nie ogólniki.',
-    'Wymagający = KONKRETNY i oparty na danych plan↔wykonanie, z jednym actionable wnioskiem. NIE generyczne czepialstwo ("popracuj nad mocą").',
-    'Gdy NIE ma zaplanowanego treningu: oceń jazdę samodzielnie, naturalnie. NIE wspominaj, że była niezaplanowana, nie karć za spontaniczność.',
-    'Struktura odpowiedzi: 1 zdanie plan vs wykonanie, 1-2 zdania gdzie odchylenie i dlaczego, 1 zdanie actionable wniosek. Sam tekst, bez nagłówków, bez markdown.',
+    'Jesteś wymagającym, ale ludzkim trenerem kolarstwa. Mówisz do zawodnika (Adrian) na "Ty". 3-4 zdania, JEDEN wniosek trenerski.',
+    'ZASADA NADRZĘDNA: insight zaczyna się tam, gdzie kończą się kafle. Zawodnik WIDZI już na karcie dystans, czas, TSS, waty, tętno, best efforts — NIE recytuj tych liczb. Blok "DANE JAZDY" to wyłącznie tło dla Ciebie; NIE przepisuj go.',
+    'Mów o INTERPRETACJI z bloku "SYGNAŁY FORMY": co znaczy trend formy, efektywność (moc/tętno), tętno przy podobnej mocy, realizacja celu — czyli czy forma rośnie, czy było zmęczenie, jak ta jazda wpisuje się w kierunek. Liczbę z "SYGNAŁÓW FORMY" możesz przywołać, gdy niesie wniosek (np. "tętno 6 bpm niżej niż zwykle przy tej mocy").',
+    'Gdy jest ZAPLANOWANY trening: jedno zdanie, czy sesja trafiła w cel — jakościowo, bez cytowania TSS/watów, chyba że odchylenie jest sednem wniosku. Bez zaplanowanego treningu: oceń jazdę samodzielnie, naturalnie; NIE wspominaj, że była niezaplanowana.',
+    'Zakaz: recytacji liczb z kafli, generycznego czepialstwa ("popracuj nad mocą"), nagłówków, markdown. Ton: konkretny, z jednym actionable akcentem na koniec.',
     powerRule,
   ].join(' ');
 
@@ -103,8 +106,17 @@ export function buildInsightPrompt(
     );
   }
 
-  // ── Blok WYKONANO (e-bike: bez linii mocy i bez best efforts mocy) ──
-  const exec: string[] = ['WYKONANO:'];
+  // ── Blok SYGNAŁY FORMY (warstwa interpretacyjna — O TYM insight ma mówić) ──
+  const signalLines: string[] = [];
+  const sig = [signals?.trend, signals?.ef, signals?.hrAtPower, signals?.ring].filter((s): s is string => !!s);
+  if (sig.length) {
+    signalLines.push('SYGNAŁY FORMY (o TYM mów — to nie jest widoczne na kaflach):');
+    for (const s of sig) signalLines.push(`- ${s}`);
+    signalLines.push('');
+  }
+
+  // ── Blok DANE JAZDY (tło — user je widzi w kaflach, NIE cytuj) ──
+  const exec: string[] = ['DANE JAZDY (tło, NIE cytuj — user widzi to na karcie):'];
   exec.push(
     `- Typ ${activity.type ?? '—'}, czas ${activity.duration_seconds != null ? Math.round(activity.duration_seconds / 60) : '—'} min, dystans ${activity.distance_km ?? '—'} km, przewyższenie ${activity.elevation_m ?? '—'} m, TSS ${activity.tss != null ? Math.round(activity.tss) : '—'}.`
   );
@@ -120,11 +132,13 @@ export function buildInsightPrompt(
   }
   exec.push('- Struktura sesji (lapy):', describeStructure(structure, isEbike));
 
-  const closing = planned
-    ? 'Porównaj zaplanowane z wykonanym. Oceń realizację treningu. Maks 4 zdania.'
-    : 'Oceń tę jazdę. Maks 4 zdania.';
+  const closing = sig.length
+    ? 'Napisz insight trenerski o formie i kierunku (z SYGNAŁÓW FORMY), NIE recytując danych jazdy. 3-4 zdania, jeden wniosek.'
+    : planned
+      ? 'Oceń jakościowo, czy sesja trafiła w cel dnia — bez recytowania liczb. 3-4 zdania.'
+      : 'Oceń tę jazdę jakościowo, bez recytowania liczb z karty. 3-4 zdania.';
 
-  const user = [...plannedLines, ...exec, '', closing].join('\n');
+  const user = [...plannedLines, ...signalLines, ...exec, '', closing].join('\n');
 
   return { system, user };
 }

@@ -115,15 +115,24 @@ function buildFallbackInsight(activity: RideActivity, ftp: number | null): strin
   return `Podsumowanie po liczbach: ${parts.join(', ')}.`;
 }
 
-function AiInsight({ activityId, activity, ftp }: { activityId: number; activity: RideActivity; ftp: number | null }) {
+// executionPct: undefined = streams/ring jeszcze się liczą (czekaj — insight ma dostać pct);
+// null = ring niedostępny (jazda na HR / e-bike / brak planu) → insight bez ring%, ale leci.
+function AiInsight({ activityId, activity, ftp, executionPct }: {
+  activityId: number; activity: RideActivity; ftp: number | null; executionPct: number | null | undefined;
+}) {
   const [text, setText] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (executionPct === undefined) return; // czekaj aż ring się rozstrzygnie (pct known-or-absent)
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/activities/${activityId}/insight`, { method: 'POST' });
+        const res = await fetch(`/api/activities/${activityId}/insight`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pct: executionPct }), // pct dołączony gdy ring dostępny; null gdy nie
+        });
         const data = await res.json().catch(() => null);
         if (cancelled) return;
         if (res.ok && data?.insight) setText(data.insight);
@@ -138,7 +147,7 @@ function AiInsight({ activityId, activity, ftp }: { activityId: number; activity
       }
     })();
     return () => { cancelled = true; };
-  }, [activityId, activity, ftp]);
+  }, [activityId, activity, ftp, executionPct]);
 
   return (
     <div style={{
@@ -542,6 +551,12 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
   // Pierścień realizacji celu — dostępny tylko gdy jest plan + streams z mocą (logika w helperze).
   const ring = planned && streams ? computeExecutionRing(planned, streams, ftp, isEbike) : { available: false as const };
 
+  // pct dla insightu: undefined dopóki streams się ładują (insight czeka, by dostać ring%),
+  // potem ring.pct albo null (ring niedostępny). planned===undefined też = jeszcze ładowanie.
+  const executionPct: number | null | undefined =
+    streamsState.s === 'loading' || planned === undefined ? undefined
+    : ring.available ? ring.pct : null;
+
   return (
     <div
       onClick={onClose}
@@ -639,7 +654,7 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
         <ExtendedMetrics activity={activity} />
 
         {/* AI Insight */}
-        <AiInsight activityId={activityId} activity={activity} ftp={ftp} />
+        <AiInsight activityId={activityId} activity={activity} ftp={ftp} executionPct={executionPct} />
 
         {/* Write-back opisu do Stravy — przycisk + podgląd + potwierdzenie (Etap 1) */}
         <WriteBackButton activityId={activityId} />
