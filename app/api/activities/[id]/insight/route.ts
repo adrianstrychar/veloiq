@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { buildInsightPrompt, type InsightActivity } from '@/lib/ai/insight';
 import { fetchPlannedDay } from '@/lib/planned-day';
+import { aiErrorMessage } from '@/lib/ai/ai-error';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -64,7 +65,8 @@ export async function POST(
     const insight = response.content[0]?.type === 'text' ? response.content[0].text : '';
     return NextResponse.json({ insight });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 502 });
+    // Czytelny komunikat + flaga: klient pokazuje zdanie o niedostępności zamiast
+    // fallbacku-recytatora liczb (który maskował prawdziwą przyczynę awarii API).
+    return NextResponse.json({ error: aiErrorMessage(err), unavailable: true }, { status: 503 });
   }
 }
