@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { aiErrorMessage } from '@/lib/ai/ai-error';
 import {
   buildDailyInsightPrompt,
   buildRaceContext,
@@ -149,7 +150,8 @@ export async function GET() {
     const { text: insight } = enforceInsightSafety(raw, metrics, todayPlan, yesterdayCtx, race);
     return NextResponse.json({ insight });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 502 });
+    // Czytelny komunikat zamiast surowego err.message — klient (DailyInsight) i tak ma
+    // własny statyczny fallback ("WSKAZÓWKA"), więc karta się nie psuje.
+    return NextResponse.json({ error: aiErrorMessage(err), unavailable: true }, { status: 503 });
   }
 }

@@ -124,9 +124,13 @@ function AiInsight({ activityId, activity, ftp }: { activityId: number; activity
     (async () => {
       try {
         const res = await fetch(`/api/activities/${activityId}/insight`, { method: 'POST' });
-        if (!res.ok) throw new Error(`insight ${res.status}`);
-        const data = await res.json();
-        if (!cancelled) setText(data.insight || buildFallbackInsight(activity, ftp));
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (res.ok && data?.insight) setText(data.insight);
+        // Awaria API (kredyty/limit/sieć) → pokaż czytelne zdanie z serwera, NIE recytację
+        // liczb z kafli — fallback liczbowy maskował prawdziwą przyczynę.
+        else if (data?.unavailable && data?.error) setText(data.error);
+        else setText(buildFallbackInsight(activity, ftp));
       } catch {
         if (!cancelled) setText(buildFallbackInsight(activity, ftp));
       } finally {

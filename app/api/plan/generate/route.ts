@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { isAiOutage, AI_UNAVAILABLE_MSG } from '@/lib/ai/ai-error';
 import {
   buildTwoWeekPrompt,
   validateTwoWeekPlan,
@@ -235,12 +236,15 @@ export async function POST(req: NextRequest) {
       next = v.next;
       break;
     } catch (err: unknown) {
-      lastErr = err instanceof Error ? err.message : String(err);
+      lastErr = isAiOutage(err) ? AI_UNAVAILABLE_MSG : err instanceof Error ? err.message : String(err);
     }
   }
 
   if (!current || !next) {
-    return NextResponse.json({ error: `generowanie nieudane: ${lastErr}` }, { status: 502 });
+    return NextResponse.json(
+      { error: lastErr === AI_UNAVAILABLE_MSG ? AI_UNAVAILABLE_MSG : `generowanie nieudane: ${lastErr}` },
+      { status: lastErr === AI_UNAVAILABLE_MSG ? 503 : 502 }
+    );
   }
 
   const summary = (w: { days: PlanDay[] }) => w.days.map((d) => ({

@@ -4,6 +4,7 @@
 // wołają te same funkcje — ZERO równoległej logiki mutacji planu.
 import Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isAiOutage, AI_UNAVAILABLE_MSG } from '@/lib/ai/ai-error';
 import { buildModifyPrompt, validateWeek, parseCommandDows, type PlanDay, type ModifyContext } from '@/lib/ai/plan-generate';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -94,7 +95,8 @@ export async function computePlanModification(
       const tssTarget = days.reduce((s, d) => s + d.tss, 0);
       return { ok: true, result: { days, insight, tssTarget, skippedPastDows } };
     } catch (err: unknown) {
-      lastErr = err instanceof Error ? err.message : String(err);
+      // Awaria API (kredyty/limit/sieć) → czytelne zdanie; błędy walidacji zostają surowe.
+      lastErr = isAiOutage(err) ? AI_UNAVAILABLE_MSG : err instanceof Error ? err.message : String(err);
     }
   }
   return { ok: false, error: lastErr };
