@@ -6,6 +6,7 @@ import {
   buildStrategyPrompt, strategyFingerprint, reassembleStrategy, strategyMeta,
   type RaceStrategy, type StrategyRace, type StrategyProfile,
 } from '@/lib/ai/race-strategy';
+import { type RouteAnalysis } from '@/lib/route/detect-climbs';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -41,22 +42,25 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     weak_points: (athlete.weak_points as string[] | null) ?? null,
   };
 
-  const fingerprint = strategyFingerprint(race, profile);
-
-  // ── Cache: istniejący plan z tym fingerprintem → zwróć, ZERO calla do Anthropic. ──
+  // Istniejący wiersz — potrzebny do route_analysis (trasa wchodzi do fingerprintu) ORAZ do cache hit.
   const { data: existing } = await supabase
     .from('race_plans')
-    .select('tactical_plan, race_nutrition_plan, tire_recommendations, target_avg_watts, target_if, generation_inputs_hash, generated_at')
+    .select('tactical_plan, race_nutrition_plan, tire_recommendations, target_avg_watts, target_if, route_analysis, generation_inputs_hash, generated_at')
     .eq('athlete_id', athlete.id).eq('race_id', raceId).maybeSingle();
-  if (existing && existing.generation_inputs_hash === fingerprint) {
+
+  const route = (existing?.route_analysis as RouteAnalysis | null) ?? null;
+  const fingerprint = strategyFingerprint(race, profile, route);
+
+  // ── Cache: ten sam fingerprint → zwróć, ZERO calla do Anthropic. ──
+  if (existing?.tactical_plan && existing.generation_inputs_hash === fingerprint) {
     return NextResponse.json({ strategy: reassembleStrategy(existing, race), cached: true });
   }
 
-  // ── Generacja ──
-  const { system, user: userMsg } = buildStrategyPrompt(race, profile);
+  // ── Generacja (z trasą jeśli jest route_analysis → pacing per realny podjazd) ──
+  const { system, user: userMsg } = buildStrategyPrompt(race, profile, route);
   try {
     const resp = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6', max_tokens: 3500, system,
+      model: 'claude-sonnet-4-6', max_tokens: 4500, system, // tryb GPX (pacing per podjazd) jest dłuższy — 3500 ucinało JSON
       messages: [{ role: 'user', content: userMsg }],
     });
     const text = resp.content[0]?.type === 'text' ? resp.content[0].text : '';

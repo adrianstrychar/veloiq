@@ -3,8 +3,10 @@
 // Sekcja "Strategia wyścigu AI" — wygląd 1:1 z veloiq_landing_v6.html TAB 2 (docs/).
 // Generacja przez POST /api/races/[id]/strategy (cache po fingerprincie). Paleta z landingu,
 // NIE motyw aplikacji — świadomie (landing to źródło prawdy wizualnej dla tej sekcji).
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis } from 'recharts';
 import type { RaceStrategy, PacingTier } from '@/lib/ai/race-strategy';
+import type { RouteAnalysis } from '@/lib/route/detect-climbs';
 
 const L = {
   bg: '#0B0E12', card: 'rgba(255,255,255,0.025)', border: 'rgba(255,255,255,0.08)',
@@ -69,13 +71,63 @@ function CollapseBtn({ onClick }: { onClick: () => void }) {
   );
 }
 
-export default function RaceStrategyView({ race, initialStrategy }: { race: RaceStrategyRace; initialStrategy: RaceStrategy | null }) {
+// Przycisk wgrania GPX (ukryty input file). Outline w akcencie landingu.
+function GpxButton({ label, onFile, busy }: { label: string; onFile: (f: File) => void; busy: boolean }) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={ref} type="file" accept=".gpx,application/gpx+xml,application/xml" style={{ display: 'none' }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }}
+      />
+      <button
+        onClick={() => ref.current?.click()} disabled={busy}
+        style={{ minHeight: 40, padding: '0 14px', border: `1px solid ${L.accent}`, borderRadius: 8, background: 'transparent', color: L.accent, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: busy ? 0.6 : 1 }}
+      >
+        {busy ? 'Wczytuję trasę…' : label}
+      </button>
+    </>
+  );
+}
+
+// Mini-wykres profilu wysokości (recharts, jak sparkline) + licznik podjazdów.
+function RouteProfile({ analysis, name }: { analysis: RouteAnalysis; name: string | null }) {
+  return (
+    <Block title={`Profil trasy${name ? ` · ${name}` : ''} · ${analysis.climbs.length} podjazdów`}>
+      <div style={{ padding: '0.6rem 0.8rem 0.5rem' }}>
+        <div style={{ height: 90 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={analysis.profile} margin={{ top: 4, right: 2, bottom: 0, left: 2 }}>
+              <defs>
+                <linearGradient id="eleFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={L.accent} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={L.accent} stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="km" hide />
+              <YAxis hide domain={['dataMin', 'dataMax']} />
+              <Area type="monotone" dataKey="ele" stroke={L.accent} strokeWidth={1.5} fill="url(#eleFill)" isAnimationActive={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ fontSize: 10, color: L.dim, marginTop: 4 }}>
+          {analysis.distance_km} km · +{analysis.elevation_m} m
+        </div>
+      </div>
+    </Block>
+  );
+}
+
+export default function RaceStrategyView({ race, initialStrategy, initialRoute }: { race: RaceStrategyRace; initialStrategy: RaceStrategy | null; initialRoute: { name: string | null; analysis: RouteAnalysis } | null }) {
   const [strategy, setStrategy] = useState<RaceStrategy | null>(initialStrategy);
   // Domyślnie ZWINIĘTA gdy strategia istnieje przy montowaniu (wejście na Races → zwinięta).
   // useState czyta initialStrategy tylko raz — po re-mount (przełączenie zakładki) znów TRUE.
   const [collapsed, setCollapsed] = useState<boolean>(initialStrategy != null);
+  const [route, setRoute] = useState(initialRoute);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   async function generate() {
     if (loading) return;
@@ -94,26 +146,52 @@ export default function RaceStrategyView({ race, initialStrategy }: { race: Race
     }
   }
 
-  // Empty state — przycisk generacji (jeszcze nie ma planu w race_plans).
+  // Wgranie GPX → zapis route_analysis → auto-przeliczenie strategii (fingerprint się zmienił).
+  async function uploadGpx(file: File) {
+    if (uploading || loading) return;
+    setUploading(true); setUploadError(null);
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const res = await fetch(`/api/races/${race.id}/gpx`, { method: 'POST', body: fd });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.analysis) {
+        setRoute({ name: (data.route_name as string | null) ?? null, analysis: data.analysis as RouteAnalysis });
+        await generate();
+      } else setUploadError(data?.error ?? 'Nie udało się wczytać trasy.');
+    } catch {
+      setUploadError('Błąd połączenia — spróbuj ponownie.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  // Empty state — przycisk generacji (jeszcze nie ma planu w race_plans). Trasę GPX można wgrać
+  // od razu (opcjonalnie) — wtedy strategia policzy się per realny podjazd.
   if (!strategy) {
     return (
       <div style={{ background: L.card, border: `1px solid ${L.border}`, borderRadius: 3, padding: '1.2rem', textAlign: 'center' }}>
         <div style={{ fontSize: 13, color: L.dim, marginBottom: 12, lineHeight: 1.5 }}>
           Strategia wyścigu AI — rozkład tempa, żywienie i sprzęt pod Twój profil i ten start.
         </div>
-        <button
-          onClick={() => void generate()}
-          disabled={loading}
-          style={{ minHeight: 44, padding: '0 18px', border: 'none', borderRadius: 8, background: L.accent, color: '#04212B', fontSize: 15, fontWeight: 600, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}
-        >
-          {loading ? 'Generuję strategię…' : 'Generuj strategię'}
-        </button>
+        {route && <div style={{ marginBottom: 12, textAlign: 'left' }}><RouteProfile analysis={route.analysis} name={route.name} /></div>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => void generate()}
+            disabled={loading || uploading}
+            style={{ minHeight: 44, padding: '0 18px', border: 'none', borderRadius: 8, background: L.accent, color: '#04212B', fontSize: 15, fontWeight: 600, cursor: 'pointer', opacity: loading || uploading ? 0.6 : 1 }}
+          >
+            {loading ? 'Generuję strategię…' : 'Generuj strategię'}
+          </button>
+          <GpxButton label={route ? 'Zmień trasę GPX' : 'Dodaj trasę GPX'} onFile={(f) => void uploadGpx(f)} busy={uploading} />
+        </div>
         {error && <div style={{ fontSize: 12, color: L.red, marginTop: 10 }}>{error}</div>}
+        {uploadError && <div style={{ fontSize: 12, color: L.red, marginTop: 10 }}>{uploadError}</div>}
       </div>
     );
   }
 
   // Stan ZWINIĘTY — strategia jest w bazie/stanie, ale pokazujemy TYLKO przycisk (bez teasera, bez bloków).
+  // Wczesny return → CAŁE wk-blocks (w tym profil GPX i podjazdy) zwija się razem ze strategią.
   if (collapsed) {
     return (
       <div style={{ background: L.card, border: `1px solid ${L.border}`, borderRadius: 3, padding: '1.2rem', textAlign: 'center' }}>
@@ -135,7 +213,14 @@ export default function RaceStrategyView({ race, initialStrategy }: { race: Race
         <div style={{ fontSize: 13, fontWeight: 700, color: L.white }}>
           {race.name}{s.meta.distance_km ? ` · ${s.meta.distance_km} km` : ''}{s.meta.elevation_m ? ` / ${s.meta.elevation_m} m` : ''}
         </div>
-        <div style={{ fontSize: 9, background: 'rgba(0,207,255,0.15)', color: L.accent, borderRadius: 4, padding: '3px 8px', fontWeight: 600, whiteSpace: 'nowrap' }}>AI Strategy</div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+          {route && (
+            <div title={route.name ?? undefined} style={{ fontSize: 9, background: 'rgba(0,232,122,0.14)', color: L.green, borderRadius: 4, padding: '3px 8px', fontWeight: 600, whiteSpace: 'nowrap', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              🗺 {route.name ?? 'trasa'}
+            </div>
+          )}
+          <div style={{ fontSize: 9, background: 'rgba(0,207,255,0.15)', color: L.accent, borderRadius: 4, padding: '3px 8px', fontWeight: 600, whiteSpace: 'nowrap' }}>AI Strategy</div>
+        </div>
       </div>
 
       {/* wk-meta — 4 kafle jak landing; POGODA "—" (Etap 3: geocoding location→lat/lon + Open-Meteo ≤16 dni, świeży fetch poza cache strategii) */}
@@ -157,6 +242,9 @@ export default function RaceStrategyView({ race, initialStrategy }: { race: Race
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', padding: '1rem' }}>
         {/* Zwiń — NA GÓRZE (nad blokami) */}
         <CollapseBtn onClick={() => setCollapsed(true)} />
+
+        {/* Profil trasy z GPX (Etap 2) — pierwszy blok, zwija się razem z resztą */}
+        {route && <RouteProfile analysis={route.analysis} name={route.name} />}
 
         <Block title="Rozkład tempa">
           <StratRows tierOf items={s.pacing.map((p) => ({ left: `${p.phase} · ${p.watts}`, tip: p.tip, tier: p.tier }))} />
@@ -211,13 +299,21 @@ export default function RaceStrategyView({ race, initialStrategy }: { race: Race
           </Block>
         )}
 
+        {/* Wgranie/zmiana trasy GPX — przelicza strategię per realny podjazd */}
+        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '0.2rem' }}>
+          <GpxButton label={route ? 'Zmień trasę GPX' : 'Dodaj trasę GPX'} onFile={(f) => void uploadGpx(f)} busy={uploading || loading} />
+        </div>
+        {uploadError && <div style={{ fontSize: 12, color: L.red, textAlign: 'center' }}>{uploadError}</div>}
+
         {/* Zwiń — NA DOLE (pod blokami) */}
         <CollapseBtn onClick={() => setCollapsed(true)} />
       </div>
 
       {/* wk-footer */}
       <div style={{ padding: '0.7rem 1.1rem', borderTop: `1px solid ${L.border}`, fontSize: 10, color: L.dim, textAlign: 'center' }}>
-        Analiza z Twoich parametrów startu i profilu · bez GPX (trasa wzbogaci strategię w kolejnym kroku)
+        {route
+          ? `Analiza z profilu trasy GPX · ${route.analysis.climbs.length} podjazdów · pacing per realny podjazd`
+          : 'Analiza z Twoich parametrów startu i profilu · bez GPX (dodaj trasę, by liczyć per realny podjazd)'}
         {s.targets.finish_time || s.targets.avg_watts ? ` · cel: ${[s.targets.finish_time, s.targets.avg_watts ? `${s.targets.avg_watts}W` : null, s.targets.if ? `IF ${s.targets.if}` : null].filter(Boolean).join(' · ')}` : ''}
       </div>
     </div>

@@ -3,6 +3,7 @@ import { Races, type RaceRow } from '@/components/veloiq/Races';
 import { type CtlPoint } from '@/lib/race-prep';
 import { localTodayISO } from '@/lib/plan';
 import { reassembleStrategy, type RaceStrategy, type StrategyRace } from '@/lib/ai/race-strategy';
+import { type RouteAnalysis } from '@/lib/route/detect-climbs';
 
 // Po rozdzieleniu zakładek (mockup): /races = Wyścigi (lista startów), /calendar = Kalendarz.
 // Segmented control [Lista | Kalendarz] (RacesView) usunięty — każdy widok ma własną trasę.
@@ -43,10 +44,11 @@ export default async function RacesPage() {
   const raceList = (races ?? []) as RaceRow[];
   const nextRace = raceList.find((r) => r.date >= today);
   let nextRaceStrategy: RaceStrategy | null = null;
+  let nextRaceRoute: { name: string | null; analysis: RouteAnalysis } | null = null;
   if (nextRace) {
     const { data: plan } = await supabase
       .from('race_plans')
-      .select('tactical_plan, race_nutrition_plan, tire_recommendations, target_avg_watts, target_if')
+      .select('tactical_plan, race_nutrition_plan, tire_recommendations, target_avg_watts, target_if, route_analysis, route_name')
       .eq('athlete_id', athlete?.id ?? '')
       .eq('race_id', nextRace.id)
       .maybeSingle();
@@ -57,6 +59,10 @@ export default async function RacesPage() {
       };
       nextRaceStrategy = reassembleStrategy(plan, sr);
     }
+    // Trasa (GPX) może istnieć niezależnie od strategii (wgrana, jeszcze bez przeliczenia).
+    if (plan?.route_analysis) {
+      nextRaceRoute = { name: (plan.route_name as string | null) ?? null, analysis: plan.route_analysis as RouteAnalysis };
+    }
   }
 
   return (
@@ -66,7 +72,7 @@ export default async function RacesPage() {
         <span className="text-sm text-secondary">Wyścigi</span>
       </header>
 
-      <Races races={raceList} ctlSeries={ctlSeries} today={today} nextRaceStrategy={nextRaceStrategy} />
+      <Races races={raceList} ctlSeries={ctlSeries} today={today} nextRaceStrategy={nextRaceStrategy} nextRaceRoute={nextRaceRoute} />
     </div>
   );
 }

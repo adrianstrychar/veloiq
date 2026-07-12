@@ -7,6 +7,7 @@ import { countryFlag } from '@/lib/country-flag';
 import RacePrepCard from './RacePrepCard';
 import RaceStrategyView from './RaceStrategy';
 import type { RaceStrategy } from '@/lib/ai/race-strategy';
+import type { RouteAnalysis } from '@/lib/route/detect-climbs';
 
 export interface RaceRow {
   id: string;
@@ -27,6 +28,7 @@ interface RacesProps {
   ctlSeries: CtlPoint[]; // dzienne CTL (fitness_metrics) — do pierścienia prep + sparkline
   today: string;         // 'YYYY-MM-DD' lokalne
   nextRaceStrategy: RaceStrategy | null; // strategia AI najbliższego startu (z race_plans; null = jeszcze brak)
+  nextRaceRoute: { name: string | null; analysis: RouteAnalysis } | null; // trasa GPX najbliższego startu (Etap 2)
 }
 
 // Liczba pełnych dni od dziś (UTC-safe, bez wpływu strefy) do daty wyścigu.
@@ -48,7 +50,7 @@ const PRIORITY_LABEL: Record<string, string> = { A: 'CEL', B: 'WAŻNY', C: 'TREN
 
 const RACE_PRIORITIES = new Set(['A', 'B', 'C']);
 
-export function Races({ races, ctlSeries, today, nextRaceStrategy }: RacesProps) {
+export function Races({ races, ctlSeries, today, nextRaceStrategy, nextRaceRoute }: RacesProps) {
   // Najbliższy start = pierwsza data >= dziś (lista przychodzi posortowana rosnąco).
   const nextRace = races.find((r) => daysUntil(r.date) >= 0);
   // Cel sezonu = priority 'A' z najdalszą datą (MŚ Nannup).
@@ -89,6 +91,7 @@ export function Races({ races, ctlSeries, today, nextRaceStrategy }: RacesProps)
         <RaceStrategyView
           race={{ id: nextRace.id, name: nextRace.name, distance_km: nextRace.distance_km, elevation_m: nextRace.elevation_m, discipline: nextRace.discipline }}
           initialStrategy={nextRaceStrategy}
+          initialRoute={nextRaceRoute}
         />
       )}
 
