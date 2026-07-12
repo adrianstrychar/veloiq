@@ -57,8 +57,23 @@ function StratRows({ items, tierOf }: { items: { left: string; tip: string; tier
   );
 }
 
+// "Zwiń" — subtelny przycisk (outline, dim), spójny z wk-* landingu. Nad i pod blokami.
+function CollapseBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{ width: '100%', minHeight: 40, border: `1px solid ${L.border}`, borderRadius: 8, background: 'transparent', color: L.dim, fontSize: 13, fontWeight: 600, letterSpacing: '0.02em', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+    >
+      Zwiń <span style={{ fontSize: 9 }}>▲</span>
+    </button>
+  );
+}
+
 export default function RaceStrategyView({ race, initialStrategy }: { race: RaceStrategyRace; initialStrategy: RaceStrategy | null }) {
   const [strategy, setStrategy] = useState<RaceStrategy | null>(initialStrategy);
+  // Domyślnie ZWINIĘTA gdy strategia istnieje przy montowaniu (wejście na Races → zwinięta).
+  // useState czyta initialStrategy tylko raz — po re-mount (przełączenie zakładki) znów TRUE.
+  const [collapsed, setCollapsed] = useState<boolean>(initialStrategy != null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,8 +83,10 @@ export default function RaceStrategyView({ race, initialStrategy }: { race: Race
     try {
       const res = await fetch(`/api/races/${race.id}/strategy`, { method: 'POST' });
       const data = await res.json().catch(() => null);
-      if (res.ok && data?.strategy) setStrategy(data.strategy as RaceStrategy);
-      else setError(data?.error ?? 'Nie udało się przygotować strategii.');
+      if (res.ok && data?.strategy) {
+        setStrategy(data.strategy as RaceStrategy);
+        setCollapsed(false); // świeżo wygenerowana → od razu rozwinięta (do przeczytania)
+      } else setError(data?.error ?? 'Nie udało się przygotować strategii.');
     } catch {
       setError('Błąd połączenia — spróbuj ponownie.');
     } finally {
@@ -92,6 +109,20 @@ export default function RaceStrategyView({ race, initialStrategy }: { race: Race
           {loading ? 'Generuję strategię…' : 'Generuj strategię'}
         </button>
         {error && <div style={{ fontSize: 12, color: L.red, marginTop: 10 }}>{error}</div>}
+      </div>
+    );
+  }
+
+  // Stan ZWINIĘTY — strategia jest w bazie/stanie, ale pokazujemy TYLKO przycisk (bez teasera, bez bloków).
+  if (collapsed) {
+    return (
+      <div style={{ background: L.card, border: `1px solid ${L.border}`, borderRadius: 3, padding: '1.2rem', textAlign: 'center' }}>
+        <button
+          onClick={() => setCollapsed(false)}
+          style={{ minHeight: 44, padding: '0 18px', border: 'none', borderRadius: 8, background: L.accent, color: '#04212B', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+        >
+          Pokaż strategię
+        </button>
       </div>
     );
   }
@@ -124,6 +155,9 @@ export default function RaceStrategyView({ race, initialStrategy }: { race: Race
 
       {/* wk-blocks */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', padding: '1rem' }}>
+        {/* Zwiń — NA GÓRZE (nad blokami) */}
+        <CollapseBtn onClick={() => setCollapsed(true)} />
+
         <Block title="Rozkład tempa">
           <StratRows tierOf items={s.pacing.map((p) => ({ left: `${p.phase} · ${p.watts}`, tip: p.tip, tier: p.tier }))} />
         </Block>
@@ -176,6 +210,9 @@ export default function RaceStrategyView({ race, initialStrategy }: { race: Race
             <StratRows items={s.strengths.map((x) => ({ left: x.km, tip: x.tip }))} />
           </Block>
         )}
+
+        {/* Zwiń — NA DOLE (pod blokami) */}
+        <CollapseBtn onClick={() => setCollapsed(true)} />
       </div>
 
       {/* wk-footer */}
