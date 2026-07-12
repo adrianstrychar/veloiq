@@ -5,6 +5,8 @@ import { computeRacePrep, type CtlPoint } from '@/lib/race-prep';
 import type { RacePriority } from '@/lib/race-taper';
 import { countryFlag } from '@/lib/country-flag';
 import RacePrepCard from './RacePrepCard';
+import RaceStrategyView from './RaceStrategy';
+import type { RaceStrategy } from '@/lib/ai/race-strategy';
 
 export interface RaceRow {
   id: string;
@@ -24,6 +26,7 @@ interface RacesProps {
   races: RaceRow[];
   ctlSeries: CtlPoint[]; // dzienne CTL (fitness_metrics) — do pierścienia prep + sparkline
   today: string;         // 'YYYY-MM-DD' lokalne
+  nextRaceStrategy: RaceStrategy | null; // strategia AI najbliższego startu (z race_plans; null = jeszcze brak)
 }
 
 // Liczba pełnych dni od dziś (UTC-safe, bez wpływu strefy) do daty wyścigu.
@@ -45,7 +48,7 @@ const PRIORITY_LABEL: Record<string, string> = { A: 'CEL', B: 'WAŻNY', C: 'TREN
 
 const RACE_PRIORITIES = new Set(['A', 'B', 'C']);
 
-export function Races({ races, ctlSeries, today }: RacesProps) {
+export function Races({ races, ctlSeries, today, nextRaceStrategy }: RacesProps) {
   // Najbliższy start = pierwsza data >= dziś (lista przychodzi posortowana rosnąco).
   const nextRace = races.find((r) => daysUntil(r.date) >= 0);
   // Cel sezonu = priority 'A' z najdalszą datą (MŚ Nannup).
@@ -80,6 +83,14 @@ export function Races({ races, ctlSeries, today }: RacesProps) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Karta "NAJBLIŻSZY CEL" nad listą */}
       {prep && nextRace && <RacePrepCard race={nextRace} prep={prep} sparkline={sparkline} />}
+
+      {/* Strategia wyścigu AI — pod kartą celu, dla najbliższego startu */}
+      {nextRace && (
+        <RaceStrategyView
+          race={{ id: nextRace.id, name: nextRace.name, distance_km: nextRace.distance_km, elevation_m: nextRace.elevation_m, discipline: nextRace.discipline }}
+          initialStrategy={nextRaceStrategy}
+        />
+      )}
 
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 18, fontWeight: 700, color: C.text }}>Starty</span>
