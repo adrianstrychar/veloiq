@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { localTodayISO } from '@/lib/plan';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
+import { taperDaysFor, type RacePriority } from '@/lib/race-taper';
 
 interface AthleteRow {
   id: string;
@@ -107,7 +108,11 @@ const TOOLS_SECTION = `### NARZĘDZIA I DANE
 - Jeśli narzędzie zwróci pusto / found:false → powiedz WPROST, że tych danych nie ma
   w aplikacji, i (dla jazdy) zaproponuj synchronizację ze Stravą.
 - NIGDY nie proś użytkownika o ręczne wklejenie danych, które aplikacja przechowuje
-  (jazdy, plan, forma) — od tego są narzędzia.
+  (jazdy, plan, forma, starty) — od tego są narzędzia.
+- ZANIM ZAPYTASZ zawodnika o starty, plan, cele czy formę — SPRAWDŹ narzędziami
+  (get_races, get_weekly_plan, get_fitness_status). Aplikacja zna te dane. Anchor niżej
+  ma najbliższy start — nie pytaj "masz jakiś wyścig?", bo to już wiesz. Pytaj zawodnika
+  TYLKO o to, czego apka wiedzieć NIE może: samopoczucie, plany życiowe, preferencje.
 - Jeśli detal ze Stravy jest chwilowo niedostępny (detail_source:"strava_unavailable")
   — powiedz to i podaj metryki, które masz.
 
@@ -163,10 +168,18 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
   const athleteId = athlete?.id ?? null;
   const hasPower = !!(athlete?.ftp_watts || athlete?.has_power_meter);
 
-  // Historia formy — do computeReadiness (peak CTL, rampa) + najnowszy wiersz + trend 7d.
-  const { data: fmRows } = athleteId
-    ? await supabase.from('fitness_metrics').select('date, ctl, atl, tsb').eq('athlete_id', athleteId).order('date', { ascending: true })
-    : { data: null };
+  const todayISO = localTodayISO();
+
+  // Historia formy (trend 7d) + najbliższy start — RÓWNOLEGLE. Start w anchorze always-on,
+  // żeby model nigdy nie pytał "masz jakiś wyścig?" (dane, które reszta apki zna).
+  const [{ data: fmRows }, { data: nextRace }] = await Promise.all([
+    athleteId
+      ? supabase.from('fitness_metrics').select('date, ctl, atl, tsb').eq('athlete_id', athleteId).order('date', { ascending: true })
+      : Promise.resolve({ data: null }),
+    athleteId
+      ? supabase.from('race_calendar').select('name, date, priority').eq('athlete_id', athleteId).gte('date', todayISO).order('date', { ascending: true }).limit(1).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
   const rows = (fmRows ?? []) as MetricRow[];
   const now = rows.length ? rows[rows.length - 1] : null;
   const weekAgo = rows.length ? rows[Math.max(0, rows.length - 8)] : null;
@@ -183,7 +196,6 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
   // --- Anchor: lekki, always-on. Reszta danych przez narzędzia. ---
   const ftpW = athlete?.ftp_watts;
   const wKg = ftpW && athlete?.weight_kg ? r1(ftpW / Number(athlete.weight_kg)) : null;
-  const todayISO = localTodayISO();
   const dow = new Date(todayISO + 'T12:00:00Z').getUTCDay();
   const dayName = DAY_NAME_PL[dow === 0 ? 7 : dow];
 
@@ -192,12 +204,23 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
       ? `FTP: ${ftpW}W${wKg ? ` | W/kg: ${wKg}` : ''} | HRmax: ${athlete?.hrmax ?? '?'} bpm | Waga: ${athlete?.weight_kg ?? '?'}kg`
       : `HRmax: ${athlete?.hrmax ?? '?'} bpm | Waga: ${athlete?.weight_kg ?? '?'}kg | TRENUJE NA HR (bez miernika mocy)`;
 
+  // Linia najbliższego startu — always-on, żeby model NIGDY nie pytał o coś, co apka wie.
+  // days_away liczone UTC-noon (spójnie z get_races); okno taperu wg taperDaysFor (prio C = 0 → nigdy).
+  let raceLine = 'NAJBLIŻSZY START: brak w kalendarzu';
+  if (nextRace) {
+    const daysAway = Math.ceil((new Date((nextRace.date as string) + 'T12:00:00Z').getTime() - new Date(todayISO + 'T12:00:00Z').getTime()) / 86400000);
+    const prio = (nextRace.priority as string | null) ?? 'C';
+    const inTaper = daysAway <= taperDaysFor(prio as RacePriority);
+    raceLine = `NAJBLIŻSZY START: ${nextRace.name} za ${daysAway} dni (prio ${prio})${inTaper ? ' · OKNO TAPERU (nie zwiększaj obciążenia)' : ''}`;
+  }
+
   const anchor = `ZAWODNIK: ${athlete?.name ?? 'Nieznany'} | Dyscyplina: ${athlete?.discipline ?? 'gravel'}
 ${ftpLine}
 DZIŚ: ${todayISO} (${dayName})
 FORMA DZIŚ: CTL ${ctl} | ATL ${atl} | TSB ${tsb}${trend !== null ? ` | Trend CTL ${trend >= 0 ? '+' : ''}${trend}/tydzień` : ''}${
     readiness ? `\nGOTOWOŚĆ: ${readiness.raceReady}% (${readiness.state}) | Świeżość ${readiness.freshPct}%` : ''
   }
+${raceLine}
 
 Dane szczegółowe (jazdy, plan tygodnia, historia formy, starty, regeneracja) NIE są tutaj — pobierasz je NARZĘDZIAMI na żądanie.`;
 

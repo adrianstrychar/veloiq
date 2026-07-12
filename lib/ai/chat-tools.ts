@@ -87,7 +87,7 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
   {
     name: 'get_weekly_plan',
     description:
-      "The athlete's training plan for a week: each day's workout type, label, target TSS, duration, zones, plus the week's AI insight and chosen weekly hours. Use for 'plan this week', 'what's on Thursday', 'how much training is left'. week_start is the Monday (local YYYY-MM-DD); omit for the current week.",
+      "The athlete's training plan for a week: each day's workout type, label, target TSS, duration, zones, plus the week's AI insight, chosen weekly hours, and a `completion` object. Use for 'plan this week', 'what's on Thursday', 'how much training is left', 'am I keeping up with the plan'. `completion` (sessions_done_to_date / sessions_due_to_date / sessions_completion_pct) measures whether PLANNED SESSIONS HAPPENED (a ride on a planned day counts as done), NOT whether the athlete hit the planned load — riding harder/longer than planned still counts as done. Say \"you did X of Y sessions\", NEVER \"you completed X% of your load\". week_start is the Monday (local YYYY-MM-DD); omit for the current week.",
     input_schema: {
       type: 'object',
       additionalProperties: false,
@@ -195,7 +195,7 @@ function trimLaps(laps: unknown): Array<Record<string, unknown>> | null {
 async function getActivityDetail({ supabase, athleteId, userId }: ToolCtx, input: Record<string, unknown>) {
   const sid = input.strava_activity_id != null ? Number(input.strava_activity_id) : undefined;
   const date = typeof input.activity_date === 'string' ? input.activity_date : undefined;
-  const SEL = 'strava_activity_id, activity_date, name, type, distance_km, duration_seconds, elevation_m, avg_watts, max_watts, normalized_power, avg_hr, max_hr, tss, intensity_factor, laps, best_efforts, details_synced_at';
+  const SEL = 'strava_activity_id, activity_date, name, type, distance_km, duration_seconds, elevation_m, avg_watts, max_watts, normalized_power, avg_hr, max_hr, tss, intensity_factor, laps, best_efforts, pr_efforts, calories, details_synced_at';
 
   let row: Record<string, unknown> | null = null;
   if (sid != null && !Number.isNaN(sid)) {
@@ -212,6 +212,8 @@ async function getActivityDetail({ supabase, athleteId, userId }: ToolCtx, input
 
   let laps = row.laps;
   let best_efforts = row.best_efforts;
+  let pr_efforts = row.pr_efforts;
+  let calories = row.calories;
   let detail_source: string = 'cache';
   let note: string | undefined;
   if (!row.details_synced_at) {
@@ -219,6 +221,8 @@ async function getActivityDetail({ supabase, athleteId, userId }: ToolCtx, input
       const res = await syncActivityDetails(supabase, String(row.strava_activity_id), userId);
       laps = res.laps;
       best_efforts = res.best_efforts;
+      pr_efforts = res.pr_efforts;
+      calories = res.calories;
       detail_source = 'strava_live';
     } catch {
       detail_source = 'strava_unavailable';
@@ -242,7 +246,9 @@ async function getActivityDetail({ supabase, athleteId, userId }: ToolCtx, input
     max_hr: row.max_hr ?? null,
     tss: row.tss != null ? Math.round(row.tss as number) : null,
     intensity_factor: row.intensity_factor ?? null,
+    calories: calories ?? null,
     best_efforts: best_efforts ?? null,
+    pr_efforts: pr_efforts ?? null, // rekordy segmentów (pr_rank≠null) — [] = przetworzone bez PR, null = niepobrane
     laps: trimLaps(laps),
     detail_source,
     ...(note ? { note } : {}),
@@ -300,11 +306,30 @@ async function getWeeklyPlan({ supabase, athleteId }: ToolCtx, input: Record<str
     past: (d.date as string) < today,
     done: doneDates.has(d.date as string),
   }));
+
+  // Realizacja sesji do teraz — TANI wariant z flag past/done + zaplanowanego tss (bez streams).
+  // Dni treningowe minione (typ≠OFF) = "należne"; z jazdą tego dnia = "odbyte". Ważone
+  // zaplanowanym TSS. MIERZY, czy sesje się ODBYŁY, NIE czy trafiłeś w obciążenie.
+  const dueDays = days.filter((d) => d.past && d.type !== 'OFF');
+  const doneDoneDays = dueDays.filter((d) => d.done);
+  const tssDue = dueDays.reduce((a, d) => a + ((d.tss as number) || 0), 0);
+  const tssDone = doneDoneDays.reduce((a, d) => a + ((d.tss as number) || 0), 0);
+  const completion = {
+    sessions_due_to_date: dueDays.length,
+    sessions_done_to_date: doneDoneDays.length,
+    tss_planned_to_date: tssDue,
+    tss_of_done_sessions: tssDone,
+    // Odsetek zaplanowanych sesji odbytych do teraz (wg zaplanowanego TSS). NIE mów
+    // "zrealizowałeś X% planu/obciążenia" (sugeruje jakość) — tylko "odbyłeś X z Y sesji".
+    sessions_completion_pct: tssDue > 0 ? Math.round((tssDone / tssDue) * 100) : null,
+  };
+
   return {
     week_start: r.week_start,
     is_current: r.week_start === mondayOfISO(today),
     user_hours: r.user_hours ?? null,
     insight: (r.plan_json as { insight?: string })?.insight ?? null,
+    completion,
     days,
   };
 }
