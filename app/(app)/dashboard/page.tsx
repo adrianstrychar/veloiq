@@ -8,10 +8,11 @@ import { LastActivityCard, type LastActivityRow } from '@/components/veloiq/Last
 import { SyncButton } from '@/components/veloiq/SyncButton';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { computeProgressStats, type ActivityStatRow } from '@/lib/progressStats';
-import { type FtpPoint } from '@/components/veloiq/Progress';
 import { ftpDisplay, deriveFtpSource } from '@/lib/ftp';
-import { localTodayISO, mondayOfISO } from '@/lib/plan';
+import { localTodayISO } from '@/lib/plan';
 import type { RacePriority } from '@/lib/race-taper';
+import { reconstructFtp, type ReconRide } from '@/lib/ftp-reconstruct';
+import { forecastFtpPeriodized, buildRateFromEnvelope, type RaceLite } from '@/lib/ftp-forecast';
 
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
@@ -30,7 +31,7 @@ export default async function DashboardPage() {
   const stravaConnected = !!athlete?.strava_id;
   const todayISO = localTodayISO();
 
-  const [{ data: pmcRows }, { data: lastActivity }, { data: hrCheck }, { data: season2026 }, { data: ftpHistory }, { data: planTargets }, { data: upcomingRaces }] = await Promise.all([
+  const [{ data: pmcRows }, { data: lastActivity }, { data: hrCheck }, { data: season2026 }, { data: powerRides }, { data: upcomingRaces }] = await Promise.all([
     // Pełna historia sezonu — potrzebna do gotowości (szczyt CTL, rampa) i progresu.
     supabase
       .from('fitness_metrics')
@@ -60,23 +61,18 @@ export default async function DashboardPage() {
       .eq('athlete_id', athleteId)
       .gte('activity_date', '2026-01-01')
       .order('activity_date', { ascending: true }),
-    // historia FTP — do FTP hero z wykresem
+    // Jazdy z krzywą mocy — REKONSTRUKCJA historii FTP (silnik 28d wstecz, best_efforts; streams
+    // niepotrzebne). intensity_factor = sygnał "twardej jazdy" do envelope dowodowego (hold vs zejście).
     supabase
-      .from('ftp_history')
-      .select('date, ftp_watts')
+      .from('strava_activities')
+      .select('activity_date, type, best_efforts, intensity_factor')
       .eq('athlete_id', athleteId)
-      .order('date', { ascending: true }),
-    // cele TSS bieżącego i przyszłych tygodni — sprzężenie prognozy FTP z planem (CTL ramp)
-    supabase
-      .from('weekly_plans')
-      .select('week_start, weekly_tss_target')
-      .eq('athlete_id', athleteId)
-      .gte('week_start', mondayOfISO(todayISO))
-      .order('week_start', { ascending: true }),
-    // nadchodzące starty — okna taperu w prognozie (pas płaski przed startem, taperDaysFor)
+      .not('best_efforts', 'is', null)
+      .order('activity_date', { ascending: true }),
+    // Nadchodzące starty — fazy prognozy (BUILD/TAPER/REGEN) + markery milestone'ów.
     supabase
       .from('race_calendar')
-      .select('date, priority')
+      .select('name, date, priority')
       .eq('athlete_id', athleteId)
       .gte('date', todayISO)
       .order('date', { ascending: true }),
@@ -121,6 +117,25 @@ export default async function DashboardPage() {
   const ytdKm = (athlete as any)?.ytd_ride_km != null ? Math.round(Number((athlete as any).ytd_ride_km)) : null;
   const progressStats = ytdKm != null ? { ...dbStats, totalKm: ytdKm } : dbStats;
 
+  // ── FTP: rekonstrukcja historii (envelope) + prognoza periodyzowana — w locie server-side (RSC),
+  // zero migracji/stanu. Rekonstrukcja karmi się best_efforts (kompletne od pierwszej jazdy z mocą).
+  const weight = (athlete as any)?.weight_kg != null ? Number((athlete as any).weight_kg) : null;
+  const recon = reconstructFtp((powerRides ?? []) as ReconRide[], todayISO);
+  const reconLast = recon.length ? recon[recon.length - 1].ftp : null;
+  const forecastStart = reconLast ?? ftpData.value; // start prognozy = koniec rekonstrukcji ?? kolumna FTP
+  const races: RaceLite[] = (upcomingRaces ?? []).map((r) => ({
+    name: r.name as string, date: r.date as string, priority: ((r.priority as RacePriority) ?? 'C'),
+  }));
+  const forecast = forecastStart != null
+    ? forecastFtpPeriodized({
+        ftpNow: forecastStart,
+        massKg: weight,
+        today: todayISO,
+        buildRatePerWeek: buildRateFromEnvelope(recon.map((p) => ({ date: p.date, ftp: p.ftp }))),
+        races,
+      })
+    : { points: [], milestones: [], buildRatePerWeek: 0 };
+
   return (
     <div className="flex flex-col gap-4">
       <header className="flex items-center justify-between py-2">
@@ -159,18 +174,15 @@ export default async function DashboardPage() {
         />
       )}
 
-      {/* 5. Progress: FTP hero (real + prognoza) + statystyki + cel sezonu */}
+      {/* 5. Progress: FTP hero (rekonstrukcja + prognoza periodyzowana) + statystyki + cel sezonu */}
       <Progress
         stats={progressStats}
-        ftpHistory={(ftpHistory ?? []) as FtpPoint[]}
-        weightKg={(athlete as any)?.weight_kg ?? null}
+        weightKg={weight}
         seasonGoalKm={(athlete as any)?.season_km_goal ?? null}
         ftpNow={ftpData.value}
-        ctlNow={metricRows.length ? metricRows[metricRows.length - 1].ctl : 0}
-        ctlSeries={metricRows.map((r) => ({ date: r.date, ctl: r.ctl }))}
-        plannedWeeks={(planTargets ?? []).map((p) => ({ weekStart: p.week_start as string, tss: Number(p.weekly_tss_target) || 0 }))}
-        races={(upcomingRaces ?? []).map((r) => ({ date: r.date as string, priority: ((r.priority as RacePriority) ?? 'C') }))}
-        todayISO={todayISO}
+        recon={recon}
+        forecast={forecast.points}
+        milestones={forecast.milestones}
       />
     </div>
   );
