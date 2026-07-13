@@ -10,6 +10,8 @@ import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { computeProgressStats, type ActivityStatRow } from '@/lib/progressStats';
 import { type FtpPoint } from '@/components/veloiq/Progress';
 import { ftpDisplay, deriveFtpSource } from '@/lib/ftp';
+import { localTodayISO, mondayOfISO } from '@/lib/plan';
+import type { RacePriority } from '@/lib/race-taper';
 
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
@@ -26,8 +28,9 @@ export default async function DashboardPage() {
 
   const athleteId = athlete?.id;
   const stravaConnected = !!athlete?.strava_id;
+  const todayISO = localTodayISO();
 
-  const [{ data: pmcRows }, { data: lastActivity }, { data: hrCheck }, { data: season2026 }, { data: ftpHistory }] = await Promise.all([
+  const [{ data: pmcRows }, { data: lastActivity }, { data: hrCheck }, { data: season2026 }, { data: ftpHistory }, { data: planTargets }, { data: upcomingRaces }] = await Promise.all([
     // Pełna historia sezonu — potrzebna do gotowości (szczyt CTL, rampa) i progresu.
     supabase
       .from('fitness_metrics')
@@ -62,6 +65,20 @@ export default async function DashboardPage() {
       .from('ftp_history')
       .select('date, ftp_watts')
       .eq('athlete_id', athleteId)
+      .order('date', { ascending: true }),
+    // cele TSS bieżącego i przyszłych tygodni — sprzężenie prognozy FTP z planem (CTL ramp)
+    supabase
+      .from('weekly_plans')
+      .select('week_start, weekly_tss_target')
+      .eq('athlete_id', athleteId)
+      .gte('week_start', mondayOfISO(todayISO))
+      .order('week_start', { ascending: true }),
+    // nadchodzące starty — okna taperu w prognozie (pas płaski przed startem, taperDaysFor)
+    supabase
+      .from('race_calendar')
+      .select('date, priority')
+      .eq('athlete_id', athleteId)
+      .gte('date', todayISO)
       .order('date', { ascending: true }),
   ]);
 
@@ -142,12 +159,18 @@ export default async function DashboardPage() {
         />
       )}
 
-      {/* 5. Progress: FTP hero + statystyki + cel sezonu */}
+      {/* 5. Progress: FTP hero (real + prognoza) + statystyki + cel sezonu */}
       <Progress
         stats={progressStats}
         ftpHistory={(ftpHistory ?? []) as FtpPoint[]}
         weightKg={(athlete as any)?.weight_kg ?? null}
         seasonGoalKm={(athlete as any)?.season_km_goal ?? null}
+        ftpNow={ftpData.value}
+        ctlNow={metricRows.length ? metricRows[metricRows.length - 1].ctl : 0}
+        ctlSeries={metricRows.map((r) => ({ date: r.date, ctl: r.ctl }))}
+        plannedWeeks={(planTargets ?? []).map((p) => ({ weekStart: p.week_start as string, tss: Number(p.weekly_tss_target) || 0 }))}
+        races={(upcomingRaces ?? []).map((r) => ({ date: r.date as string, priority: ((r.priority as RacePriority) ?? 'C') }))}
+        todayISO={todayISO}
       />
     </div>
   );
