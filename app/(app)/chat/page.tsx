@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useChatStore, type Message, type PendingCard } from '@/components/veloiq/ChatStore';
 
 // GFM (tabele, ~strike~, task-listy) renderowane poprawnie zamiast surowego Markdown.
 // Tabela zawinięta w overflow-x-auto — na wąskim viewporcie (iPhone) scrolluje, nie rozpycha bąbla.
@@ -16,44 +17,36 @@ const mdComponents: Components = {
   td: ({ node, ...props }) => <td className="border border-border px-2 py-1 align-top" {...props} />,
 };
 
-type PendingStatus = 'pending' | 'committed' | 'cancelled' | 'expired';
-interface PendingCard {
-  change_id: string;
-  kind: 'plan' | 'race';
-  diff: string;
-  status: PendingStatus;
-  resultMsg?: string;
-  busy?: boolean;
-}
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  pendings?: PendingCard[];
-}
-
 const TEXTAREA_MAX = 120; // ~4 linie przy 16px; powyżej scroll wewnętrzny
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
+  // Stan wątku (messages/input/suggestions) ze store nad zakładkami — przeżywa nawigację.
+  // loading/error zostają lokalne (ulotne — nie ma sensu ich nieść między zakładkami).
+  const { messages, setMessages, input, setInput, suggestions, setSuggestions, touch, ensureFresh } = useChatStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [suggestions, setSuggestions] = useState<{ label: string; prompt: string }[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // Wejście na czat: jeśli minęło > 30 min bezczynności, wyczyść wątek (świeży start).
+  useEffect(() => {
+    ensureFresh();
+  }, [ensureFresh]);
 
   // Auto-scroll do ostatniej wiadomości po wysłaniu i po odpowiedzi.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  // Sugerowane pytania (chips) — deterministyczne, przy montowaniu. Nice-to-have: brak → pusto.
+  // Sugerowane pytania (chips) — deterministyczne. Pobierz raz; przy powrocie na czat ze
+  // stanem w store już są, nie odpytujemy ponownie.
   useEffect(() => {
+    if (suggestions.length > 0) return;
     fetch('/api/ai/suggestions')
       .then((r) => r.json())
       .then((d) => setSuggestions(Array.isArray(d.suggestions) ? d.suggestions : []))
       .catch(() => setSuggestions([]));
-  }, []);
+  }, [suggestions.length, setSuggestions]);
 
   // Auto-grow textarea do TEXTAREA_MAX, potem scroll wewnętrzny.
   function autoGrow(el: HTMLTextAreaElement) {
@@ -64,6 +57,7 @@ export default function ChatPage() {
   async function sendMessage(textArg?: string) {
     const text = (typeof textArg === 'string' ? textArg : input).trim();
     if (!text || loading) return;
+    touch(); // aktywność → reset 30-min okna świeżości
 
     const nextMessages: Message[] = [...messages, { role: 'user', content: text }];
     setMessages(nextMessages);
@@ -109,6 +103,7 @@ export default function ChatPage() {
   // Klik [Zatwierdź]/[Odrzuć] → BEZPOŚREDNI POST na endpoint, z pominięciem modelu (deterministyczne).
   async function handlePending(pending: PendingCard, action: 'commit' | 'cancel') {
     if (pending.busy || pending.status !== 'pending') return;
+    touch(); // aktywność → reset 30-min okna świeżości
     updatePending(pending.change_id, { busy: true });
     try {
       const res = await fetch(`/api/ai/pending/${pending.change_id}/${action}`, { method: 'POST' });
