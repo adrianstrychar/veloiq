@@ -14,7 +14,9 @@ export type RingReason = 'ebike' | 'no_power' | 'no_ftp' | 'no_structure' | 'bad
 // Unia dyskryminowana: available:true gwarantuje pct/doneMin/targetMin (bez `!` w UI).
 export type ExecutionRing =
   | { available: false; reason?: RingReason }
-  | { available: true; pct: number; doneMin: number; targetMin: number };
+  // recovery: obecne WYŁĄCZNIE dla dnia regeneracyjnego (Z1) — ocena PASS/FAIL + powód do wyświetlenia.
+  // Opcjonalne → gałęzie strukturalne / Z2 / LONG go nie ustawiają, ich zachowanie bez zmian.
+  | { available: true; pct: number; doneMin: number; targetMin: number; recovery?: { pass: boolean; reason: string } };
 
 // Status słowem — JEDNO źródło dla karty (ExecutionRing.tsx) i naklejki share (renderSticker).
 // Progi spójne z kolorami ringu: 90+/75–90/<75.
@@ -86,10 +88,37 @@ export function computeExecutionRing(
   if (ftp == null || ftp <= 0) return { available: false, reason: 'no_ftp' };
 
   if (type === 'Z1') {
-    // Regeneracja: cel = cały dur_min (brak warmup/cooldown), wykonanie = TYLKO Z1
-    // (jazda mocniej niż Z1 łamie cel regeneracji — nie liczy się jako realizacja).
+    // Regeneracja: ocena PASS/FAIL czysto STREFOWA (bez TSS, bez limitu czasu jazdy). Z rozkładu
+    // stref (zoneDistribution — ten sam, którego używa reszta ringu). PASS = jazda utrzymana nisko:
+    // >=60% czasu w Z1, <=2% w Z3, ZERO w Z4+ (żadnego wyjścia ze strefy regeneracji).
     if (planned.dur_min <= 0) return { available: false, reason: 'bad_target' };
-    return ratio(timeInZonesSec(streams, ftp, [0]), planned.dur_min);
+    const dist = zoneDistribution(streams, ftp);
+    const total = dist.reduce((a, b) => a + b, 0);
+    if (total === 0) return { available: false, reason: 'no_power' };
+
+    const z1pct = dist[0] / total;                       // Z1
+    const z3pct = dist[2] / total;                       // Z3
+    const highPct = (dist[3] + dist[4] + dist[5]) / total; // Z4 + Z5 + Z6 łącznie
+
+    const pass = z1pct >= 0.60 && z3pct <= 0.02 && highPct === 0;
+    // Powód FAIL wg ważności: wyjście w Z4+ > za mocno w Z3 > za mało w Z1.
+    const reason = pass
+      ? 'Regeneracja wykonana'
+      : highPct > 0
+        ? 'Za mocno — wyjście ze strefy regeneracji (Z4+)'
+        : z3pct > 0.02
+          ? 'Za intensywnie jak na regenerację (Z3)'
+          : 'Za dużo czasu poza Z1';
+
+    // % do wyświetlenia: PASS → 100 (cel osiągnięty); FAIL → z1pct (ile realnie w Z1, jak blisko był).
+    const z1Min = (dist[0] * streams.dt) / 60;
+    return {
+      available: true,
+      pct: pass ? 100 : Math.round(z1pct * 100),
+      doneMin: Math.round(z1Min),
+      targetMin: Math.round(planned.dur_min),
+      recovery: { pass, reason },
+    };
   }
 
   if (type === 'Z2' || type === 'LONG') {
