@@ -11,7 +11,8 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export interface PlanModificationResult {
   days: PlanDay[];
-  insight: string;
+  insight: string; // opis STANU tygodnia po zmianie → zapisywany na karcie planu (weekly_plans.plan_json)
+  change: string;  // opis SAMEJ zmiany ("skróciłem wtorek bo…") → tylko do rozmowy, NIE zapisywany
   tssTarget: number;
   skippedPastDows: number[]; // dni minione (date < today), których zmiana została odrzucona
 }
@@ -92,8 +93,10 @@ export async function computePlanModification(
       });
 
       const insight = typeof parsed.insight === 'string' ? parsed.insight : 'Plan zaktualizowany.';
+      // change = opis samej edycji do rozmowy; fallback do insight, gdy model go nie zwrócił.
+      const change = typeof parsed.change === 'string' ? parsed.change : insight;
       const tssTarget = days.reduce((s, d) => s + d.tss, 0);
-      return { ok: true, result: { days, insight, tssTarget, skippedPastDows } };
+      return { ok: true, result: { days, insight, change, tssTarget, skippedPastDows } };
     } catch (err: unknown) {
       // Awaria API (kredyty/limit/sieć) → czytelne zdanie; błędy walidacji zostają surowe.
       lastErr = isAiOutage(err) ? AI_UNAVAILABLE_MSG : err instanceof Error ? err.message : String(err);

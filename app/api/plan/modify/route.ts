@@ -56,7 +56,8 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     days: comp.result.days,
-    insight: comp.result.insight,
+    insight: comp.result.insight, // stan tygodnia → karta planu (overrideInsight)
+    change: comp.result.change,   // opis zmiany → wiadomość w czacie
     skippedPastDows: comp.result.skippedPastDows,
   });
 }

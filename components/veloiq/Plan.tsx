@@ -410,8 +410,9 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
       const d = await res.json();
       if (!res.ok || !d.ok) throw new Error(d.error ?? 'modify failed');
       setOverride((o) => ({ ...o, [weekStart]: d.days as PlanDayView[] }));
+      // Karta planu = STAN tygodnia (insight); czat = opis SAMEJ zmiany (change) — różne natury.
       if (d.insight) setOverrideInsight((o) => ({ ...o, [weekStart]: d.insight as string }));
-      setChat((c) => [...c, { role: 'ai', text: (d.insight as string) ?? 'Plan zaktualizowany.' }]);
+      setChat((c) => [...c, { role: 'ai', text: (d.change as string) ?? (d.insight as string) ?? 'Plan zaktualizowany.' }]);
     } catch {
       setChat((c) => [...c, { role: 'ai', text: 'Nie mogę teraz zmodyfikować planu. Spróbuj jeszcze raz.' }]);
     } finally {
