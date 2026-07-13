@@ -1,6 +1,6 @@
 'use client';
 
-import { ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, ReferenceArea, ReferenceDot } from 'recharts';
+import { ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis, Tooltip, ReferenceLine, ReferenceDot } from 'recharts';
 import { C } from '@/lib/theme';
 import type { ProgressStats } from '@/lib/progressStats';
 import { wkgLabel } from '@/lib/level';
@@ -18,10 +18,11 @@ interface ProgressProps {
   milestones: Milestone[];    // cele: starty lub progi W/kg
 }
 
-const PHASE_FILL: Record<string, string> = {
-  TAPER: C.green + '12',   // okno szczytowania — subtelny zielony
-  REGEN: C.muted + '10',   // regeneracja po starcie — szary
-};
+const MONTH_MS = 30 * 86_400_000;
+// Pas prognozy (warstwa renderu): półszerokość rośnie z horyzontem, asymetryczna — niedowiezienie
+// bardziej prawdopodobne niż nadodpowiedź, więc dół szerszy niż góra.
+const BAND_DOWN_PER_MONTH = 2.5; // W/mies. w dół
+const BAND_UP_PER_MONTH = 1.5;   // W/mies. w górę
 
 function dMs(iso: string): number {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
@@ -31,48 +32,63 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-// ── FTP hero: REAL (envelope rekonstrukcji, ciągła cyan) + PROGNOZA periodyzowana (przerywana
-// purple) + pasy faz w tle (TAPER/REGEN) + markery milestone'ów (starty/progi W/kg) ────
+// Próbkowanie miesięczne: ostatni punkt każdego miesiąca (koniec tygodniowego szumu na wykresie).
+function monthlyLast<T extends { t: number }>(pts: T[]): T[] {
+  const by = new Map<string, T>();
+  for (const p of pts) { const d = new Date(p.t); by.set(`${d.getUTCFullYear()}-${d.getUTCMonth()}`, p); }
+  return Array.from(by.values()).sort((a, b) => a.t - b.t);
+}
+
+const PL_MONTH_GEN = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia'];
+
+// ── FTP hero P3: real (envelope, cyan + cień gradientowy) + PROGNOZA (pas niepewności lo-hi purple
+// rozszerzający się z horyzontem + linia przerywana) + 1-2 złote markery celów. Punkty MIESIĘCZNE.
+// Bez pasów faz w tle. Badge liczony od pierwszego ZREKONSTRUOWANEGO punktu (nie seed). ────
 function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
   recon: ReconPoint[]; forecast: ForecastPoint[]; milestones: Milestone[]; weightKg: number | null; ftpNow: number;
 }) {
-  const realPts = recon.map((p) => ({ t: dMs(p.date), ftp: p.ftp }));
-  const fcPts = forecast.map((p) => ({ t: p.t, fc: p.ftp }));
-  const chart: { t: number; ftp?: number; fc?: number }[] = [...realPts, ...fcPts].sort((a, b) => a.t - b.t);
-  const todayT = forecast.length ? forecast[0].t : (realPts.length ? realPts[realPts.length - 1].t : Date.now());
+  // Punkty MIESIĘCZNE (ostatni w miesiącu) — koniec tygodniowego szumu na wykresie.
+  const realMonthly = monthlyLast(recon.map((p) => ({ t: dMs(p.date), ftp: p.ftp })));
+  const todayT = forecast.length ? forecast[0].t : (realMonthly.length ? realMonthly[realMonthly.length - 1].t : Date.now());
+  const fcMonthly = monthlyLast(forecast.map((p) => ({ t: p.t, fc: p.ftp })));
 
-  // OŚ od pierwszego realnego punktu (dynamicznie — zero pustych tygodni przed danymi).
-  const domainStart = realPts.length ? realPts[0].t : todayT;
-  const domainEnd = fcPts.length ? fcPts[fcPts.length - 1].t : todayT;
+  // Pas prognozy (warstwa renderu): lo-hi rozszerzają się z horyzontem (asymetrycznie). U dziś szerokość 0.
+  const fcBand = fcMonthly.map((p) => {
+    const mo = Math.max(0, (p.t - todayT) / MONTH_MS);
+    return { t: p.t, fc: p.fc, band: [Math.round(p.fc - BAND_DOWN_PER_MONTH * mo), Math.round(p.fc + BAND_UP_PER_MONTH * mo)] as [number, number] };
+  });
 
-  const first = realPts.length ? realPts[0].ftp : ftpNow;
+  const chart: { t: number; ftp?: number; fc?: number; band?: [number, number] }[] = [
+    ...realMonthly.map((p) => ({ t: p.t, ftp: p.ftp })),
+    ...fcBand.map((p) => ({ t: p.t, fc: p.fc, band: p.band })),
+  ].sort((a, b) => a.t - b.t);
+
+  const domainStart = realMonthly.length ? realMonthly[0].t : todayT; // oś od pierwszego realnego punktu
+  const domainEnd = fcBand.length ? fcBand[fcBand.length - 1].t : todayT;
+
+  // BADGE OD PRAWDY: przyrost od PIERWSZEGO MIESIĘCZNEGO punktu rekonstrukcji — nie od seedu ani
+  // tygodniowego artefaktu krawędzi okna. Format "+NW · od {miesiąc}".
+  const first = realMonthly.length ? realMonthly[0].ftp : ftpNow;
   const gain = ftpNow - first;
   const pct = first > 0 ? Math.round((gain / first) * 100) : 0;
+  const fromMonth = realMonthly.length ? PL_MONTH_GEN[new Date(realMonthly[0].t).getUTCMonth()] : '';
   const wkg = weightKg ? ftpNow / weightKg : null;
   const levelLabel = wkg != null ? wkgLabel(wkg) : null;
 
-  const allVals = [...realPts.map((p) => p.ftp), ...fcPts.map((p) => p.fc), ...milestones.map((m) => m.ftp)];
+  const allVals = [...realMonthly.map((p) => p.ftp), ...fcBand.flatMap((p) => p.band)];
   const minFtp = allVals.length ? Math.min(...allVals) : ftpNow - 20;
   const maxFtp = allVals.length ? Math.max(...allVals) : ftpNow + 20;
-
-  // Pasy faz w tle: sklej sąsiadujące tygodnie o tej samej NIE-build fazie w przedziały ReferenceArea.
-  const bands: { x1: number; x2: number; phase: string }[] = [];
-  for (const p of forecast) {
-    if (p.phase === 'BUILD') continue;
-    const lastB = bands[bands.length - 1];
-    if (lastB && lastB.phase === p.phase && Math.abs(p.t - lastB.x2) <= 8 * 86_400_000) lastB.x2 = p.t;
-    else bands.push({ x1: p.t - 3 * 86_400_000, x2: p.t, phase: p.phase });
-  }
-
-  // Milestone'y: kropka na prognozie; etykieta FTP tylko gdy wartość ≠ poprzedniej (7 startów o tej
-  // samej prognozie → jedna etykieta, bez tłoku).
-  let prevFtp = -1;
-  const marks = milestones.map((m) => { const showLabel = m.ftp !== prevFtp; prevFtp = m.ftp; return { ...m, showLabel }; });
 
   const monthTicks: number[] = [];
   const ds = new Date(domainStart);
   let mt = new Date(ds.getUTCFullYear(), ds.getUTCMonth(), 15);
   while (mt.getTime() <= domainEnd) { if (mt.getTime() >= domainStart) monthTicks.push(mt.getTime()); mt = new Date(mt.getFullYear(), mt.getMonth() + 1, 15); }
+
+  // Cele: max 2 złote markery — ostatni (np. Nannup) obowiązkowo + najpóźniejszy wcześniejszy o INNEJ
+  // wartości FTP (np. Hlinsko), jeśli jest. Bez etykiet faz.
+  const lastM = milestones.length ? milestones[milestones.length - 1] : null;
+  const earlierM = lastM ? ([...milestones].reverse().find((m) => m.ftp !== lastM.ftp) ?? null) : null;
+  const marks = [earlierM, lastM].filter((m): m is Milestone => m != null);
 
   return (
     <div style={{ background: C.bg, borderRadius: 12, border: `1px solid ${C.border}`, padding: 16, marginBottom: 12 }}>
@@ -95,8 +111,8 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
               <span style={{ fontSize: 14, color: gain > 0 ? C.green : C.red }}>{gain > 0 ? '▲' : '▼'}</span>
               <span style={{ fontSize: 15, fontWeight: 600, color: gain > 0 ? C.green : C.red }}>{gain > 0 ? '+' : ''}{gain}W</span>
             </div>
-            <div style={{ fontSize: 11, color: gain > 0 ? C.green : C.red, fontWeight: 600, marginTop: 4 }}>
-              {gain > 0 ? '+' : ''}{pct}% od {new Date(domainStart).toLocaleDateString('pl-PL', { month: 'short' })}
+            <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginTop: 4 }}>
+              od {fromMonth} · {gain > 0 ? '+' : ''}{pct}%
             </div>
           </div>
         )}
@@ -105,7 +121,13 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
       <div style={{ position: 'relative' }}>
         <ResponsiveContainer width="100%" height={104}>
           <ComposedChart data={chart} margin={{ top: 10, right: 8, left: 8, bottom: 0 }}>
-            <YAxis domain={[minFtp - 6, maxFtp + 6]} hide />
+            <defs>
+              <linearGradient id="ftpRealGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={C.cyan} stopOpacity={0.28} />
+                <stop offset="100%" stopColor={C.cyan} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <YAxis domain={[minFtp - 8, maxFtp + 8]} hide />
             <XAxis
               dataKey="t" type="number" scale="time" domain={[domainStart, domainEnd]} ticks={monthTicks}
               tickFormatter={(t) => new Date(t).toLocaleDateString('pl-PL', { month: 'short' })}
@@ -115,21 +137,24 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
               cursor={{ stroke: C.border }}
               contentStyle={{ background: C.card2, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 11 }}
               labelStyle={{ color: C.muted }}
-              labelFormatter={(t) => new Date(t as number).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })}
-              formatter={(v, name) => [`${v} W`, name === 'fc' ? 'prognoza' : 'FTP (zrekonstruowane)']}
+              labelFormatter={(t) => new Date(t as number).toLocaleDateString('pl-PL', { month: 'short', year: '2-digit' })}
+              formatter={(v, name) => {
+                if (Array.isArray(v)) return [`${v[0]}–${v[1]} W`, 'prognoza (zakres)'];
+                if (name === 'fc') return [`${v} W`, 'prognoza'];
+                return [`${v} W`, 'FTP'];
+              }}
             />
-            {/* Pasy faz w tle — TAPER (zielony) / REGEN (szary); BUILD = brak tła */}
-            {bands.map((b, i) => <ReferenceArea key={i} x1={b.x1} x2={b.x2} fill={PHASE_FILL[b.phase]} stroke="none" />)}
-            {/* Granica real|prognoza */}
             <ReferenceLine x={todayT} stroke={C.border} strokeDasharray="4 4" />
-            {/* PROGNOZA: przerywana purple (odcień inny niż real cyan — nie do pomylenia z pomiarem) */}
+            {/* PROGNOZA — pas niepewności lo-hi (purple ~14%), rozszerza się z horyzontem */}
+            <Area dataKey="band" stroke="none" fill={C.purple} fillOpacity={0.14} isAnimationActive={false} connectNulls={false} activeDot={false} />
+            {/* środkowa linia prognozy — przerywana purple */}
             <Line dataKey="fc" stroke={C.purple} strokeWidth={1.75} strokeDasharray="6 4" dot={false} isAnimationActive={false} connectNulls />
-            {/* REAL: ciągła cyan z kropkami (envelope rekonstrukcji) */}
-            <Line dataKey="ftp" stroke={C.cyan} strokeWidth={2.5} dot={{ r: 2.5, fill: C.cyan, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} connectNulls />
-            {/* Markery milestone'ów — kropka (start=red / próg=cyan), etykieta FTP gdy zmiana wartości */}
+            {/* HISTORIA — cień gradientowy cyan→transparent + ciągła linia cyan na wierzchu */}
+            <Area dataKey="ftp" stroke={C.cyan} strokeWidth={2.5} fill="url(#ftpRealGrad)" dot={{ r: 2.5, fill: C.cyan, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} connectNulls />
+            {/* Cele: złote kropki + FTP (max 2) */}
             {marks.map((m, i) => (
-              <ReferenceDot key={i} x={m.t} y={m.ftp} r={3.5} fill={m.kind === 'race' ? C.red : C.cyan} stroke={C.bg} strokeWidth={1}
-                label={m.showLabel ? { value: `${m.ftp}`, position: 'top', fill: m.kind === 'race' ? C.red : C.cyan, fontSize: 9, fontWeight: 700 } : undefined} />
+              <ReferenceDot key={i} x={m.t} y={m.ftp} r={4} fill={C.yellow} stroke={C.bg} strokeWidth={1.5}
+                label={{ value: `${m.ftp}`, position: 'top', fill: C.yellow, fontSize: 9.5, fontWeight: 700 }} />
             ))}
           </ComposedChart>
         </ResponsiveContainer>
