@@ -49,8 +49,20 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
 }) {
   // Punkty MIESIĘCZNE (ostatni w miesiącu) — koniec tygodniowego szumu na wykresie.
   const realMonthly = monthlyLast(recon.map((p) => ({ t: dMs(p.date), ftp: p.ftp })));
-  const todayT = forecast.length ? forecast[0].t : (realMonthly.length ? realMonthly[realMonthly.length - 1].t : Date.now());
-  const fcMonthly = monthlyLast(forecast.map((p) => ({ t: p.t, fc: p.ftp })));
+  const realLast = realMonthly.length ? realMonthly[realMonthly.length - 1] : null;
+
+  // STYK real↔forecast: węzeł "dziś" (np. 308) NALEŻY DO OBU serii. monthlyLast nie może go zjeść —
+  // dlatego prognoza startuje DOKŁADNIE od punktu styku (t i wartość = ostatni realny punkt), a
+  // miesięczne próbkowanie prognozy idzie od NASTĘPNYCH miesięcy. Bez tego cyan i purple się rozłączały.
+  const monthKey = (t: number) => { const d = new Date(t); return `${d.getUTCFullYear()}-${d.getUTCMonth()}`; };
+  const fcRaw = forecast.map((p) => ({ t: p.t, fc: p.ftp }));
+  const startNode = realLast ? { t: realLast.t, fc: realLast.ftp } : (fcRaw[0] ?? null);
+  const fcMonthly = startNode
+    ? [startNode, ...monthlyLast(fcRaw.filter((p) => p.t > startNode.t && monthKey(p.t) !== monthKey(startNode.t)))]
+    : [];
+
+  // "Dziś" = punkt styku (linia referencyjna + szerokość pasa 0 w tym punkcie).
+  const todayT = startNode ? startNode.t : (forecast.length ? forecast[0].t : Date.now());
 
   // Pas prognozy (warstwa renderu): lo-hi rozszerzają się z horyzontem (asymetrycznie). U dziś szerokość 0.
   const fcBand = fcMonthly.map((p) => {
@@ -58,10 +70,11 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
     return { t: p.t, fc: p.fc, band: [Math.round(p.fc - BAND_DOWN_PER_MONTH * mo), Math.round(p.fc + BAND_UP_PER_MONTH * mo)] as [number, number] };
   });
 
-  const chart: { t: number; ftp?: number; fc?: number; band?: [number, number] }[] = [
-    ...realMonthly.map((p) => ({ t: p.t, ftp: p.ftp })),
-    ...fcBand.map((p) => ({ t: p.t, fc: p.fc, band: p.band })),
-  ].sort((a, b) => a.t - b.t);
+  // MERGE po t → wiersz "dziś" niesie i ftp (real) i fc/band (forecast) = WSPÓLNY wierzchołek styku.
+  const byT = new Map<number, { t: number; ftp?: number; fc?: number; band?: [number, number] }>();
+  for (const p of realMonthly) byT.set(p.t, { ...(byT.get(p.t) ?? { t: p.t }), ftp: p.ftp });
+  for (const p of fcBand) byT.set(p.t, { ...(byT.get(p.t) ?? { t: p.t }), fc: p.fc, band: p.band });
+  const chart = Array.from(byT.values()).sort((a, b) => a.t - b.t);
 
   const domainStart = realMonthly.length ? realMonthly[0].t : todayT; // oś od pierwszego realnego punktu
   const domainEnd = fcBand.length ? fcBand[fcBand.length - 1].t : todayT;
@@ -75,9 +88,13 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
   const wkg = weightKg ? ftpNow / weightKg : null;
   const levelLabel = wkg != null ? wkgLabel(wkg) : null;
 
-  const allVals = [...realMonthly.map((p) => p.ftp), ...fcBand.flatMap((p) => p.band)];
-  const minFtp = allVals.length ? Math.min(...allVals) : ftpNow - 20;
-  const maxFtp = allVals.length ? Math.max(...allVals) : ftpNow + 20;
+  // OŚ Y z DANYCH: realne punkty + CENTRALNA linia prognozy (fc), NIE krawędzie pasa. Pas może lekko
+  // wystawać poza kadr — to OK, dane mają wypełniać wykres (~85% wys. zamiast ~60%). Margines ~10%
+  // zakresu (min 3W), zamiast sztywnych ±8 → cień cyan odzyskuje wysokość, koniec pustki u dołu.
+  const dataVals = [...realMonthly.map((p) => p.ftp), ...fcMonthly.map((p) => p.fc)];
+  const dMin = dataVals.length ? Math.min(...dataVals) : ftpNow - 15;
+  const dMax = dataVals.length ? Math.max(...dataVals) : ftpNow + 15;
+  const yPad = Math.max(3, Math.round((dMax - dMin) * 0.1));
 
   const monthTicks: number[] = [];
   const ds = new Date(domainStart);
@@ -127,7 +144,7 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
                 <stop offset="100%" stopColor={C.cyan} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <YAxis domain={[minFtp - 8, maxFtp + 8]} hide />
+            <YAxis domain={[dMin - yPad, dMax + yPad]} hide />
             <XAxis
               dataKey="t" type="number" scale="time" domain={[domainStart, domainEnd]} ticks={monthTicks}
               tickFormatter={(t) => new Date(t).toLocaleDateString('pl-PL', { month: 'short' })}
