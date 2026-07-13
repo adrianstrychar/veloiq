@@ -1,103 +1,78 @@
 'use client';
 
-import { useMemo } from 'react';
-import { ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis, Tooltip, ReferenceLine } from 'recharts';
+import { ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, ReferenceArea, ReferenceDot } from 'recharts';
 import { C } from '@/lib/theme';
 import type { ProgressStats } from '@/lib/progressStats';
-import { wkgLabel } from '@/lib/fitness-level';
-import { forecastFtp, type PlannedWeekTss, type RaceLite, type CtlPointF } from '@/lib/ftp-forecast';
-
-export interface FtpPoint {
-  date: string;
-  ftp_watts: number;
-}
+import { wkgLabel } from '@/lib/level';
+import type { ReconPoint } from '@/lib/ftp-reconstruct';
+import type { ForecastPoint, Milestone } from '@/lib/ftp-forecast';
 
 interface ProgressProps {
   stats: ProgressStats;
-  ftpHistory: FtpPoint[];
   weightKg: number | null;
   seasonGoalKm: number | null;
-  // Prognoza FTP (liczona w locie w komponencie, cache = useMemo; zero migracji/stanu):
-  ftpNow: number | null;          // wyświetlane FTP (measured ?? estimate); null → placeholder CTA
-  ctlNow: number;
-  ctlSeries: CtlPointF[];         // pełna seria CTL (dashboard i tak ją ma) → rampFactor kalibracji G
-  plannedWeeks: PlannedWeekTss[]; // weekly_tss_target bieżący + przyszłe
-  races: RaceLite[];              // nadchodzące starty → okna taperu (pas płaski przed startem)
-  todayISO: string;
+  // Rekonstrukcja + prognoza policzone SERVER-SIDE (dashboard/page, w locie — zero migracji/stanu):
+  ftpNow: number | null;      // wyświetlane FTP (ostatni punkt rekonstrukcji ?? kolumna); null → placeholder
+  recon: ReconPoint[];        // historia zrekonstruowana (envelope) — linia real; [] gdy brak danych mocy
+  forecast: ForecastPoint[];  // prognoza periodyzowana (fazy BUILD/TAPER/REGEN)
+  milestones: Milestone[];    // cele: starty lub progi W/kg
 }
 
-const WEEK_MS = 7 * 86_400_000;
-const FORECAST_WEEKS = 14;      // ~3.5 mies. prognozy
-const REAL_WINDOW_WEEKS = 16;   // ~4 mies. realu przy bogatej historii
-const RICH_HISTORY_WEEKS = 12;  // próg kompozycji "istniejący user"
+const PHASE_FILL: Record<string, string> = {
+  TAPER: C.green + '12',   // okno szczytowania — subtelny zielony
+  REGEN: C.muted + '10',   // regeneracja po starcie — szary
+};
 
+function dMs(iso: string): number {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
+}
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-// ── FTP hero: real (linia ciągła) + PROGNOZA (pas p25-p75-stylowy, przerywany kontur) ────
-function FtpHero({ ftpHistory, weightKg, ftpNow, ctlNow, ctlSeries, plannedWeeks, races, todayISO }: {
-  ftpHistory: FtpPoint[]; weightKg: number | null; ftpNow: number; ctlNow: number;
-  ctlSeries: CtlPointF[]; plannedWeeks: PlannedWeekTss[]; races: RaceLite[]; todayISO: string;
+// ── FTP hero: REAL (envelope rekonstrukcji, ciągła cyan) + PROGNOZA periodyzowana (przerywana
+// purple) + pasy faz w tle (TAPER/REGEN) + markery milestone'ów (starty/progi W/kg) ────
+function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
+  recon: ReconPoint[]; forecast: ForecastPoint[]; milestones: Milestone[]; weightKg: number | null; ftpNow: number;
 }) {
-  // Kompozycja: bogata historia (≥12 tyg. rozpiętości) → okno 16 tyg. realu; nowy user
-  // (0-1 pomiarów / krótka historia) → punkt startowy "dziś" + sama trajektoria prognozy.
-  const todayT = new Date(todayISO + 'T12:00:00Z').getTime();
-  const histSpanWeeks = ftpHistory.length >= 2
-    ? (new Date(ftpHistory[ftpHistory.length - 1].date).getTime() - new Date(ftpHistory[0].date).getTime()) / WEEK_MS
-    : 0;
-  const rich = histSpanWeeks >= RICH_HISTORY_WEEKS;
-  const domainStart = todayT - (rich ? REAL_WINDOW_WEEKS : 2) * WEEK_MS;
-  const domainEnd = todayT + FORECAST_WEEKS * WEEK_MS;
+  const realPts = recon.map((p) => ({ t: dMs(p.date), ftp: p.ftp }));
+  const fcPts = forecast.map((p) => ({ t: p.t, fc: p.ftp }));
+  const chart: { t: number; ftp?: number; fc?: number }[] = [...realPts, ...fcPts].sort((a, b) => a.t - b.t);
+  const todayT = forecast.length ? forecast[0].t : (realPts.length ? realPts[realPts.length - 1].t : Date.now());
 
-  // Prognoza w locie + cache w pamięci komponentu (useMemo) — rekalibracja naturalna:
-  // każdy render liczy z aktualnych danych (historia/CTL/plan), zero materializacji.
-  const forecast = useMemo(
-    () => forecastFtp({
-      ftpNow,
-      massKg: weightKg,
-      ctlNow,
-      plannedWeeks,
-      ftpHistory: ftpHistory.map((p) => ({ date: p.date, ftp: p.ftp_watts })),
-      ctlSeries,
-      races,
-      today: todayISO,
-      horizonWeeks: FORECAST_WEEKS,
-    }),
-    [ftpNow, weightKg, ctlNow, ctlSeries, plannedWeeks, ftpHistory, races, todayISO]
-  );
+  // OŚ od pierwszego realnego punktu (dynamicznie — zero pustych tygodni przed danymi).
+  const domainStart = realPts.length ? realPts[0].t : todayT;
+  const domainEnd = fcPts.length ? fcPts[fcPts.length - 1].t : todayT;
 
-  // Serie wykresu: real (punkty historii w oknie; nowy user → syntetyczny punkt "dziś"),
-  // prognoza (pas [lo,hi] + linia centralna) doklejona od dziś.
-  const realPts = ftpHistory
-    .map((p) => ({ t: new Date(p.date).getTime(), ftp: p.ftp_watts }))
-    .filter((p) => p.t >= domainStart);
-  if (realPts.length === 0) realPts.push({ t: todayT, ftp: ftpNow });
-  const fcPts = forecast.points.map((p) => ({ t: p.t, band: [p.lo, p.hi] as [number, number], fc: p.central }));
-  const chart: { t: number; ftp?: number; band?: [number, number]; fc?: number }[] =
-    [...realPts, ...fcPts].sort((a, b) => a.t - b.t);
-
-  const last = ftpNow;
-  const first = realPts[0].ftp;
-  const gain = (realPts[realPts.length - 1].ftp ?? last) - first;
+  const first = realPts.length ? realPts[0].ftp : ftpNow;
+  const gain = ftpNow - first;
   const pct = first > 0 ? Math.round((gain / first) * 100) : 0;
-  const wkg = weightKg ? last / weightKg : null;
+  const wkg = weightKg ? ftpNow / weightKg : null;
+  const levelLabel = wkg != null ? wkgLabel(wkg) : null;
 
-  const allVals = [...realPts.map((p) => p.ftp), ...fcPts.flatMap((p) => p.band)];
-  const minFtp = Math.min(...allVals);
-  const maxFtp = Math.max(...allVals);
+  const allVals = [...realPts.map((p) => p.ftp), ...fcPts.map((p) => p.fc), ...milestones.map((m) => m.ftp)];
+  const minFtp = allVals.length ? Math.min(...allVals) : ftpNow - 20;
+  const maxFtp = allVals.length ? Math.max(...allVals) : ftpNow + 20;
 
-  // Ticki na środku miesiąca przez całą domenę (real + prognoza).
-  const monthTicks: number[] = [];
-  const ds = new Date(domainStart);
-  let mt = new Date(ds.getFullYear(), ds.getMonth(), 15);
-  while (mt.getTime() <= domainEnd) {
-    if (mt.getTime() >= domainStart) monthTicks.push(mt.getTime());
-    mt = new Date(mt.getFullYear(), mt.getMonth() + 1, 15);
+  // Pasy faz w tle: sklej sąsiadujące tygodnie o tej samej NIE-build fazie w przedziały ReferenceArea.
+  const bands: { x1: number; x2: number; phase: string }[] = [];
+  for (const p of forecast) {
+    if (p.phase === 'BUILD') continue;
+    const lastB = bands[bands.length - 1];
+    if (lastB && lastB.phase === p.phase && Math.abs(p.t - lastB.x2) <= 8 * 86_400_000) lastB.x2 = p.t;
+    else bands.push({ x1: p.t - 3 * 86_400_000, x2: p.t, phase: p.phase });
   }
 
-  // Podpis poziomu z W/kg — ta sama funkcja co kafel FTP (koniec rozjazdu percentyla).
-  const levelLabel = wkg != null ? wkgLabel(wkg) : null;
+  // Milestone'y: kropka na prognozie; etykieta FTP tylko gdy wartość ≠ poprzedniej (7 startów o tej
+  // samej prognozie → jedna etykieta, bez tłoku).
+  let prevFtp = -1;
+  const marks = milestones.map((m) => { const showLabel = m.ftp !== prevFtp; prevFtp = m.ftp; return { ...m, showLabel }; });
+
+  const monthTicks: number[] = [];
+  const ds = new Date(domainStart);
+  let mt = new Date(ds.getUTCFullYear(), ds.getUTCMonth(), 15);
+  while (mt.getTime() <= domainEnd) { if (mt.getTime() >= domainStart) monthTicks.push(mt.getTime()); mt = new Date(mt.getFullYear(), mt.getMonth() + 1, 15); }
 
   return (
     <div style={{ background: C.bg, borderRadius: 12, border: `1px solid ${C.border}`, padding: 16, marginBottom: 12 }}>
@@ -105,7 +80,7 @@ function FtpHero({ ftpHistory, weightKg, ftpNow, ctlNow, ctlSeries, plannedWeeks
         <div>
           <div style={{ fontSize: 10, color: C.muted, letterSpacing: '0.1em', fontWeight: 600, marginBottom: 4 }}>TWÓJ SILNIK · FTP</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <span style={{ fontSize: 38, fontWeight: 600, color: C.cyan, lineHeight: 1 }}>{last}</span>
+            <span style={{ fontSize: 38, fontWeight: 600, color: C.cyan, lineHeight: 1 }}>{ftpNow}</span>
             <span style={{ fontSize: 14, color: C.muted }}>W</span>
             {wkg && <span style={{ fontSize: 13, color: C.muted }}>· {wkg.toFixed(2)} W/kg</span>}
           </div>
@@ -121,19 +96,18 @@ function FtpHero({ ftpHistory, weightKg, ftpNow, ctlNow, ctlSeries, plannedWeeks
               <span style={{ fontSize: 15, fontWeight: 600, color: gain > 0 ? C.green : C.red }}>{gain > 0 ? '+' : ''}{gain}W</span>
             </div>
             <div style={{ fontSize: 11, color: gain > 0 ? C.green : C.red, fontWeight: 600, marginTop: 4 }}>
-              {gain > 0 ? '+' : ''}{pct}% {gain > 0 ? 'mocniejszy' : 'słabszy'}
+              {gain > 0 ? '+' : ''}{pct}% od {new Date(domainStart).toLocaleDateString('pl-PL', { month: 'short' })}
             </div>
           </div>
         )}
       </div>
 
       <div style={{ position: 'relative' }}>
-        <ResponsiveContainer width="100%" height={96}>
-          <ComposedChart data={chart} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-            <YAxis domain={[minFtp - 6, maxFtp + 4]} hide />
+        <ResponsiveContainer width="100%" height={104}>
+          <ComposedChart data={chart} margin={{ top: 10, right: 8, left: 8, bottom: 0 }}>
+            <YAxis domain={[minFtp - 6, maxFtp + 6]} hide />
             <XAxis
-              dataKey="t" type="number" scale="time"
-              domain={[domainStart, domainEnd]} ticks={monthTicks}
+              dataKey="t" type="number" scale="time" domain={[domainStart, domainEnd]} ticks={monthTicks}
               tickFormatter={(t) => new Date(t).toLocaleDateString('pl-PL', { month: 'short' })}
               tick={{ fill: C.muted, fontSize: 10 }} axisLine={false} tickLine={false}
             />
@@ -142,36 +116,28 @@ function FtpHero({ ftpHistory, weightKg, ftpNow, ctlNow, ctlSeries, plannedWeeks
               contentStyle={{ background: C.card2, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 11 }}
               labelStyle={{ color: C.muted }}
               labelFormatter={(t) => new Date(t as number).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })}
-              formatter={(v, name) => {
-                if (Array.isArray(v)) return [`${v[0]}–${v[1]} W`, 'prognoza (pas)'];
-                if (name === 'fc') return [`${v} W`, 'prognoza'];
-                return [`${v} W`, 'FTP'];
-              }}
+              formatter={(v, name) => [`${v} W`, name === 'fc' ? 'prognoza' : 'FTP (zrekonstruowane)']}
             />
-            {/* Granica real|prognoza — pionowa przerywana na dziś */}
+            {/* Pasy faz w tle — TAPER (zielony) / REGEN (szary); BUILD = brak tła */}
+            {bands.map((b, i) => <ReferenceArea key={i} x1={b.x1} x2={b.x2} fill={PHASE_FILL[b.phase]} stroke="none" />)}
+            {/* Granica real|prognoza */}
             <ReferenceLine x={todayT} stroke={C.border} strokeDasharray="4 4" />
-            {/* PROGNOZA: pas lo–hi (wypełnienie ~15%) + przerywana linia centralna — odcień
-                inny niż real (purple vs cyan), kontur dashed: nikt nie pomyli obietnicy z pomiarem. */}
-            <Area dataKey="band" stroke={C.purple + '66'} strokeDasharray="5 4" strokeWidth={1}
-              fill={C.purple + '26'} isAnimationActive={false} connectNulls={false} activeDot={false} />
-            <Line dataKey="fc" stroke={C.purple} strokeWidth={1.5} strokeDasharray="6 4"
-              dot={false} isAnimationActive={false} connectNulls={false} />
-            {/* REAL: linia ciągła cyan z kropkami (jak dotąd) */}
-            <Line dataKey="ftp" stroke={C.cyan} strokeWidth={2.5}
-              dot={{ r: 3, fill: C.cyan, strokeWidth: 0 }} activeDot={{ r: 5 }}
-              isAnimationActive={false} connectNulls />
+            {/* PROGNOZA: przerywana purple (odcień inny niż real cyan — nie do pomylenia z pomiarem) */}
+            <Line dataKey="fc" stroke={C.purple} strokeWidth={1.75} strokeDasharray="6 4" dot={false} isAnimationActive={false} connectNulls />
+            {/* REAL: ciągła cyan z kropkami (envelope rekonstrukcji) */}
+            <Line dataKey="ftp" stroke={C.cyan} strokeWidth={2.5} dot={{ r: 2.5, fill: C.cyan, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} connectNulls />
+            {/* Markery milestone'ów — kropka (start=red / próg=cyan), etykieta FTP gdy zmiana wartości */}
+            {marks.map((m, i) => (
+              <ReferenceDot key={i} x={m.t} y={m.ftp} r={3.5} fill={m.kind === 'race' ? C.red : C.cyan} stroke={C.bg} strokeWidth={1}
+                label={m.showLabel ? { value: `${m.ftp}`, position: 'top', fill: m.kind === 'race' ? C.red : C.cyan, fontSize: 9, fontWeight: 700 } : undefined} />
+            ))}
           </ComposedChart>
         </ResponsiveContainer>
-        {/* Etykieta pasa — na prognozowanej połowie wykresu */}
-        <span style={{
-          position: 'absolute', top: 4, right: 8, fontSize: 8, fontWeight: 700,
-          letterSpacing: '0.12em', color: C.purple, pointerEvents: 'none',
-        }}>
+        <span style={{ position: 'absolute', top: 4, right: 8, fontSize: 8, fontWeight: 700, letterSpacing: '0.12em', color: C.purple, pointerEvents: 'none' }}>
           PROGNOZA
         </span>
       </div>
 
-      {/* Poziom z W/kg — kategoria z weryfikowalnej tabeli progów (nie percentyl populacyjny). */}
       {levelLabel != null && (
         <div style={{ marginTop: 14, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
           <span style={{ fontSize: 10, color: C.muted, letterSpacing: '0.08em', fontWeight: 600 }}>POZIOM (W/KG)</span>
@@ -196,7 +162,7 @@ function FtpPlaceholder() {
   );
 }
 
-export function Progress({ stats, ftpHistory, weightKg, seasonGoalKm, ftpNow, ctlNow, ctlSeries, plannedWeeks, races, todayISO }: ProgressProps) {
+export function Progress({ stats, weightKg, seasonGoalKm, ftpNow, recon, forecast, milestones }: ProgressProps) {
   const goalPct = seasonGoalKm && seasonGoalKm > 0 ? clamp(Math.round((stats.totalKm / seasonGoalKm) * 100), 0, 100) : null;
 
   // Pace marker: oczekiwane km wg dnia roku (realne, nie wymyślone).
@@ -220,12 +186,9 @@ export function Progress({ stats, ftpHistory, weightKg, seasonGoalKm, ftpNow, ct
         <span style={{ fontSize: 11, color: C.muted }}>od początku sezonu</span>
       </div>
 
-      {/* FTP hero: real + prognoza (jest punkt startowy) / placeholder CTA (FTP null) */}
+      {/* FTP hero: real (rekonstrukcja) + prognoza (jest punkt startowy) / placeholder CTA (FTP null) */}
       {ftpNow != null ? (
-        <FtpHero
-          ftpHistory={ftpHistory} weightKg={weightKg} ftpNow={ftpNow} ctlNow={ctlNow}
-          ctlSeries={ctlSeries} plannedWeeks={plannedWeeks} races={races} todayISO={todayISO}
-        />
+        <FtpHero recon={recon} forecast={forecast} milestones={milestones} weightKg={weightKg} ftpNow={ftpNow} />
       ) : (
         <FtpPlaceholder />
       )}
