@@ -24,6 +24,7 @@ export interface StickerPlanData {
   label: string;              // nazwa treningu (np. "Threshold 3×15min")
   pct: number;                // completion% z computeExecutionRing — TO SAMO źródło co karta
   planned: PlannedWorkout;    // struktura dnia → profil interwałów
+  recovery?: { pass: boolean; reason: string }; // dzień regeneracyjny (Z1): kolor ringu binarny (pass/fail)
 }
 
 export interface StickerData {
@@ -37,6 +38,7 @@ const PAD = 56;                // margines na cień — jedyny "pusty" obszar PN
 
 const ACCENT = '#00CFFF';      // słupki/ślad/plan + "IQ" w logo
 const RING_GREEN = '#00E87A';  // ring wykonania + status
+const RING_RED = '#d64f4f';    // FAIL dnia regeneracyjnego (Z1) — ta sama czerwień co karta (toneFor)
 const NONWORK = '#828C95';     // warmup/rest/cooldown
 const WHITE = '#FFFFFF';
 const CAPTION = '#AEB9C2';
@@ -214,7 +216,10 @@ function renderPlan(data: StickerData, fam: string): HTMLCanvasElement {
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.strokeStyle = RING_GREEN;
+  // Dzień regeneracyjny (recovery obecne): kolor BINARNY — zielony natywny stickera (pass) /
+  // czerwień karty (fail). Inne typy (recovery undefined) → RING_GREEN jak dotąd, bez zmian.
+  const ringColor = plan.recovery ? (plan.recovery.pass ? RING_GREEN : RING_RED) : RING_GREEN;
+  ctx.strokeStyle = ringColor;
   ctx.lineWidth = 34;
   ctx.beginPath();
   ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * Math.min(100, plan.pct)) / 100);
@@ -225,9 +230,12 @@ function renderPlan(data: StickerData, fam: string): HTMLCanvasElement {
   ctx.fillStyle = WHITE;
   ctx.font = `600 88px ${fam}`;
   ctx.fillText(`${Math.round(plan.pct)}%`, cx, cy - 70);
-  ctx.fillStyle = RING_GREEN;
+  // Status: recovery → 'Idealnie' (pass) / 'Poniżej celu' (fail; pełny powód zostaje na karcie —
+  // długie powody Z3/Z4+ nie mieszczą się w środku ringu). Inne typy → ringHeadline(pct), bez zmian.
+  const status = plan.recovery ? (plan.recovery.pass ? 'Idealnie' : 'Poniżej celu') : ringHeadline(plan.pct);
+  ctx.fillStyle = ringColor;
   ctx.font = `400 34px ${fam}`;
-  ctx.fillText(ringHeadline(plan.pct), cx, cy + 34);
+  ctx.fillText(status, cx, cy + 34);
 
   // Kolumna prawa — wyśrodkowana pionowo względem ringu (wspólna oś w contentH).
   const colX = PAD + RING_D + COL_GAP;

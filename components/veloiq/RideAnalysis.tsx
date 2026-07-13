@@ -631,7 +631,7 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
         {/* Pierścień realizacji celu dnia — przy głównych kaflach; brak planu/mocy → ukryty.
             `planned` gwarantowane niepuste, bo ring.available wynika z planned && streams. */}
         {ring.available && planned && (
-          <ExecutionRing pct={ring.pct} planned={planned} />
+          <ExecutionRing pct={ring.pct} planned={planned} recovery={ring.recovery} />
         )}
 
         {/* Auto-korekta po przeciążeniu — [Zatwierdź]/[Odrzuć] przez pending (#62) */}
@@ -695,7 +695,7 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
             // Wariant 'plan' tylko gdy dzień miał plan i ring jest dostępny — % i status
             // z computeExecutionRing (to samo źródło co karta), struktura dnia → profil.
             plan: ring.available && planned
-              ? { label: planned.label, pct: ring.pct, planned }
+              ? { label: planned.label, pct: ring.pct, planned, recovery: ring.recovery }
               : null,
           }}
           onClose={() => setShareOpen(false)}

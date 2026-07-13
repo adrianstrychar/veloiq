@@ -44,8 +44,12 @@ const STROKE = 9;
 const R = (SIZE - STROKE) / 2;
 const CIRC = 2 * Math.PI * R;
 
-export default function ExecutionRing({ pct, planned }: { pct: number; planned: PlannedWorkout }) {
-  const t = toneFor(pct);
+export default function ExecutionRing({ pct, planned, recovery }: { pct: number; planned: PlannedWorkout; recovery?: { pass: boolean; reason: string } }) {
+  // Dzień regeneracyjny (recovery obecne = type==='Z1'): kolor i etykieta BINARNE z recovery.pass —
+  // zielony (toneFor 100) / czerwony (toneFor 0) z TEJ SAMEJ palety, bez pośredniego złota. Wszystkie
+  // inne typy (recovery===undefined) → kolor i etykiety BEZ ZMIAN, dalej z toneFor(pct)/ringHeadline.
+  const t = recovery ? toneFor(recovery.pass ? 100 : 0) : toneFor(pct);
+  const headline = recovery ? (recovery.pass ? 'Idealnie' : 'Poniżej celu') : ringHeadline(pct);
   const gradId = useId();
   const offset = CIRC * (1 - pct / 100);
 
@@ -81,10 +85,10 @@ export default function ExecutionRing({ pct, planned }: { pct: number; planned: 
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
         <div style={{ fontSize: 21, fontWeight: 700, color: t.deep, lineHeight: 1.1 }}>
-          {ringHeadline(pct)}
+          {headline}
         </div>
         <div style={{ fontSize: 12.5, color: C.muted }}>
-          {planName(planned)} · {subStatus(pct)}
+          {recovery ? recovery.reason : `${planName(planned)} · ${subStatus(pct)}`}
         </div>
       </div>
     </div>
