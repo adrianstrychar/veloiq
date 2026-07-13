@@ -232,9 +232,10 @@ export function buildModifyPrompt(
     'STRUKTURA: dni SST/THR/OU/VO2 mają pole "structure" z parametrami interwałów — SST/THR/VO2: {"reps","work_min","work_w","rest_min"}; OU: {"reps","cycles","under_min","under_w","over_min","over_w","rest_min"} (blok = cycles×(under_min+over_min) min, rest_min = przerwa Z1 między blokami).',
     'Dni NIEZMIENIANE: przepisz structure BEZ ZMIAN. Dni zmieniane na SST/THR/OU/VO2: podaj nowe structure spójne z dur_min (rozgrzewka 20 SST / 25 THR-OU-VO2 + część główna + schłodzenie 10 = dur_min ±2). Dni OFF/Z1/Z2/LONG: structure null.',
     'Label: dla dni ze structure zostanie wygenerowany przez serwer (możesz pominąć). Dla pozostałych: krótka nazwa, MAX ~3 słowa, bez zdań.',
-    'insight: 1–2 zdania PO POLSKU co zmieniłeś i dlaczego — MUSI zgadzać się z nowym planem.',
+    'insight: 1–2 zdania PO POLSKU opisujące AKTUALNY tydzień PO zmianie — co to za tydzień i na co zwrócić uwagę (jak przy generacji planu, opis STANU). NIE pisz "zmieniłem/skróciłem" — to opis planu, nie edycji. MUSI zgadzać się z nowym planem.',
+    'change: 1–2 zdania PO POLSKU co KONKRETNIE zmieniłeś i dlaczego (np. "Skróciłem wtorkowe interwały, bo brakowało regeneracji po weekendzie."). To idzie do rozmowy z zawodnikiem, NIE na kartę planu.',
     'userSpecifiedDays: WYŁĄCZNIE dni (dow), które user JAWNIE wymienił w prośbie (np. "wtorek Z2, środa wolna" → [2,3]). NIE dokładaj tu dni, które tylko przebudowałeś dla równowagi TSS — te idą do changedDays. Serwer blokuje (lock) TYLKO userSpecifiedDays.',
-    'Zwróć WYŁĄCZNIE JSON (bez markdown): {"days":[...7 dni dow 1..7...],"insight":"...","changedDays":[dow przebudowane w planie],"userSpecifiedDays":[dow jawnie wymienione przez usera],"unlock":[dow do odblokowania],"off":[dow jawnie wskazane jako wolne]}.',
+    'Zwróć WYŁĄCZNIE JSON (bez markdown): {"days":[...7 dni dow 1..7...],"insight":"...","change":"...","changedDays":[dow przebudowane w planie],"userSpecifiedDays":[dow jawnie wymienione przez usera],"unlock":[dow do odblokowania],"off":[dow jawnie wskazane jako wolne]}.',
   ].join(' ');
 
   const user = [
@@ -242,7 +243,7 @@ export function buildModifyPrompt(
     '',
     `Prośba zawodnika: "${message}"`,
     '',
-    'Zwróć zmodyfikowany plan jako JSON {days, insight}. Nie dodawaj pola date.',
+    'Zwróć zmodyfikowany plan jako JSON {days, insight, change}. Nie dodawaj pola date.',
   ].join('\n');
 
   return { system, user };
