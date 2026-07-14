@@ -5,6 +5,10 @@
 
 export const AI_UNAVAILABLE_MSG = 'Trener AI chwilowo niedostępny, spróbuj za chwilę.';
 export const AI_GENERIC_MSG = 'Nie udało się przygotować odpowiedzi AI — spróbuj ponownie.';
+// Odpowiedź ucięta na limicie tokenów (stop_reason='max_tokens') — patrz parse-json-response.ts.
+export const AI_TOO_LONG_MSG = 'Odpowiedź AI była zbyt długa — spróbuj ponownie.';
+// Strategia: komunikat po nieudanym auto-retry z wyższym limitem (dwie próby ucięte).
+export const STRATEGY_TOO_COMPLEX_MSG = 'Strategia zbyt złożona — spróbuj ponownie.';
 
 // Outage = wszystko, co znaczy "to nie wina requestu": brak kredytów (400 z komunikatem
 // o billingu), auth/limit/przeciążenie/5xx, błąd połączenia (brak statusu HTTP).
