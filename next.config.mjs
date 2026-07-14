@@ -1,10 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Build produkcyjny (Vercel) traktuje ESLint warnings i TS errors jako blokujące.
-  // Wyłączamy blokowanie — to ostrzeżenia stylu (any/const/unused) + drobny dług
-  // w tsconfig (iteracja Map), nie realne bugi. Aplikacja działa tak samo.
+  // ESLint: warnings stylu (any/const/unused) nadal wyciszone przy buildzie — osobny dług, osobny PR.
   eslint: { ignoreDuringBuilds: true },
-  typescript: { ignoreBuildErrors: true },
+  // TypeScript: type-check ZNÓW blokuje build. Cały dług TS naprawiony (Calendar Map→Array.from,
+  // overload-correction change, szum lokalny wykluczony w tsconfig), tsc --noEmit czysty. Od teraz
+  // błąd typu ZATRZYMUJE build/deploy — nie przejdzie cicho (jak overload-correction z #95).
 };
 
 export default nextConfig;
