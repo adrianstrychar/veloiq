@@ -56,7 +56,10 @@ function cardDiff(diff: string): string {
 }
 
 function planResult(days: PlanDay[], insight: string): PlanModificationResult {
-  return { days, insight, tssTarget: Math.round(days.reduce((a, d) => a + (d.tss || 0), 0)), skippedPastDows: [] };
+  // change = opis SAMEJ zmiany do rozmowy (pole z #95). Ścieżka overload buduje wynik deterministycznie
+  // i pakuje do pending_changes/karty — konsument NIE czyta .change, ale kontrakt typu go wymaga.
+  // Fallback = insight (jak w plan-modify: parsed.change ?? insight). Domyka dryf typu, zero zmiany logiki.
+  return { days, insight, change: insight, tssTarget: Math.round(days.reduce((a, d) => a + (d.tss || 0), 0)), skippedPastDows: [] };
 }
 
 // ── Ścieżka OBJĘTOŚCIOWA: scaleWeek w dół o ekwiwalent nadwyżki ──────────────────

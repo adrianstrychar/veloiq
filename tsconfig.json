@@ -22,5 +22,9 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  // scripts = gitignored scratch (diag, odpalane przez tsx — nie część app-buildu);
+  // *Laptop* = kopie konfliktowe OneDrive (untracked, referują martwe API). Oba poza type-checkiem
+  // buildu, żeby zdjęcie ignoreBuildErrors nie blokowało się na nie-źródłowym szumie (Vercel i tak
+  // ich nie ma — nie są w gicie). Realne źródło (app/lib/components) type-checkowane normalnie.
+  "exclude": ["node_modules", "scripts", "**/*Laptop*"]
 }

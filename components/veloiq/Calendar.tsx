@@ -99,7 +99,7 @@ export function Calendar({ activities, races, planDays, ftp, onRaceClick }: Cale
     let count = 0;
     let tss = 0;
     const prefix = `${cursor.y}-${String(cursor.m + 1).padStart(2, '0')}`;
-    for (const [date, evs] of eventsByDate) {
+    for (const [date, evs] of Array.from(eventsByDate)) {
       if (date.startsWith(prefix)) {
         count += evs.length;
         for (const e of evs) tss += e.tss ?? 0;
@@ -129,7 +129,7 @@ export function Calendar({ activities, races, planDays, ftp, onRaceClick }: Cale
     const end = new Date(start);
     end.setDate(end.getDate() + 14);
     const out: CalEvent[] = [];
-    for (const [date, evs] of eventsByDate) {
+    for (const [date, evs] of Array.from(eventsByDate)) {
       const d = new Date(date + 'T00:00:00');
       if (d >= start && d <= end) out.push(...evs);
     }
