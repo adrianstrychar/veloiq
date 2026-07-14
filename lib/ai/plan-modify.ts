@@ -4,7 +4,8 @@
 // wołają te same funkcje — ZERO równoległej logiki mutacji planu.
 import Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { isAiOutage, AI_UNAVAILABLE_MSG } from '@/lib/ai/ai-error';
+import { isAiOutage, AI_UNAVAILABLE_MSG, AI_TOO_LONG_MSG } from '@/lib/ai/ai-error';
+import { parseModelJson, MaxTokensError, MalformedJsonError } from '@/lib/ai/parse-json-response';
 import { buildModifyPrompt, validateWeek, parseCommandDows, type PlanDay, type ModifyContext } from '@/lib/ai/plan-generate';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -43,11 +44,16 @@ export async function computePlanModification(
         system,
         messages: [{ role: 'user', content: userMsg }],
       });
-      const txt = response.content[0]?.type === 'text' ? response.content[0].text : '';
-      const a = txt.indexOf('{');
-      const b = txt.lastIndexOf('}');
-      if (a === -1 || b <= a) { lastErr = 'brak JSON'; continue; }
-      const parsed = JSON.parse(txt.slice(a, b + 1));
+      // stop_reason PRZED parsowaniem: ucięcie → czytelny błąd BEZ retry (modyfikacja bywa częsta/w
+      // tle, retry podwajałby koszt); JSON zepsuty mimo end_turn → retry jak dotąd ('brak JSON').
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = parseModelJson<Record<string, unknown>>(response, { maxTokens: 5000 });
+      } catch (perr) {
+        if (perr instanceof MaxTokensError) { lastErr = AI_TOO_LONG_MSG; break; }
+        if (perr instanceof MalformedJsonError) { lastErr = 'brak JSON'; continue; }
+        throw perr;
+      }
       const v = validateWeek(parsed.days, weekStart, { outline: false });
       if (!v.ok || !v.days) { lastErr = v.error ?? 'walidacja nieudana'; continue; }
 

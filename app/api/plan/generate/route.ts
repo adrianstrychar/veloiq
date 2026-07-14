@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { isAiOutage, AI_UNAVAILABLE_MSG } from '@/lib/ai/ai-error';
+import { isAiOutage, AI_UNAVAILABLE_MSG, AI_TOO_LONG_MSG } from '@/lib/ai/ai-error';
+import { assertNotTruncated, MaxTokensError } from '@/lib/ai/parse-json-response';
 import {
   buildTwoWeekPrompt,
   validateTwoWeekPlan,
@@ -184,6 +185,8 @@ export async function POST(req: NextRequest) {
       });
       aiModel = response.model;
       tokensUsed = (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0);
+      // stop_reason PRZED walidacją: ucięcie → MaxTokensError (nie ślepe parsowanie ogryzka JSON).
+      assertNotTruncated(response, 16000);
       const txt = response.content[0]?.type === 'text' ? response.content[0].text : '';
       const v = validateTwoWeekPlan(txt, weekStart, nextWeek);
       if (!v.ok || !v.current || !v.next) {
@@ -236,14 +239,18 @@ export async function POST(req: NextRequest) {
       next = v.next;
       break;
     } catch (err: unknown) {
+      // Ucięcie: 16k to sufit non-streaming SDK — ponowny 16k utnie znowu, więc BEZ retry (break),
+      // czytelny błąd. (Prawdziwy fix docelowy = streaming; osobny PR.)
+      if (err instanceof MaxTokensError) { lastErr = AI_TOO_LONG_MSG; break; }
       lastErr = isAiOutage(err) ? AI_UNAVAILABLE_MSG : err instanceof Error ? err.message : String(err);
     }
   }
 
   if (!current || !next) {
+    const readable = lastErr === AI_UNAVAILABLE_MSG || lastErr === AI_TOO_LONG_MSG;
     return NextResponse.json(
-      { error: lastErr === AI_UNAVAILABLE_MSG ? AI_UNAVAILABLE_MSG : `generowanie nieudane: ${lastErr}` },
-      { status: lastErr === AI_UNAVAILABLE_MSG ? 503 : 502 }
+      { error: readable ? lastErr : `generowanie nieudane: ${lastErr}` },
+      { status: readable ? 503 : 502 }
     );
   }
 

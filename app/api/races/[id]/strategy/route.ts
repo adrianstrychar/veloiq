@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { aiErrorMessage } from '@/lib/ai/ai-error';
+import { aiErrorMessage, STRATEGY_TOO_COMPLEX_MSG } from '@/lib/ai/ai-error';
+import { parseModelJson, withMaxTokensRetry, MaxTokensError, MalformedJsonError } from '@/lib/ai/parse-json-response';
 import {
   buildStrategyPrompt, strategyFingerprint, reassembleStrategy, strategyMeta,
   type RaceStrategy, type StrategyRace, type StrategyProfile,
@@ -58,15 +59,28 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
   // ── Generacja (z trasą jeśli jest route_analysis → pacing per realny podjazd) ──
   const { system, user: userMsg } = buildStrategyPrompt(race, profile, route);
+  // Tryb GPX (pacing per podjazd) daje dłuższy JSON i uciął się przy 3500/4500. Zamiast kolejnej
+  // ręcznej łatki limitu: AUTO-RETRY RAZ z +50% (4500→6750). Strategia jest cache'owana po
+  // fingerprincie i generowana na żądanie (rzadko) → podwójny call tylko przy ucięciu = koszt grosze.
+  const BASE_MAX = 4500;
+  // Hardcap: sonnet-4-6 ma absolutny max output 64K, ale ten call jest NON-STREAMING (praktyczny sufit
+  // SDK ~16K — jak w plan-generate). 8192 = konserwatywny rail komfortowo w strefie non-streaming i
+  // powyżej +50% (6750). Gdyby BASE kiedyś ≥ cap → withMaxTokensRetry nie ponawia (brak headroomu).
+  const SONNET_OUTPUT_CAP = 8192;
   try {
-    const resp = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6', max_tokens: 4500, system, // tryb GPX (pacing per podjazd) jest dłuższy — 3500 ucinało JSON
-      messages: [{ role: 'user', content: userMsg }],
-    });
-    const text = resp.content[0]?.type === 'text' ? resp.content[0].text : '';
-    // Model może opakować JSON w cokolwiek mimo instrukcji — wytnij pierwszy obiekt {...}.
-    const jsonStr = text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
-    const gen = JSON.parse(jsonStr) as Omit<RaceStrategy, 'meta'>;
+    const gen = await withMaxTokensRetry<Omit<RaceStrategy, 'meta'>>(
+      { baseMaxTokens: BASE_MAX, capMaxTokens: SONNET_OUTPUT_CAP },
+      async (maxTokens, attempt) => {
+        console.info(`[strategy] próba ${attempt + 1}/2 max_tokens=${maxTokens} race=${raceId}`);
+        const resp = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6', max_tokens: maxTokens, system,
+          messages: [{ role: 'user', content: userMsg }],
+        });
+        // stop_reason SPRAWDZANE PRZED parsowaniem — ucięcie → MaxTokensError (nie goły SyntaxError).
+        return parseModelJson<Omit<RaceStrategy, 'meta'>>(resp, { maxTokens });
+      },
+      (err, next) => console.warn(`[strategy] ucięcie na max_tokens (output=${err.outputTokens}) — retry z ${next}`),
+    );
 
     // Rozłóż do kolumn race_plans (finish_time jako tekst w tactical_plan — interval pomijamy).
     const row = {
@@ -88,10 +102,16 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       cached: false,
     });
   } catch (err: unknown) {
-    // Błąd parsowania JSON lub API → czytelny komunikat (#86); karta pokaże przycisk ponów.
-    if (err instanceof SyntaxError) {
+    // Ucięcie MIMO retry (obie próby na limicie) → czytelny komunikat, nie goły 502.
+    if (err instanceof MaxTokensError) {
+      console.warn(`[strategy] ucięcie mimo retry 6750 (output=${err.outputTokens}) race=${raceId} — zwracam błąd`);
+      return NextResponse.json({ error: STRATEGY_TOO_COMPLEX_MSG, unavailable: true }, { status: 502 });
+    }
+    // JSON zepsuty mimo normalnego zakończenia (osobny przypadek od ucięcia).
+    if (err instanceof MalformedJsonError) {
       return NextResponse.json({ error: 'Nie udało się przygotować strategii — spróbuj ponownie.', unavailable: true }, { status: 502 });
     }
+    // Awaria API (kredyty/limit/sieć) → czytelny komunikat (#86); karta pokaże przycisk ponów.
     return NextResponse.json({ error: aiErrorMessage(err), unavailable: true }, { status: 503 });
   }
 }
