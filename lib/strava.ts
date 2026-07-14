@@ -66,6 +66,31 @@ export interface StravaActivity {
   average_cadence?: number;
 }
 
+// Profil atlety z GET /athlete — prefill onboardingu. Strava zwraca `weight` (kg) i `sex` ('M'/'F')
+// jeśli user je ustawił; `ftp` bywa obecne dla kont z miernikiem. Wszystko może być null/brak.
+// Scope profile:read_all wystarcza (mamy go). Nie rzuca — braki to null (onboarding dopyta).
+export interface StravaAthleteProfile {
+  weight: number | null;     // kg
+  ftp: number | null;        // W
+  sex: 'M' | 'F' | null;
+}
+
+export async function fetchStravaAthleteProfile(accessToken: string): Promise<StravaAthleteProfile> {
+  const response = await fetch('https://www.strava.com/api/v3/athlete', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) {
+    throw new Error(`Strava athlete profile fetch failed: ${response.status}`);
+  }
+  const a = await response.json();
+  const sex = a.sex === 'M' || a.sex === 'F' ? a.sex : null;
+  return {
+    weight: typeof a.weight === 'number' && a.weight > 0 ? a.weight : null,
+    ftp: typeof a.ftp === 'number' && a.ftp > 0 ? Math.round(a.ftp) : null,
+    sex,
+  };
+}
+
 // Totale z GET /athletes/{id}/stats (dystanse w metrach).
 export interface StravaTotals {
   count: number;

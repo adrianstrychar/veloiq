@@ -6,6 +6,7 @@ import { DailyInsight } from '@/components/veloiq/DailyInsight';
 import { Progress } from '@/components/veloiq/Progress';
 import { LastActivityCard, type LastActivityRow } from '@/components/veloiq/LastActivityCard';
 import { SyncButton } from '@/components/veloiq/SyncButton';
+import { FtpEngineNote } from '@/components/veloiq/FtpEngineNote';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { computeProgressStats, type ActivityStatRow } from '@/lib/progressStats';
 import { ftpDisplay, deriveFtpSource } from '@/lib/ftp';
@@ -23,7 +24,7 @@ export default async function DashboardPage() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, name, strava_id, ftp_watts, ftp_estimate, ftp_updated_at, has_power_meter, weight_kg, vo2max, vo2_estimate, training_mode, season_km_goal, ytd_ride_km')
+    .select('id, name, strava_id, ftp_watts, ftp_estimate, ftp_updated_at, ftp_source, ftp_prev_value, ftp_engine_note_seen, has_power_meter, weight_kg, vo2max, vo2_estimate, training_mode, season_km_goal, ytd_ride_km')
     .eq('user_id', user?.id ?? '')
     .single();
 
@@ -156,6 +157,14 @@ export default async function DashboardPage() {
           🔗 Połącz Stravę
         </a>
       )}
+
+      {/* Notka jednorazowa: tymczasowy FTP z onboardingu podmieniony na policzony przez silnik */}
+      {(athlete as any)?.ftp_source === 'engine' &&
+        (athlete as any)?.ftp_engine_note_seen === false &&
+        (athlete as any)?.ftp_prev_value != null &&
+        (athlete as any)?.ftp_watts != null && (
+          <FtpEngineNote from={Number((athlete as any).ftp_prev_value)} to={Number((athlete as any).ftp_watts)} />
+        )}
 
       {/* 1. EngineCards: FTP + VO2max (estymata z 5-min mocy; null → kafel VO2 ukryty) */}
       <EngineCards ftp={ftpData} vo2Estimate={(athlete as any)?.vo2_estimate != null ? Math.round(Number((athlete as any).vo2_estimate)) : null} />
