@@ -10,6 +10,7 @@ import { calculateTSSfromHR, calculateTSSfromPower, calculateFitnessHistory } fr
 import { computeBestEfforts, syncActivityDetails } from '@/lib/strava/details';
 import { estimateFtp, decideFtpDisplayUpdate, type EffortRide } from '@/lib/ftp-engine';
 import { estimateVo2 } from '@/lib/vo2-engine';
+import { shouldPromoteToEngine } from '@/lib/onboarding';
 
 const SYNC_COOLDOWN_MINUTES = 60;
 const DEFAULT_LOOKBACK_DAYS = 90;
@@ -212,11 +213,12 @@ export async function recalculateFtpEstimate(
 
     const { data: ath } = await supabase
       .from('athletes')
-      .select('ftp_watts, ftp_updated_at')
+      .select('ftp_watts, ftp_updated_at, ftp_source, onboarding_completed')
       .eq('id', athleteId)
       .single();
 
     if (ath?.ftp_updated_at != null && ath.ftp_watts != null) {
+      // HYBRYDA (istniejąca): FTP już zaakceptowany/silnikowy → auto-aktualizacja wg reguły ≥14d / progu.
       const decision = decideFtpDisplayUpdate(Number(ath.ftp_watts), String(ath.ftp_updated_at), est.ftp, nowIso);
       if (decision.update) {
         updates.ftp_watts = est.ftp;
@@ -228,6 +230,25 @@ export async function recalculateFtpEstimate(
           source: 'estimate',
         });
       }
+    } else if (shouldPromoteToEngine(ath ?? {})) {
+      // PROMOCJA wstępny→silnikowy (moment wartości): pierwszy raz gdy silnik policzył FTP z best_efforts
+      // dla usera po onboardingu. Podmienia FTP z onboardingu na policzony, włącza hybrydę
+      // (ftp_updated_at), notka "X → Y" raz. Istniejący userzy (ftp_source='engine' z migracji 018) tu
+      // NIE wchodzą — profil Adriana nietknięty. ftp_source='none'/null (nie-onboardingowy) też nie.
+      const prev = ath?.ftp_watts != null ? Number(ath.ftp_watts) : null;
+      updates.ftp_watts = est.ftp;
+      updates.ftp_source = 'engine';
+      updates.ftp_updated_at = nowIso;
+      if (prev != null && prev !== est.ftp) {
+        updates.ftp_prev_value = prev;
+        updates.ftp_engine_note_seen = false; // dashboard pokaże notkę raz
+      }
+      await supabase.from('ftp_history').insert({
+        athlete_id: athleteId,
+        date: nowIso.slice(0, 10),
+        ftp_watts: est.ftp,
+        source: 'estimate',
+      });
     }
 
     const { error } = await supabase.from('athletes').update(updates).eq('id', athleteId);
