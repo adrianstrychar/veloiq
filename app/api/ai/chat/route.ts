@@ -5,14 +5,13 @@ import { buildSystemPrompt } from '@/lib/ai/prompt';
 import { aiErrorMessage } from '@/lib/ai/ai-error';
 import { TOOL_DEFS, dispatch, type ToolCtx } from '@/lib/ai/chat-tools';
 import { WRITE_TOOL_DEFS, isWriteTool, dispatchWrite } from '@/lib/ai/chat-write-tools';
+import { classifyIntent, INTENT_CONFIG, INTENT_MODE_LINE, FACT_TOOL_NAMES } from '@/lib/ai/chat-intent';
 
 const ALL_TOOLS = [...TOOL_DEFS, ...WRITE_TOOL_DEFS];
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const MODEL = 'claude-sonnet-4-6';
-const MAX_TOKENS = 4096;
-const MAX_ROUNDS = 5; // limit bezpieczeństwa: max 5 rund tool-use, potem wymuszamy tekst
+const MAX_ROUNDS = 5; // limit bezpieczeństwa pętli tool-use
 
 function textOf(resp: Anthropic.Message): string {
   return resp.content
@@ -22,6 +21,23 @@ function textOf(resp: Anthropic.Message): string {
     .trim();
 }
 
+// Log kosztu per call — input/output + cache (do weryfikacji, czy caching i capy działają).
+function logUsage(tag: string, resp: Anthropic.Message): void {
+  const u = resp.usage;
+  console.info(
+    `[chat] ${tag} model=${resp.model} stop=${resp.stop_reason} in=${u.input_tokens} out=${u.output_tokens} ` +
+      `cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0}`,
+  );
+}
+
+// cache_control na OSTATNIM toolu → cache'uje cały blok definicji tooli (idą po drucie z każdym callem).
+function withToolCache(tools: Anthropic.Tool[]): Anthropic.Tool[] {
+  if (tools.length === 0) return tools;
+  return tools.map((t, i) =>
+    i === tools.length - 1 ? ({ ...t, cache_control: { type: 'ephemeral' } } as Anthropic.Tool) : t,
+  );
+}
+
 // Karta propozycji dla UI: przyciski [Zatwierdź]/[Odrzuć] działają na change_id BEZ modelu.
 interface PendingCard {
   change_id: string;
@@ -29,7 +45,6 @@ interface PendingCard {
   diff: string;
 }
 
-// Wyciąga pending z wyniku propose_* (jeśli zwrócił change_id) — strukturalnie, nie z tekstu modelu.
 function pendingFrom(toolName: string, data: unknown): PendingCard | null {
   if (toolName !== 'propose_plan_change' && toolName !== 'propose_race_change') return null;
   const d = data as { ok?: boolean; change_id?: string; diff?: string };
@@ -55,7 +70,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'nieprawidłowy JSON' }, { status: 400 });
   }
 
-  // Profil zawodnika: id (scope wszystkich narzędzi) + czy jest moc (ekspozycja watów vs HR).
   const { data: athlete } = await supabase
     .from('athletes')
     .select('id, ftp_watts, has_power_meter')
@@ -64,38 +78,50 @@ export async function POST(request: NextRequest) {
   const athleteId = athlete?.id as string | undefined;
   const hasPower = !!(athlete?.ftp_watts || athlete?.has_power_meter);
 
-  const systemPrompt = await buildSystemPrompt(supabase, user.id);
+  // ── Klasyfikacja intencji (heurystyka → Haiku fallback) — steruje modelem/cappem/toolami/trybem. ──
+  const cls = await classifyIntent(
+    messages.map((m) => ({ role: String(m.role), content: typeof m.content === 'string' ? m.content : '' })),
+    anthropic,
+  );
+  const { model, maxTokens: finalCap } = INTENT_CONFIG[cls.intent];
+  console.info(`[chat] intent=${cls.intent} source=${cls.source} model=${model} finalCap=${finalCap} athlete=${athleteId ? 'yes' : 'no'}`);
 
-  // Wszystkie calle do Anthropic pod try/catch: awaria API (brak kredytów, 429, 5xx, sieć)
-  // → czytelny JSON 503 zamiast gołego 500, który chat pokazywał jako "błąd połączenia
-  // z serwerem" (res.json() na nie-JSON-owej odpowiedzi rzucał w catch klienta).
+  // System jako TABLICA bloków: static z cache_control (cache'owalny prefiks) + dynamic (czas+anchor+tryb)
+  // POZA breakpointem. Linia trybu na SAMYM KOŃCU (najsilniejsza pozycja).
+  const { static: staticSys, dynamic: dynBase } = await buildSystemPrompt(supabase, user.id);
+  const system: Anthropic.TextBlockParam[] = [
+    { type: 'text', text: staticSys, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: `${dynBase}\n\n---\n\n${INTENT_MODE_LINE[cls.intent]}` },
+  ];
+
   try {
-    // Bez athleteId (brak profilu) — narzędzia i tak by nic nie zwróciły; jedziemy bez tools.
+    // Bez profilu (brak athlete) — narzędzia nic by nie zwróciły; pojedynczy call z cappem per intencja.
     if (!athleteId) {
-      const resp = await anthropic.messages.create({ model: MODEL, max_tokens: MAX_TOKENS, system: systemPrompt, messages });
+      const resp = await anthropic.messages.create({ model, max_tokens: finalCap, system, messages });
+      logUsage('no-athlete-final', resp);
       return NextResponse.json({ reply: textOf(resp) });
     }
 
     const ctx: ToolCtx = { supabase, athleteId, userId: user.id, hasPower };
-    const pendings: PendingCard[] = []; // propozycje z tej odpowiedzi → karty z przyciskami w UI
+    const pendings: PendingCard[] = [];
 
-    // ── Pętla tool-use: iteruj dopóki model prosi o narzędzia (stop_reason === 'tool_use') ──
+    // FACT → zawężony zestaw tooli (odczyt liczb/faktów, bez write i ciężkich). cache_control na ostatnim.
+    const toolset = cls.intent === 'FACT' ? ALL_TOOLS.filter((t) => FACT_TOOL_NAMES.has(t.name)) : ALL_TOOLS;
+    const tools = withToolCache(toolset);
+
+    // ── Pętla tool-use: TWARDY cap per intencja na KAŻDEJ rundzie (bez dodatkowego calla). Model emituje
+    //    tool_use (mały — mieści się w cappie) albo finalną odpowiedź (już capowaną → zwracamy wprost). ──
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      const resp = await anthropic.messages.create({
-        model: MODEL,
-        max_tokens: MAX_TOKENS,
-        system: systemPrompt,
-        tools: ALL_TOOLS,
-        messages,
-      });
-
+      const resp = await anthropic.messages.create({ model, max_tokens: finalCap, system, tools, messages });
+      logUsage(`round${round}`, resp);
       if (resp.stop_reason !== 'tool_use') {
+        if (resp.stop_reason === 'max_tokens') {
+          console.warn(`[chat] odpowiedź ucięta na cappie ${finalCap} (intent=${cls.intent}, out=${resp.usage.output_tokens}) — cap może być za ciasny`);
+        }
         return NextResponse.json({ reply: textOf(resp), pendings });
       }
 
-      // Tura asystenta z blokami tool_use MUSI trafić do historii przed tool_result.
       messages.push({ role: 'assistant', content: resp.content });
-
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const block of resp.content) {
         if (block.type !== 'tool_use') continue;
@@ -106,7 +132,6 @@ export async function POST(request: NextRequest) {
           if (pending) pendings.push(pending);
           toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(data) });
         } catch (e) {
-          // Błąd handlera → is_error (model dostaje info, może zaproponować sync); request nie pada.
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,
@@ -118,18 +143,14 @@ export async function POST(request: NextRequest) {
       messages.push({ role: 'user', content: toolResults });
     }
 
-    // Po wyczerpaniu rund — wymuś odpowiedź tekstową (tool_choice none), żeby zawsze coś zwrócić.
-    const finalResp = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: systemPrompt,
-      tools: ALL_TOOLS,
-      tool_choice: { type: 'none' },
-      messages,
-    });
+    // Po wyczerpaniu rund (model wciąż chce toole) — wymuś tekst (tool_choice none), cap per intencja.
+    const finalResp = await anthropic.messages.create({ model, max_tokens: finalCap, system, tools, tool_choice: { type: 'none' }, messages });
+    logUsage('final-forced', finalResp);
+    if (finalResp.stop_reason === 'max_tokens') {
+      console.warn(`[chat] FINAL ucięta na cappie ${finalCap} (intent=${cls.intent}, out=${finalResp.usage.output_tokens})`);
+    }
     return NextResponse.json({ reply: textOf(finalResp), pendings });
   } catch (err: unknown) {
-    // Chat page pokazuje data.error przy !res.ok — user dostaje to zdanie wprost.
     return NextResponse.json({ error: aiErrorMessage(err) }, { status: 503 });
   }
 }

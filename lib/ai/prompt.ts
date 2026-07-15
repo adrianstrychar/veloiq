@@ -131,6 +131,18 @@ ZAPIS ZMIAN (plan tygodnia i starty) — confirm-before-write:
 - Jeśli commit_change zwróci błąd (wygasło / już zastosowano / dane się zmieniły) — przekaż to
   userowi po ludzku i zaproponuj przygotowanie nowej propozycji.`;
 
+// Zwięzłość + forma (2.1) — statyczne, cache'owalne. Twardy limit długości wg typu pytania;
+// tryb per intencja (linia doklejana na końcu dynamicznego promptu) dodatkowo to zawęża.
+const BREVITY_SECTION = `### DŁUGOŚĆ I FORMA ODPOWIEDZI (twarda reguła)
+- Pytanie faktograficzne ("ile km wczoraj?", "jaki mam FTP?", "czy jadłem w niedzielę?") → JEDNO zdanie. Konkretna liczba/fakt + minimalny kontekst.
+- Pytanie oceniające ("jak wypadła jazda?", "dobrze poszło?") → maksymalnie 3 zdania.
+- Pytanie o plan/strategię/propozycję zmiany → maksymalnie 5 zdań, opcjonalnie krótka lista punktowana.
+- NIE używaj nagłówków ani sekcji markdown w odpowiedziach czatu.
+- NIE dodawaj podsumowań, zachęt ani pytań zamykających typu "Daj znać, jeśli chcesz więcej!".
+- NIE zaczynaj od "Świetne pytanie", "Jasne!", "Oczywiście". Zacznij od odpowiedzi.
+- NIE tłumacz metodologii ani sposobu liczenia, jeśli użytkownik o to nie zapytał.
+- Rozbudowana odpowiedź jest dozwolona TYLKO wtedy, gdy użytkownik wprost o nią prosi ("rozpisz", "wyjaśnij dokładnie", "przeanalizuj").`;
+
 // Świadomość aplikacji: mapa modułów + reguła "nie proponuj tworzenia tego, co już istnieje".
 const APLIKACJA_SECTION = `### APLIKACJA VELOIQ
 Zawodnik korzysta z aplikacji VeloIQ (mobile, PWA). Moduły z jego perspektywy:
@@ -157,7 +169,9 @@ sprawdź narzędziem, czy to już istnieje (get_weekly_plan, get_races, get_acti
 - NIGDY nie sugeruj tworzenia od zera czegoś, co aplikacja już ma. Plan tygodniowy istnieje
   w module Plan; nie proponuj "ułożenia planu", tylko omów/wyjaśnij istniejący.`;
 
-export async function buildSystemPrompt(supabase: SupabaseClient, userId: string): Promise<string> {
+// Zwraca DWA bloki: static (identyczny między requestami → cache_control w route) i dynamic
+// (blok czasowy + anchor, per-request → POZA cache breakpointem). Linię trybu dokleja route.
+export async function buildSystemPrompt(supabase: SupabaseClient, userId: string): Promise<{ static: string; dynamic: string }> {
   const athleteRes = await supabase
     .from('athletes')
     .select('id, name, discipline, ftp_watts, hrmax, weight_kg, has_power_meter')
@@ -192,8 +206,8 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
   const tsb = now ? Math.round(now.tsb) : 0;
   const trend = now && weekAgo ? r1(now.ctl - weekAgo.ctl) : null;
 
-  // --- Warstwa 1: tożsamość + filozofia + zakres + zasady narzędzi ---
-  const layer1 = `${buildLayer1(athlete?.discipline ?? null, hasPower)}\n\n${APLIKACJA_SECTION}\n\n${ZAKRES_SECTION}\n\n${TOOLS_SECTION}`;
+  // --- STATIC (cache'owalny): tożsamość + filozofia + zakres + narzędzia + zwięzłość ---
+  const staticPart = `${buildLayer1(athlete?.discipline ?? null, hasPower)}\n\n${APLIKACJA_SECTION}\n\n${ZAKRES_SECTION}\n\n${TOOLS_SECTION}\n\n${BREVITY_SECTION}`;
 
   // --- Anchor: lekki, always-on. Reszta danych przez narzędzia. ---
   const ftpW = athlete?.ftp_watts;
@@ -226,6 +240,8 @@ ${raceLine}
 
 Dane szczegółowe (jazdy, plan tygodnia, historia formy, starty, regeneracja) NIE są tutaj — pobierasz je NARZĘDZIAMI na żądanie.`;
 
-  // Blok czasowy NA POCZĄTKU (przed resztą instrukcji), per-request — nadrzędny nad wszystkim.
-  return `${buildTimeContext()}\n\n---\n\n${layer1}\n\n---\n\n${anchor}`;
+  // DYNAMIC (per-request, POZA cache): blok czasowy (nadrzędny nad static powyżej) + anchor.
+  // Linię trybu (per intencja) dokleja route na SAMYM KOŃCU. Static idzie przed dynamic w route.
+  const dynamicPart = `${buildTimeContext()}\n\n---\n\n${anchor}`;
+  return { static: staticPart, dynamic: dynamicPart };
 }

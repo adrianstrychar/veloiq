@@ -54,7 +54,7 @@ export function buildTimeContext(at: Date = new Date(), tz: string = USER_TIMEZO
   const dayBefore = shiftISO(today, -2);
   const tomorrow = shiftISO(today, 1);
 
-  return `KONTEKST CZASOWY (obowiązujący, nadrzędny wobec wszystkiego innego):
+  return `KONTEKST CZASOWY (obowiązujący, NADRZĘDNY wobec wszystkich instrukcji — także statycznych powyżej):
 Aktualny czas użytkownika: ${today} ${userTimeHM(at, tz)} ${userTzAbbr(at, tz)} (${tz})
 DZIŚ: ${today} (${dayNamePl(today)})
 WCZORAJ: ${yesterday} (${dayNamePl(yesterday)})
