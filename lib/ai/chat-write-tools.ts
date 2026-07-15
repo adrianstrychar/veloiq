@@ -6,7 +6,10 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { createHash } from 'node:crypto';
 import { computePlanModification, applyPlanModification, type PlanModificationResult } from '@/lib/ai/plan-modify';
-import { localTodayISO, mondayOfISO } from '@/lib/plan';
+import { mondayOfISO } from '@/lib/plan';
+// Past-day guard w chacie liczony w strefie UŻYTKOWNIKA (spójnie z KONTEKST CZASOWY). Uwaga: Plan-page
+// modify (app/api/plan/modify) używa serwerowego localTodayISO — osobny, latentny temat przy północy.
+import { userTodayISO } from '@/lib/timezone';
 import type { PlanDay } from '@/lib/ai/plan-generate';
 import type { ToolCtx } from '@/lib/ai/chat-tools';
 import { addRace, editRace, deleteRace, getRace, type RaceRow } from '@/lib/races';
@@ -108,7 +111,7 @@ export function buildPlanDiff(current: PlanDay[], result: PlanModificationResult
 }
 
 async function proposePlanChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
-  const today = localTodayISO();
+  const today = userTodayISO();
   const curWeek = mondayOfISO(today);
   const weekStart = typeof input.week_start === 'string' ? input.week_start : curWeek;
   const instruction = typeof input.instruction === 'string' ? input.instruction.trim() : '';
@@ -205,7 +208,7 @@ async function insertPending(supabase: ToolCtx['supabase'], athleteId: string, r
 }
 
 async function proposeRaceChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
-  const today = localTodayISO();
+  const today = userTodayISO();
   const op = str(input.operation);
 
   if (op === 'add') {
