@@ -5,7 +5,8 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { syncActivityDetails } from '@/lib/strava/details';
-import { localTodayISO, mondayOfISO } from '@/lib/plan';
+import { mondayOfISO } from '@/lib/plan';
+import { userTodayISO, dayNamePl, shiftISO } from '@/lib/timezone';
 import { findDiscrepancies, type MyRace } from '@/lib/race-verify';
 
 // Brak kolumny wieku w athletes → zawodnik M19-34 (30 lat) → reguła dystansu = Gran Fondo (max zakresu).
@@ -22,14 +23,10 @@ export interface ToolCtx {
 const DAY_PL: Record<number, string> = { 1: 'pon', 2: 'wt', 3: 'śr', 4: 'czw', 5: 'pt', 6: 'sob', 7: 'nd' };
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
-// Data lokalna N dni wstecz jako YYYY-MM-DD (spójnie z activity_date = start_date_local).
+// Data lokalna UŻYTKOWNIKA N dni wstecz jako YYYY-MM-DD (spójnie z activity_date = start_date_local
+// oraz z blokiem KONTEKST CZASOWY w promptcie — jedno źródło prawdy o "dziś" w strefie usera).
 function daysAgoISO(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return shiftISO(userTodayISO(), -n);
 }
 
 // ── Definicje narzędzi (opisy PO ANGIELSKU — lepsza trafność wyboru toola przez model) ──
@@ -43,7 +40,7 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
   {
     name: 'get_activities',
     description:
-      "List the athlete's completed rides from synced Strava data, most recent first. Use for 'yesterday's ride', 'last week's rides', 'my ride on <date>', or a recent training overview. Dates are the athlete's LOCAL calendar dates (YYYY-MM-DD). If no date range is given, returns the most recent rides from the last 90 days up to `limit`. Returns per-ride summary only — call get_activity_detail for laps/intervals/power curve of a single ride.",
+      "List the athlete's completed rides from synced Strava data, most recent first. Use for 'yesterday's ride', 'last week's rides', 'my ride on <date>', or a recent training overview. Dates are the athlete's LOCAL calendar dates (YYYY-MM-DD). Daty date_from/date_to są w lokalnej strefie czasowej użytkownika (patrz blok KONTEKST CZASOWY — DZIŚ/WCZORAJ). If no date range is given, returns the most recent rides from the last 90 days up to `limit`. Each ride includes date_local (YYYY-MM-DD) and day_name_pl. Returns per-ride summary only — call get_activity_detail for laps/intervals/power curve of a single ride.",
     input_schema: {
       type: 'object',
       additionalProperties: false,
@@ -168,6 +165,8 @@ async function getActivities({ supabase, athleteId, hasPower }: ToolCtx, input: 
   const activities = (data ?? []).map((a) => ({
     strava_activity_id: a.strava_activity_id,
     date: a.activity_date,
+    date_local: a.activity_date,            // data LOKALNA użytkownika (YYYY-MM-DD)
+    day_name_pl: dayNamePl(a.activity_date), // nazwa dnia po polsku, małą literą
     name: a.name,
     type: a.type,
     distance_km: a.distance_km,
@@ -234,6 +233,8 @@ async function getActivityDetail({ supabase, athleteId, userId }: ToolCtx, input
     found: true,
     strava_activity_id: row.strava_activity_id,
     date: row.activity_date,
+    date_local: row.activity_date,
+    day_name_pl: dayNamePl(row.activity_date as string),
     name: row.name,
     type: row.type,
     distance_km: row.distance_km,
@@ -276,14 +277,14 @@ async function getFitnessStatus({ supabase, athleteId }: ToolCtx) {
 async function getFitnessHistory({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
   const days = Math.min(Math.max(Number(input.days) || 42, 7), 180);
   const { data: rows } = await supabase.from('fitness_metrics').select('date, ctl, atl, tsb').eq('athlete_id', athleteId).gte('date', daysAgoISO(days)).order('date', { ascending: true });
-  let series = (rows ?? []).map((d) => ({ date: d.date, ctl: Math.round(d.ctl), atl: Math.round(d.atl), tsb: Math.round(d.tsb) }));
+  let series = (rows ?? []).map((d) => ({ date: d.date, date_local: d.date, day_name_pl: dayNamePl(d.date as string), ctl: Math.round(d.ctl), atl: Math.round(d.atl), tsb: Math.round(d.tsb) }));
   const every = days > 60 ? 2 : 1; // próbkowanie co 2. dzień dla długich okien
   if (every === 2) series = series.filter((_, i) => i % 2 === 0);
   return { days, sampled_every: every, count: series.length, series };
 }
 
 async function getWeeklyPlan({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
-  const today = localTodayISO();
+  const today = userTodayISO();
   const ws = typeof input.week_start === 'string' ? input.week_start : mondayOfISO(today);
   const { data: r } = await supabase.from('weekly_plans').select('week_start, plan_json, user_hours').eq('athlete_id', athleteId).eq('week_start', ws).maybeSingle();
   if (!r) return { found: false, week_start: ws, message: `Brak planu na tydzień od ${ws}. Możesz go wygenerować w widoku Plan.` };
@@ -296,6 +297,8 @@ async function getWeeklyPlan({ supabase, athleteId }: ToolCtx, input: Record<str
   const days = planDays.map((d) => ({
     dow: d.dow,
     date: d.date,
+    date_local: d.date,
+    day_name_pl: dayNamePl(d.date as string),
     type: d.type,
     label: d.label,
     tss: d.tss,
@@ -337,7 +340,7 @@ async function getWeeklyPlan({ supabase, athleteId }: ToolCtx, input: Record<str
 async function getRaces({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
   const limit = Math.min(Number(input.limit) || 5, 20);
   const includePast = input.include_past === true;
-  const today = localTodayISO();
+  const today = userTodayISO();
   let q = supabase.from('race_calendar').select('id, name, date, priority, series').eq('athlete_id', athleteId).order('date', { ascending: true }).limit(limit);
   if (!includePast) q = q.gte('date', today);
   const { data } = await q;
@@ -353,7 +356,7 @@ async function getRaces({ supabase, athleteId }: ToolCtx, input: Record<string, 
 }
 
 async function getCheckin({ supabase, athleteId }: ToolCtx) {
-  const monday = mondayOfISO(localTodayISO());
+  const monday = mondayOfISO(userTodayISO());
   const [{ data: week }, { data: daily }] = await Promise.all([
     supabase.from('weekly_checkins').select('week_start, rhr_bpm, sleep_hours, hrv, fatigue_score, legs_feeling, motivation, notes').eq('athlete_id', athleteId).gte('week_start', monday).maybeSingle(),
     supabase.from('daily_biometrics').select('date, rhr_bpm, hrv_ms, sleep_hours, recovery_score').eq('athlete_id', athleteId).order('date', { ascending: false }).limit(1).maybeSingle(),

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { localTodayISO } from '@/lib/plan';
+import { buildTimeContext, userTodayISO } from '@/lib/timezone';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { taperDaysFor, type RacePriority } from '@/lib/race-taper';
 
@@ -168,7 +168,9 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
   const athleteId = athlete?.id ?? null;
   const hasPower = !!(athlete?.ftp_watts || athlete?.has_power_meter);
 
-  const todayISO = localTodayISO();
+  // "Dziś" w strefie UŻYTKOWNIKA (nie serwera/UTC) — jedyne źródło prawdy o dacie w promptcie.
+  // Anchor (DZIŚ/dayName/daysAway) i blok KONTEKST CZASOWY liczą się z tego samego todayISO.
+  const todayISO = userTodayISO();
 
   // Historia formy (trend 7d) + najbliższy start — RÓWNOLEGLE. Start w anchorze always-on,
   // żeby model nigdy nie pytał "masz jakiś wyścig?" (dane, które reszta apki zna).
@@ -224,5 +226,6 @@ ${raceLine}
 
 Dane szczegółowe (jazdy, plan tygodnia, historia formy, starty, regeneracja) NIE są tutaj — pobierasz je NARZĘDZIAMI na żądanie.`;
 
-  return `${layer1}\n\n---\n\n${anchor}`;
+  // Blok czasowy NA POCZĄTKU (przed resztą instrukcji), per-request — nadrzędny nad wszystkim.
+  return `${buildTimeContext()}\n\n---\n\n${layer1}\n\n---\n\n${anchor}`;
 }

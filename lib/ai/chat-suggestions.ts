@@ -1,7 +1,8 @@
 // Dynamiczne sugerowane pytania (chips) do czatu — DETERMINISTYCZNE (szablony + dane),
 // bez wywołań LLM (zero latencji/kosztu). 3 sloty: start / akcja / showcase, z deduplikacją tematów.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { localTodayISO, mondayOfISO } from '@/lib/plan';
+import { mondayOfISO } from '@/lib/plan';
+import { userTodayISO, shiftISO } from '@/lib/timezone';
 
 export interface Suggestion {
   label: string;  // krótki tekst chipa
@@ -10,15 +11,6 @@ export interface Suggestion {
 }
 
 const LONG_RIDE_MIN = 150; // 2.5h
-// Data lokalna przesunięta o n dni jako YYYY-MM-DD (spójnie z activity_date/plan.date = local).
-function shiftISO(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
 // Przymiotnik dnia (dow z daty ISO), do "na niedzielny długi trening".
 const DOW_ADJ = ['niedzielny', 'poniedziałkowy', 'wtorkowy', 'środowy', 'czwartkowy', 'piątkowy', 'sobotni'];
 function whenLabel(dateISO: string, today: string, tomorrow: string): string {
@@ -35,10 +27,10 @@ interface PlanDay {
 }
 
 export async function buildSuggestions(supabase: SupabaseClient, athleteId: string): Promise<Suggestion[]> {
-  const today = localTodayISO();
-  const tomorrow = shiftISO(1);
-  const in3 = shiftISO(3);
-  const yesterday = shiftISO(-1);
+  const today = userTodayISO();
+  const tomorrow = shiftISO(today, 1);
+  const in3 = shiftISO(today, 3);
+  const yesterday = shiftISO(today, -1);
   const ws = mondayOfISO(today);
 
   // Równoległe zapytania (scoped athleteId) — reużycie tych samych tabel co chat-tools.
