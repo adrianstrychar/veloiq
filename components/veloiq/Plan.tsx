@@ -427,15 +427,19 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
   }
 
   // Plan dnia: override po modyfikacji czatem albo wersja z bazy (props).
-  // Nałóż dzień startu: gdy plan_json już ma type RACE — bez zmian; gdy nie (plan sprzed
-  // race-aware generatora) a data pasuje do wyścigu — skonwertuj dzień na RACE z szacunkiem.
-  // Robione PRZED scaleWeek/statystykami, żeby suwak i kafle widziały spójny dzień startu.
+  // Live race_calendar (raceByDate) jest AUTORYTATYWNY dla dni RACE — jedno źródło prawdy:
+  // - live wyścig na tę datę → RACE z szacunkiem (działa też dla planów sprzed race-aware generatora,
+  //   i odświeża materializowany RACE aktualnymi danymi live),
+  // - plan_json ma materializowany RACE, ale wyścig USUNIĘTY z kalendarza (brak live) → SIEROTA → OFF.
+  //   injectRaceDay nadpisał oryginalny trening bezpowrotnie, więc OFF to jedyna sensowna opcja.
+  // - reszta dni bez zmian. Robione PRZED scaleWeek/statystykami (RACE i OFF i tak wykluczone z suwaka).
   const rawDays = override[week.weekStart] ?? week.days;
   const days = rawDays
     ? rawDays.map((d) => {
-        if (d.type === 'RACE') return d;
         const rm = raceByDate.get(d.date);
-        return rm ? { ...d, type: 'RACE', label: rm.name, tss: rm.estTss, dur_min: rm.estTimeMin, race: rm } : d;
+        if (rm) return { ...d, type: 'RACE', label: rm.name, tss: rm.estTss, dur_min: rm.estTimeMin, race: rm };
+        if (d.type === 'RACE') return { ...d, type: 'OFF', label: 'Odpoczynek', tss: 0, dur_min: 0, watt: '–', hr: '–', zones: [0, 0, 0, 0, 0], structure: null, race: null };
+        return d;
       })
     : rawDays;
 
