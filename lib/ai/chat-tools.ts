@@ -7,6 +7,7 @@ import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { syncActivityDetails } from '@/lib/strava/details';
 import { mondayOfISO } from '@/lib/plan';
 import { userTodayISO, dayNamePl, shiftISO } from '@/lib/timezone';
+import { estimateRaceDay, type RacePriority } from '@/lib/race-taper';
 import { findDiscrepancies, type MyRace } from '@/lib/race-verify';
 
 // Brak kolumny wieku w athletes → zawodnik M19-34 (30 lat) → reguła dystansu = Gran Fondo (max zakresu).
@@ -291,24 +292,52 @@ async function getWeeklyPlan({ supabase, athleteId }: ToolCtx, input: Record<str
 
   const planDays = (r.plan_json as { days?: Array<Record<string, unknown>>; insight?: string })?.days ?? [];
   const dates = planDays.map((d) => d.date as string);
-  const { data: acts } = await supabase.from('strava_activities').select('activity_date').eq('athlete_id', athleteId).in('activity_date', dates);
+  // Done-dates + LIVE race_calendar RÓWNOLEGLE (oba keyed po datach planu; +1 round-trip bez latencji).
+  // Live race_calendar jest autorytatywny dla dni RACE — reconcile niżej (spójnie z Plan.tsx).
+  const [{ data: acts }, { data: raceRows }] = await Promise.all([
+    supabase.from('strava_activities').select('activity_date').eq('athlete_id', athleteId).in('activity_date', dates),
+    supabase.from('race_calendar').select('date, name, priority, distance_km, elevation_m, discipline').eq('athlete_id', athleteId).in('date', dates),
+  ]);
   const doneDates = new Set((acts ?? []).map((a) => a.activity_date));
+  const raceByDate = new Map(
+    (raceRows ?? []).map((rc) => {
+      const est = estimateRaceDay(rc.distance_km as number | null, rc.elevation_m as number | null, rc.discipline as string | null, (rc.priority as RacePriority) ?? 'C');
+      return [rc.date as string, { name: rc.name as string, estTss: est?.estTss ?? 0, estTimeMin: est?.estTimeMin ?? 0 }];
+    }),
+  );
 
-  const days = planDays.map((d) => ({
-    dow: d.dow,
-    date: d.date,
-    date_local: d.date,
-    day_name_pl: dayNamePl(d.date as string),
-    type: d.type,
-    label: d.label,
-    tss: d.tss,
-    dur_min: d.dur_min,
-    zones: d.zones,
-    locked: !!d.locked,
-    outline: !!d.outline,
-    past: (d.date as string) < today,
-    done: doneDates.has(d.date as string),
-  }));
+  const days = planDays.map((d) => {
+    const dateStr = d.date as string;
+    // Reconcile RACE vs live race_calendar (WYŁĄCZNIE warstwa odczytu — plan_json NIETKNIĘTY):
+    // - live wyścig na tę datę → RACE (z szacunkiem live),
+    // - materializowany RACE bez live wyścigu (sierota po usuniętym starcie) → OFF.
+    const rm = raceByDate.get(dateStr);
+    let type = d.type as string;
+    let label = d.label as unknown;
+    let tss = d.tss as unknown;
+    let dur_min = d.dur_min as unknown;
+    let zones = d.zones as unknown;
+    if (rm) {
+      type = 'RACE'; label = rm.name; tss = rm.estTss; dur_min = rm.estTimeMin; zones = [0, 0, 0, 0, 0];
+    } else if (type === 'RACE') {
+      type = 'OFF'; label = 'Odpoczynek'; tss = 0; dur_min = 0; zones = [0, 0, 0, 0, 0];
+    }
+    return {
+      dow: d.dow,
+      date: dateStr,
+      date_local: dateStr,
+      day_name_pl: dayNamePl(dateStr),
+      type,
+      label,
+      tss,
+      dur_min,
+      zones,
+      locked: !!d.locked,
+      outline: !!d.outline,
+      past: dateStr < today,
+      done: doneDates.has(dateStr),
+    };
+  });
 
   // Realizacja sesji do teraz — TANI wariant z flag past/done + zaplanowanego tss (bez streams).
   // Dni treningowe minione (typ≠OFF) = "należne"; z jazdą tego dnia = "odbyte". Ważone
