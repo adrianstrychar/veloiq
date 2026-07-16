@@ -132,6 +132,11 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
   const isOutline = !!d.outline;
   const clickable = !!onClick;
   const [hover, setHover] = useState(false);
+  // Dzień treningowy (nie OFF/RACE/usunięty), który minął bez powiązanej jazdy — plan był,
+  // nie został zrobiony. Tylko tu zapala się "NIEZREALIZOWANE"; wolne/removed/RACE po terminie
+  // tracą badge (nic się nie miało wydarzyć albo start jest osobnym faktem, nie treningiem).
+  const isTrainingDay = !isOff && !isRace && !isRemoved;
+  const unrealized = isPast && !isToday && isTrainingDay && !done;
 
   return (
     <div
@@ -148,9 +153,9 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
         transition: 'border-color 0.15s',
       }}
     >
-      {(isToday || done || isPast) && (
+      {(isToday || done || unrealized) && (
         <div style={{ position: 'absolute', top: -8, left: 14, background: (done || isToday) ? C.cyan : C.muted, color: C.bg, fontSize: 8, fontWeight: 600, padding: '2px 8px', borderRadius: 4, letterSpacing: '0.1em' }}>
-          {isToday ? (done ? 'DZIŚ · ZROBIONE ✓' : 'DZIŚ') : done ? 'ZROBIONE ✓' : 'MINĄŁ'}
+          {isToday ? (done ? 'DZIŚ · ZROBIONE ✓' : 'DZIŚ') : done ? 'ZROBIONE ✓' : 'NIEZREALIZOWANE'}
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -177,7 +182,7 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
                 .filter(Boolean).join(' · ')}{rm.priority ? ` · ranga ${rm.priority}` : ''}
             </div>
           )}
-          {!offLike && !isRace && <ZoneBar zones={d.zones} />}
+          {!offLike && !isRace && !unrealized && <ZoneBar zones={d.zones} />}
           {isOutline && !offLike && !isRace && (
             // Zarys jest celowo nieklikalny — powiedz to na karcie, zamiast milczeć.
             <div style={{ fontSize: 9, color: C.muted, fontStyle: 'italic', marginTop: 3 }}>
@@ -210,7 +215,8 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
             <Cell label="TSS" value={actual.tss != null ? `${Math.round(actual.tss)}` : '—'} color={C.yellow} />
           </div>
         ) : (
-          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center' }}>
+          // Niezrealizowany dzień: to wartości PLANU, nie wykonania → przygaszone.
+          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center', opacity: unrealized ? 0.5 : 1 }}>
             <Cell label="CZAS" value={fmtDur(d.dur_min)} />
             <Cell label="MOC" value={d.watt} color={C.cyan} />
             <Cell label="HR" value={d.hr} color={C.red} />
@@ -473,7 +479,10 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
   // podwójnie (jest w "wykonane" jako jazda Stravy, a nie w "pozostało").
   const remDays = scaledDays
     // RACE poza statystykami treningu "pozostało" — pokazywany osobną kartą startu, nie w kaflach.
-    ? scaledDays.filter((d) => d.type !== 'OFF' && d.type !== 'RACE' && !d.removed && !isDoneDate(activitiesByDate, d.date))
+    // d.date >= todayISO: dzień miniony bez powiązanej jazdy (NIEZREALIZOWANE) NIE jest już "przed
+    // userem" — wypada z "pozostało". Silnik planu (scaleWeek/maxAchievableMin) traktuje przeszłe dni
+    // jako nietykalne, więc statystyka i skalowanie się nie rozjadą.
+    ? scaledDays.filter((d) => d.type !== 'OFF' && d.type !== 'RACE' && !d.removed && d.date >= todayISO && !isDoneDate(activitiesByDate, d.date))
     : [];
   const remSessions = remDays.length;
   const remDurMin = remDays.reduce((a, d) => a + d.dur_min, 0);
