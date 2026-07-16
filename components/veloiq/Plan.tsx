@@ -172,7 +172,7 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
           )}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: isRace ? C.red : C.text }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: isRace ? C.red : C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {isRemoved ? 'Dzień wolny' : d.label}
           </div>
           {isRace && rm && (
@@ -192,23 +192,23 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
         </div>
         {isRace ? (
           // Dzień startu: szacunki (tylda) zamiast kafli treningowych. Realne dane Strava po starcie.
-          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center', flexShrink: 0 }}>
             <Cell label="~CZAS" value={rm?.estTimeMin ? fmtDur(rm.estTimeMin) : '—'} color={C.red} />
             <Cell label="~TSS" value={rm?.estTss ? `${rm.estTss}` : '—'} color={C.red} />
           </div>
         ) : isRemoved ? (
-          <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>Dzień wolny — obciążenie zredukowane</div>
+          <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic', flexShrink: 0 }}>Dzień wolny — obciążenie zredukowane</div>
         ) : isOff ? (
-          <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>Pełna regeneracja</div>
+          <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic', flexShrink: 0 }}>Pełna regeneracja</div>
         ) : isOutline ? (
           // ZARYS: bez watt/hr (są "–"), tylko orientacyjny czas + ~TSS
-          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center', flexShrink: 0 }}>
             <Cell label="CZAS" value={`~${fmtDur(d.dur_min)}`} />
             <Cell label="~TSS" value={`${d.tss}`} color={C.yellow} />
           </div>
         ) : done && actual ? (
           // WYKONANE — realne dane ze Stravy ZASTĘPUJĄ plan. e-bike: moc z silnika nierzetelna → "—".
-          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center', flexShrink: 0 }}>
             <Cell label="CZAS" value={actual.duration_seconds != null ? fmtDur(Math.round(actual.duration_seconds / 60)) : '—'} />
             <Cell label="MOC" value={actualPower(actual)} color={C.cyan} />
             <Cell label="HR" value={actual.avg_hr != null ? `${actual.avg_hr}` : '—'} color={C.red} />
@@ -216,7 +216,7 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
           </div>
         ) : (
           // Niezrealizowany dzień: to wartości PLANU, nie wykonania → przygaszone.
-          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center', opacity: unrealized ? 0.5 : 1 }}>
+          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center', flexShrink: 0, opacity: unrealized ? 0.5 : 1 }}>
             <Cell label="CZAS" value={fmtDur(d.dur_min)} />
             <Cell label="MOC" value={d.watt} color={C.cyan} />
             <Cell label="HR" value={d.hr} color={C.red} />
@@ -265,7 +265,7 @@ function UnplannedCard({ activity, loading, onClick }: { activity: PlanActivityR
           </div>
           <div style={{ fontSize: 10, color: C.muted, fontStyle: 'italic' }}>nieplanowana jazda</div>
         </div>
-        <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center', flexShrink: 0 }}>
           {activity.distance_km != null && <Cell label="DYST" value={`${Math.round(activity.distance_km)} km`} color={C.muted} />}
           {activity.tss != null && <Cell label="TSS" value={`${Math.round(activity.tss)}`} color={C.yellow} />}
         </div>
