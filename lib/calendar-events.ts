@@ -6,6 +6,7 @@ import type { PlanDayView } from '@/components/veloiq/Plan';
 import type { RaceRow } from '@/components/veloiq/Races';
 import { C } from '@/lib/theme';
 import { typeColor } from '@/lib/plan';
+import { buildRaceByDate, overlayRaceDays } from '@/lib/race-overlay';
 
 // SLIM wiersz listy (P1-a dieta): kalendarz renderuje tylko nazwę/kolor/dystans/TSS — ciężkie
 // jsonb (laps/best_efforts) NIE wchodzą do listy; RideAnalysis dociąga pełny wiersz lazy po
@@ -46,11 +47,17 @@ export function activityColor(sportType: string | null | undefined): string {
 export function buildCalendarEvents(
   activities: CalActivity[],
   races: RaceRow[],
-  planDays: CalPlanDay[],
+  rawPlanDays: CalPlanDay[],
   todayStr: string,
   ftp: number | null
 ): Map<string, CalEvent[]> {
   const events: CalEvent[] = [];
+
+  // RECONCILE (parytet z Plan.tsx): live race_calendar autorytatywny dla dni RACE — ta sama zasada,
+  // jedno miejsce (lib/race-overlay). Bez tego materializowany RACE po usuniętym starcie (sierota)
+  // renderował się jako "PLAN · RACE" z TSS ducha — dedup #77 go nie łapał, bo nie ma live wyścigu.
+  // Kalendarz ma OBA źródła w argumentach, więc reconcile nie kosztuje round-tripu.
+  const planDays = overlayRaceDays(rawPlanDays, buildRaceByDate(races));
 
   for (const a of activities) {
     events.push({
