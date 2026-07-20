@@ -311,21 +311,31 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const [genLoading, setGenLoading] = useState(false);
+  // Błąd generacji per tydzień (weekStart) — karta błędu zamiast wiecznego spinnera. Zakres:
+  // KAŻDA nieudana generacja (502/500/timeout/network), nie tylko walidacja. status = kod HTTP
+  // jeśli był (network error → brak). Techniczny lastErr NIE trafia tu — zostaje w console.error.
+  const [genError, setGenError] = useState<{ weekStart: string; status?: number } | null>(null);
 
   // 5.7: wygeneruj plan dla pustego slotu (anchor week_start) → odśwież dane z bazy.
   async function generatePlan(weekStart: string) {
     if (genLoading) return;
     setGenLoading(true);
+    setGenError(null); // czyść błąd na starcie — dotyczy też ręcznego retry
+    let status: number | undefined;
     try {
       const res = await fetch('/api/plan/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ week_start: weekStart }),
       });
-      if (!res.ok) throw new Error('generate failed');
+      status = res.status;
+      if (!res.ok) throw new Error(`generate failed (${status})`);
       router.refresh();
     } catch (e) {
+      // Techniczny szczegół (lastErr/kod) do debugowania — NIE dla usera.
       console.error('generate failed', e);
+      // status undefined dla błędu sieci (fetch rzucił przed przypisaniem) — karta pokaże się bez kodu.
+      setGenError({ weekStart, status });
     } finally {
       setGenLoading(false);
     }
@@ -618,7 +628,26 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
         </div>
       )}
 
-      {promoting ? (
+      {genError && genError.weekStart === week.weekStart ? (
+        // BŁĄD GENERACJI — karta zamiast wiecznego spinnera. Preempuje `promoting`, więc spinner NIE
+        // wraca sam, choć tydzień wciąż jest szkicem. Retry RĘCZNY (generatePlan czyści genError na
+        // starcie) — bez auto-retry (wpadłby w pętlę tego samego błędu). promoTriggered pozostaje true,
+        // więc auto-effect też nie odpala ponownie. Wyjście ze stanu błędu = tylko klik usera.
+        <div style={{ ...card, padding: '24px 18px', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
+          <div style={{ fontSize: 28 }}>⚠️</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Nie udało się przygotować planu</div>
+          <div style={{ fontSize: 12, color: C.muted, maxWidth: 300, lineHeight: 1.5 }}>
+            Coś poszło nie tak przy generowaniu planu tygodnia{genError.status ? ` (błąd ${genError.status})` : ''}. Spróbuj ponownie.
+          </div>
+          <button
+            onClick={() => generatePlan(week.weekStart)}
+            disabled={genLoading}
+            style={{ marginTop: 4, background: C.cyan, border: 'none', borderRadius: 10, padding: '10px 18px', color: C.bg, fontWeight: 600, fontSize: 13, cursor: genLoading ? 'default' : 'pointer', opacity: genLoading ? 0.6 : 1 }}
+          >
+            {genLoading ? 'Przygotowuję…' : '↻ Spróbuj ponownie'}
+          </button>
+        </div>
+      ) : promoting ? (
         // Promocja szkicu w toku — stan ładowania zamiast wyblakłego planu (nie pusty/blady ekran).
         <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 12, padding: '20px 16px' }}>
           <div className="animate-spin" style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${C.border}`, borderTopColor: C.cyan, flexShrink: 0 }} />
