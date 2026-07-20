@@ -109,18 +109,30 @@ export function parseDayStructure(raw: unknown, type: string): ParseResult {
   return { ok: false, error: `typ ${type} nie przyjmuje structure` };
 }
 
-// Spójność czasu: rozgrzewka + część główna + schłodzenie = dur_min (tolerancja ±2 min).
-// warmup/cooldown = defaulty typu (sessionStructure) — generator ma je wliczyć w dur_min.
-export function checkStructureDuration(
+// Sensowny zakres długości sesji strukturalnej. MIN = próg z promptu (sesja <45 min bez sensu
+// treningowego), teraz realnie egzekwowany. MAX = rozsądny sufit pojedynczej sesji interwałowej.
+export const MIN_SESSION_MIN = 45;
+export const MAX_SESSION_MIN = 240;
+
+// RECONCILE: dur_min JEST sumą segmentów (rozgrzewka + część główna + schłodzenie), nie osobną
+// daną — model bywa niespójny w arytmetyce, więc generator liczy dur_min ze structure zamiast mu
+// ufać. Zwrócony durMin nadpisuje wartość modelu. STRAŻNIK (zamiast starej walidacji spójności):
+// jeśli zrekonstruowany czas jest absurdalny (poza [MIN,MAX]), to struktura jest bez sensu
+// (reps/work poza skalą) — odrzuć z ROZBICIEM, żeby od razu było widać, że winna jest struktura,
+// nie źle podany czas. Świadomie BEZ sufitów per-pole: łapiemy skutek (czas), nie zgadujemy granic
+// każdego pola (długie VO2 / nietypowy blok mogą je legalnie przekroczyć).
+export function reconcileStructureDuration(
   s: DayStructure,
-  durMin: number,
   warmupDefault: number,
   cooldownDefault: number
-): string | null {
+): { durMin: number; error: string | null } {
   const main = structureMainMin(s);
-  const total = warmupDefault + main + cooldownDefault;
-  if (Math.abs(total - durMin) > 2) {
-    return `rozgrzewka ${warmupDefault} + struktura ${main} + schłodzenie ${cooldownDefault} = ${total} min, a dur_min ${durMin} (tolerancja ±2)`;
+  const durMin = warmupDefault + main + cooldownDefault;
+  if (durMin < MIN_SESSION_MIN || durMin > MAX_SESSION_MIN) {
+    return {
+      durMin,
+      error: `struktura daje rozgrzewka ${warmupDefault} + część główna ${main} + schłodzenie ${cooldownDefault} = ${durMin} min, poza zakresem ${MIN_SESSION_MIN}–${MAX_SESSION_MIN} — sprawdź strukturę`,
+    };
   }
-  return null;
+  return { durMin, error: null };
 }
