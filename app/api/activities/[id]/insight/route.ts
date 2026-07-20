@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { buildInsightPrompt, type InsightActivity } from '@/lib/ai/insight';
 import { fetchPlannedDay } from '@/lib/planned-day';
+import { fetchRaceDay } from '@/lib/race-day';
 import { aiErrorMessage } from '@/lib/ai/ai-error';
 import {
   buildFormSignals, insightFingerprint,
@@ -36,8 +37,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (athlete.user_id !== authUser.id) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const planned = await fetchPlannedDay(supabase, athlete.id as string, activity.activity_date as string);
+  // Twardy sygnał "to wyścig" z race_calendar (źródło prawdy) — NIE z type==='RACE' (dzień bywa
+  // Z2 z metadaną race) ani z nazwy jazdy. Steruje gałęzią RACE promptu + wycięciem sygnałów HR.
+  const race = await fetchRaceDay(supabase, athlete.id as string, activity.activity_date as string);
+  const isRace = race != null;
 
-  // ── Cache: fingerprint wejść (details / plan / pct / metryki). Zgodny → zwróć, ZERO calla. ──
+  // ── Cache: fingerprint wejść (details / plan / pct / metryki / race). Zgodny → zwróć, ZERO calla. ──
   const fingerprint = insightFingerprint({
     detailsSyncedAt: activity.details_synced_at as string | null,
     planned,
@@ -46,6 +51,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     np: activity.normalized_power as number | null,
     avgHr: activity.avg_hr as number | null,
     durationSec: activity.duration_seconds as number | null,
+    isRace,
   });
   if (activity.insight_text && activity.insight_inputs_hash === fingerprint) {
     return NextResponse.json({ insight: activity.insight_text, cached: true });
@@ -76,14 +82,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     duration_seconds: activity.duration_seconds as number | null,
     details_synced_at: activity.details_synced_at as string | null,
   };
-  const signals = buildFormSignals(cur, (recent ?? []) as RecentRide[], trend, pct, isEbike);
+  const signals = buildFormSignals(cur, (recent ?? []) as RecentRide[], trend, pct, isEbike, isRace);
 
   const { system, user } = buildInsightPrompt(
     activity as unknown as InsightActivity,
     (athlete.ftp_watts as number | null) ?? null,
     (athlete.training_mode as string | null) ?? null,
     planned,
-    signals
+    signals,
+    race
   );
 
   try {
