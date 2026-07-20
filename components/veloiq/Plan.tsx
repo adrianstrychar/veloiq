@@ -12,6 +12,7 @@ import type { DayStructure } from '@/lib/structure';
 import type { RaceMeta } from '@/lib/ai/plan-generate';
 import { type RacePriority } from '@/lib/race-taper';
 import { buildRaceByDate, overlayRaceDays } from '@/lib/race-overlay';
+import { consolidateDayActivities, extraRidesLabel } from '@/lib/plan-day-activities';
 
 // Wyścig z kalendarza (do nałożenia dnia startu na plan, także sprzed race-aware generatora).
 export interface PlanRaceRow {
@@ -182,11 +183,21 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
           )}
         </div>
         {isRace ? (
-          // Dzień startu: szacunki (tylda) zamiast kafli treningowych. Realne dane Strava po starcie.
-          <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center', flexShrink: 0 }}>
-            <Cell label="~CZAS" value={rm?.estTimeMin ? fmtDur(rm.estTimeMin) : '—'} color={C.red} />
-            <Cell label="~TSS" value={rm?.estTss ? `${rm.estTss}` : '—'} color={C.red} />
-          </div>
+          done && actual ? (
+            // Dzień startu Z JAZDĄ (#106): realne dane Strava ZASTĘPUJĄ szacunek — karta wyścigu = ZROBIONE.
+            <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center', flexShrink: 0 }}>
+              <Cell label="CZAS" value={actual.duration_seconds != null ? fmtDur(Math.round(actual.duration_seconds / 60)) : '—'} />
+              <Cell label="MOC" value={actualPower(actual)} color={C.cyan} />
+              <Cell label="HR" value={actual.avg_hr != null ? `${actual.avg_hr}` : '—'} color={C.red} />
+              <Cell label="TSS" value={actual.tss != null ? `${Math.round(actual.tss)}` : '—'} color={C.yellow} />
+            </div>
+          ) : (
+            // Dzień startu BEZ jazdy: szacunki (tylda). Realne dane Strava dopną się po starcie.
+            <div style={{ display: 'flex', gap: 14, textAlign: 'right', alignItems: 'center', flexShrink: 0 }}>
+              <Cell label="~CZAS" value={rm?.estTimeMin ? fmtDur(rm.estTimeMin) : '—'} color={C.red} />
+              <Cell label="~TSS" value={rm?.estTss ? `${rm.estTss}` : '—'} color={C.red} />
+            </div>
+          )
         ) : isRemoved ? (
           <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic', flexShrink: 0 }}>Dzień wolny — obciążenie zredukowane</div>
         ) : isOff ? (
@@ -264,6 +275,29 @@ function UnplannedCard({ activity, loading, onClick }: { activity: PlanActivityR
       <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, marginTop: 6, opacity: 0.8 }}>
         {loading ? 'Pobieram szczegóły…' : 'Analiza wykonania →'}
       </div>
+    </div>
+  );
+}
+
+// Zwinięty wiersz drugorzędnych jazd dnia — JEDNA pozycja zamiast N osobnych kart POZA PLANEM.
+// Rozwijalny; po rozwinięciu każda jazda dalej klikalna → RideAnalysis. Suma TSS w nagłówku, żeby
+// user widział, że obciążenie nie znika (forma i tak liczy wszystkie jazdy — to tylko informacja).
+function SecondaryRidesRow({ rides, secondaryTss, loadingDate, onOpen }: {
+  rides: PlanActivityRow[]; secondaryTss: number; loadingDate: string | null; onOpen: (a: PlanActivityRow) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.bg, border: `1px dashed ${C.border}`, borderRadius: 10, padding: '8px 14px', color: C.muted, fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
+      >
+        <span style={{ fontSize: 10, width: 10 }}>{expanded ? '▾' : '▸'}</span>
+        <span style={{ flex: 1 }}>+ {extraRidesLabel(rides.length)}{secondaryTss > 0 ? ` · +${secondaryTss} TSS` : ''}</span>
+      </button>
+      {expanded && rides.map((a) => (
+        <UnplannedCard key={a.strava_activity_id} activity={a} loading={loadingDate === a.activity_date} onClick={() => onOpen(a)} />
+      ))}
     </div>
   );
 }
@@ -699,19 +733,16 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {(scaledDays ?? []).map((d, i) => {
               const list = activitiesByDate[d.date] ?? [];
-              // RACE nie jest treningiem — nie "konsumuje" jazdy jako plan-match; ewentualna jazda
-              // wyścigowa pokaże się osobną kartą (plan=szacunek vs realne dane). Karta RACE sama nieklikalna.
-              const isTraining = d.type !== 'OFF' && d.type !== 'RACE' && !d.removed;
-              // Trening planu "konsumuje" 1 jazdę (max TSS = lista[0]); reszta = poza planem.
-              // Dzień OFF/usunięty/RACE z jazdą → cała jazda poza planem.
-              const matched = isTraining ? list[0] : undefined;
-              const unplanned = isTraining ? list.slice(1) : list;
-              const done = !!matched;
-              const clickable = d.type !== 'OFF' && d.type !== 'RACE' && !d.removed && (done || !d.outline);
+              // Konsolidacja: JEDNO źródło (lib/plan-day-activities) — główna jazda (max TSS), done
+              // (trening/RACE z jazdą; RACE domyka #106), drugorzędne zwijane. Bez kopii logiki tutaj.
+              const { main, secondaries, done, secondaryTss } = consolidateDayActivities(list, d.type, !!d.removed);
+              const isTrainingDay = d.type !== 'OFF' && d.type !== 'RACE' && !d.removed;
+              // Klik: done (trening/RACE z jazdą) → RideAnalysis głównej; trening bez jazdy (nie zarys) → rozpiska.
+              const clickable = (done && !!main) || (isTrainingDay && !d.outline);
               const onClick = !clickable
                 ? undefined
-                : done
-                ? () => handleOpenRide(matched!)
+                : done && main
+                ? () => handleOpenRide(main)
                 : () => setOpenWorkout(d);
               return (
                 <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -721,17 +752,21 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
                     isPast={d.date < todayISO}
                     done={done}
                     loading={loadingDate === d.date}
-                    actual={matched}
+                    actual={done && main ? main : undefined}
                     onClick={onClick}
                   />
-                  {unplanned.map((a) => (
+                  {/* Główna jazda jako POZA PLANEM tylko gdy dzień NIE konsumuje jej w planie
+                      (OFF/usunięty z jazdą) — przy done jest już na karcie dnia. */}
+                  {!done && main && (
                     <UnplannedCard
-                      key={a.strava_activity_id}
-                      activity={a}
-                      loading={loadingDate === a.activity_date}
-                      onClick={() => handleOpenRide(a)}
+                      activity={main}
+                      loading={loadingDate === main.activity_date}
+                      onClick={() => handleOpenRide(main)}
                     />
-                  ))}
+                  )}
+                  {secondaries.length > 0 && (
+                    <SecondaryRidesRow rides={secondaries} secondaryTss={secondaryTss} loadingDate={loadingDate} onOpen={handleOpenRide} />
+                  )}
                 </div>
               );
             })}
