@@ -86,9 +86,12 @@ export function buildFormSignals(
   recent: RecentRide[],
   trend: FitnessTrend,
   pct: number | null,
-  isEbike: boolean
+  isEbike: boolean,
+  isRace = false
 ): FormSignals {
-  // Trend CTL/TSB — zawsze gdy są metryki (niezależny od mocy/HR).
+  // Trend CTL/TSB — zawsze gdy są metryki (niezależny od mocy/HR). Dla wyścigu ZOSTAJE: to fakt
+  // formy, nie porównanie z celem. TSB ujemny po starcie interpretuje prompt jako oczekiwaną
+  // regenerację, nie alarm.
   let trendStr: string | null = null;
   if (trend.ctlNow != null) {
     const delta = trend.ctl7ago != null ? r1(trend.ctlNow - trend.ctl7ago) : null;
@@ -96,10 +99,13 @@ export function buildFormSignals(
     const tsbTxt = trend.tsbNow != null ? `, TSB ${Math.round(trend.tsbNow)} (${trend.tsbNow > 5 ? 'świeżość' : trend.tsbNow < -15 ? 'głębokie zmęczenie' : 'produktywne zmęczenie'})` : '';
     trendStr = `Forma: CTL ${Math.round(trend.ctlNow)}${dirTxt}${tsbTxt}.`;
   }
-  // EF i HR@moc — tylko z wiarygodną mocą (nie e-bike).
-  const ef = isEbike ? null : efSignal(cur, recent);
-  const hrAtPower = isEbike ? null : hrAtPowerSignal(cur, recent);
-  const ring = pct != null ? `Wykonanie celu dnia z planu: ${Math.round(pct)}%.` : null;
+  // WYŚCIG: sygnały porównujące z bazą TRENINGOWĄ / celem planu MILKNĄ u ŹRÓDŁA (null, nie "prompt
+  // je zignoruje"). Na starcie tętno jest wysokie z DEFINICJI — intensywność, nie koszt: hrAtPower/ef
+  // vs mediana lekkich jazd emitowałyby fałszywy "koszt/zmęczenie/odwodnienie", a ring liczyłby %
+  // względem celu Z2, który wyścig zastąpił. Dzięki temu "N bpm koszt tętna" FIZYCZNIE nie powstaje.
+  const ef = (isEbike || isRace) ? null : efSignal(cur, recent);
+  const hrAtPower = (isEbike || isRace) ? null : hrAtPowerSignal(cur, recent);
+  const ring = (pct != null && !isRace) ? `Wykonanie celu dnia z planu: ${Math.round(pct)}%.` : null;
   return { trend: trendStr, ef, hrAtPower, ring };
 }
 
@@ -112,6 +118,7 @@ export function insightFingerprint(args: {
   np: number | null;
   avgHr: number | null;
   durationSec: number | null;
+  isRace: boolean;
 }): string {
   const planKey = args.planned
     ? JSON.stringify([args.planned.type, args.planned.dur_min, args.planned.tss, args.planned.structure ?? null])
@@ -121,6 +128,7 @@ export function insightFingerprint(args: {
     p: planKey,
     pct: args.pct == null ? 'none' : Math.round(args.pct), // kubełek 1% — mikro-drgania nie regenerują
     t: args.tss, np: args.np, hr: args.avgHr, dur: args.durationSec,
+    race: args.isRace, // race-ness w hashu → przełączenie na gałąź RACE unieważnia stary cache "nieudany Z2"
   });
   return createHash('sha256').update(payload).digest('hex');
 }

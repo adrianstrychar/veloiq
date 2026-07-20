@@ -2,6 +2,7 @@ import { buildSessionStructure, type LapInput, type SessionElement } from '@/lib
 import { parseStructure, sessionStructure } from '@/lib/workout';
 import { isOU, ouBlockMin, type DayStructure } from '@/lib/structure';
 import type { FormSignals } from '@/lib/ai/insight-context';
+import type { RaceDay } from '@/lib/race-day';
 
 export interface InsightActivity {
   name: string | null;
@@ -61,6 +62,77 @@ function describeStructure(structure: SessionElement[], hidePower: boolean): str
   return lines.join('\n');
 }
 
+// ── WYŚCIG: osobny prompt. NIE ocenia wg stref, NIE porównuje z celem treningowym, NIE czyta
+// wysokiego tętna jako zmęczenia, NIE sugeruje "odpuść", NIE zmyśla wyniku/pozycji (brak danych).
+// Trzon: profil mocy (best efforts), zmienność (VI), moc vs FTP, koszt startu. Pacing WARUNKOWO —
+// tylko gdy laps>1 (są dane czasowe); przy jednym odcinku ciągłym best efforts dają WIELKOŚCI, nie
+// MOMENTY, więc opis rozłożenia sił start-vs-koniec byłby zmyśleniem.
+function buildRacePrompt(
+  activity: InsightActivity,
+  hasPower: boolean,
+  isEbike: boolean,
+  structure: SessionElement[],
+  signals: FormSignals | null,
+  race: RaceDay,
+  powerRule: string,
+  ftp: number | null
+): { system: string; user: string } {
+  const lapCount = activity.laps?.length ?? 0;
+  const hasSplits = lapCount > 1; // wiele okrążeń → są dane czasowe do opisu rozłożenia sił
+  const np = activity.normalized_power;
+  const avg = activity.avg_watts;
+  const vi = !isEbike && np != null && avg != null && avg > 0 ? Math.round((np / avg) * 100) / 100 : null;
+
+  const pacingRule = hasSplits
+    ? 'Masz podział na okrążenia (niżej) — MOŻESZ opisać rozłożenie sił: równo czy odjazd na starcie, jak wyglądała końcówka.'
+    : 'Jazda to JEDEN odcinek ciągły — NIE masz danych czasowych o przebiegu. Mów o PROFILU mocy (wielkości wysiłków z best efforts, powtarzalność), NIE o tym, kiedy w wyścigu nastąpiły ani o rozłożeniu start-vs-koniec. NIE zmyślaj przebiegu w czasie.';
+
+  const system = [
+    'Jesteś wymagającym, ale ludzkim trenerem kolarstwa. Mówisz do zawodnika (Adrian) na "Ty". 3-4 zdania, JEDEN wniosek.',
+    'TO BYŁ WYŚCIG (start), NIE zaplanowany trening — rządzi się inną logiką. NIE oceniaj "czy trafił w cel wg stref", NIE porównuj z żadnym celem treningowym (na starcie nie ma zadanej struktury do wykonania).',
+    'Wysokie tętno na starcie jest NORMALNE i wynika z INTENSYWNOŚCI wyścigu — NIE interpretuj go jako zmęczenia, kosztu ani przetrenowania.',
+    'NIE sugeruj "odpuść / zamień kolejny dzień na regenerację" — start się odbył, nie ma czego korygować. Regeneracja PO wyścigu jest oczekiwana i normalna, nie alarm.',
+    'NIE wymyślaj wyniku, pozycji, miejsca ani czasu względem grupy — VeloIQ NIE MA tych danych. Mów WYŁĄCZNIE o tym, co widać z pliku jazdy: moc, tętno, koszt.',
+    'O CZYM masz mówić: profil mocy z best efforts (najmocniejsze wysiłki, powtarzalność), zmienność mocy (VI = NP / moc średnia — im wyżej, tym bardziej poszarpany, atakowy wyścig), moc względem FTP i ile było wysiłku nad progiem, oraz koszt startu (TSS, wpływ na formę).',
+    pacingRule,
+    powerRule,
+    'Zakaz: recytacji liczb z kafli, nagłówków, markdown. Ton: konkretny, jeden actionable akcent na koniec (np. jak wpasować regenerację po starcie).',
+  ].join(' ');
+
+  // Fakt startu ZAMIAST bloku ZAPLANOWANO — model wie, czemu moc/TSS wysokie, bez podawania celu
+  // Z2/Primer (to jest ta pokusa porównań ze strefami, którą wycinamy).
+  const prio = race.priority ? ` (ranga ${race.priority})` : '';
+  const dist = race.distanceKm != null ? `, ${race.distanceKm} km` : '';
+  const raceLine = `TO BYŁ START: ${race.name}${prio}${dist} — nie zaplanowana sesja treningowa.`;
+
+  // Sygnały: dla wyścigu przez buildFormSignals zostaje TYLKO trend (hrAtPower/ef/ring już null).
+  const signalLines: string[] = [];
+  if (signals?.trend) {
+    signalLines.push('SYGNAŁY FORMY (o TYM mów — to nie jest na kaflach):', `- ${signals.trend}`, '');
+  }
+
+  const exec: string[] = ['DANE JAZDY (tło, NIE cytuj — user widzi to na karcie):'];
+  exec.push(
+    `- Czas ${activity.duration_seconds != null ? Math.round(activity.duration_seconds / 60) : '—'} min, dystans ${activity.distance_km ?? '—'} km, przewyższenie ${activity.elevation_m ?? '—'} m, TSS ${activity.tss != null ? Math.round(activity.tss) : '—'}.`
+  );
+  if (!isEbike) {
+    exec.push(`- Moc: śr ${avg ?? '—'}W, NP ${np ?? '—'}W${vi != null ? `, VI ${vi} (zmienność — jak poszarpany wysiłek)` : ''}${ftp ? `, FTP ${ftp}W` : ''}.`);
+  }
+  exec.push(`- Tętno: śr ${activity.avg_hr ?? '—'}, max ${activity.max_hr ?? '—'} bpm.`);
+  if (!isEbike) {
+    const eff = activity.best_efforts ?? {};
+    if (Object.keys(eff).length) {
+      exec.push(`- Best efforts (moc szczytowa wg czasu): ${Object.entries(eff).map(([k, v]) => `${k}: ${v}W`).join(', ')}.`);
+    }
+  }
+  exec.push(hasSplits ? '- Okrążenia:' : '- Struktura (jeden odcinek):', describeStructure(structure, isEbike));
+
+  const closing = 'Napisz insight o tym STARCIE: profil mocy i najmocniejsze wysiłki, zmienność (VI), moc względem FTP, koszt i miejsce regeneracji po starcie (jako normalnej). 3-4 zdania, jeden wniosek, bez recytowania liczb z karty.';
+
+  const user = [raceLine, '', ...signalLines, ...exec, '', closing].join('\n');
+  return { system, user };
+}
+
 // Buduje prompt (system + user) po polsku: ocena REALIZACJI treningu (plan ↔ wykonanie).
 // signals = warstwa interpretacyjna (trend/EF/HR@moc/ring%) — insight MA o niej mówić,
 // a NIE recytować liczb z kafli (dystans/TSS/waty user już widzi na karcie).
@@ -69,7 +141,8 @@ export function buildInsightPrompt(
   ftp: number | null,
   trainingMode: string | null,
   planned: PlannedWorkout | null = null,
-  signals: FormSignals | null = null
+  signals: FormSignals | null = null,
+  race: RaceDay | null = null
 ): { system: string; user: string } {
   // e-bike → moc z silnika, nierzetelna: wycinamy ją CAŁKOWICIE z promptu (nie podajemy watów,
   // żeby model nie miał czego komentować — spójnie z hrTSS dla e-bike).
@@ -80,6 +153,13 @@ export function buildInsightPrompt(
   const powerRule = hasPower
     ? `Zawodnik ma miernik mocy (FTP ${ftp ?? '—'}W). Analizuj po mocy i % FTP.`
     : `Brak wiarygodnych danych mocy (e-bike lub trening po tętnie) — analizuj WYŁĄCZNIE po tętnie, TSS i odczuciu. NIE wymyślaj wartości w watach.`;
+
+  // WYŚCIG rządzi się inną logiką niż trening — osobna gałąź. Sygnał twardy z race_calendar
+  // (nie type==='RACE': dzień bywa Z2 z metadaną race). Early-return → ścieżka treningowa niżej
+  // pozostaje bajt-w-bajt bez zmian (reszta typów 1:1).
+  if (race) {
+    return buildRacePrompt(activity, hasPower, isEbike, structure, signals, race, powerRule, ftp);
+  }
 
   const system = [
     'Jesteś wymagającym, ale ludzkim trenerem kolarstwa. Mówisz do zawodnika (Adrian) na "Ty". 3-4 zdania, JEDEN wniosek trenerski.',
