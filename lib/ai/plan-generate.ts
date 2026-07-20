@@ -2,7 +2,7 @@
 
 import {
   parseDayStructure,
-  checkStructureDuration,
+  reconcileStructureDuration,
   buildLabel,
   structureWatt,
   isStructuredType,
@@ -129,8 +129,7 @@ export function buildTwoWeekPrompt(inp: GeneratorInputs): { system: string; user
     'SST/THR/VO2: {"reps":N,"work_min":M,"work_w":waty,"rest_min":P} = N interwałów po M min na work_w watów, przerwy P min Z1 między interwałami.',
     'OU: {"reps":bloki,"cycles":cykle,"under_min":min,"under_w":waty,"over_min":min,"over_w":waty,"rest_min":P} — jeden blok = cycles × (under_min + over_min) min, np. 3 cykle (3min under + 1min over) = blok 12 min; rest_min = przerwa Z1 między blokami. over_w > under_w.',
     'Dla OFF/Z1/Z2/LONG: "structure": null (sesje jednolite, bez substruktury).',
-    'TWARDA REGUŁA SPÓJNOŚCI CZASU (dni ze structure): dur_min = rozgrzewka + suma części głównej (interwały/bloki + przerwy między nimi) + schłodzenie 10 min, tolerancja ±2 min.',
-    'Rozgrzewka do tej reguły: 20 min dla SST, 25 min dla THR/OU/VO2. Policz i SPRAWDŹ przed zwróceniem JSON — niespójność = BŁĘDNY plan.',
+    'dur_min dni ze structure liczy SERWER z segmentów (rozgrzewka + część główna + schłodzenie) — nie musisz go dopinać; podaj sensowną strukturę, dur_min policzymy.',
     'TYDZIEŃ ZARYSU (next): podaj TYLKO type + label + orientacyjny tss + przybliżony dur_min.',
     'NIE podawaj watt/hr/zones/structure dla zarysu (zostaw puste — zostaną znormalizowane). To kierunek, nie rozpiska.',
     'FORMAT LABELA: dla dni ze structure NIE podawaj label — serwer wygeneruje go z parametrów.',
@@ -230,7 +229,7 @@ export function buildModifyPrompt(
     'MINIMALNY czas sesji 45 min (dur_min >= 45) — krótszej nie planuj, daj OFF.',
     'Rozgrzewka min 20 min przed Z2/SST, 25 min przed THR/OU/VO2. zones to % czasu w Z1–Z5, suma ~100.',
     'STRUKTURA: dni SST/THR/OU/VO2 mają pole "structure" z parametrami interwałów — SST/THR/VO2: {"reps","work_min","work_w","rest_min"}; OU: {"reps","cycles","under_min","under_w","over_min","over_w","rest_min"} (blok = cycles×(under_min+over_min) min, rest_min = przerwa Z1 między blokami).',
-    'Dni NIEZMIENIANE: przepisz structure BEZ ZMIAN. Dni zmieniane na SST/THR/OU/VO2: podaj nowe structure spójne z dur_min (rozgrzewka 20 SST / 25 THR-OU-VO2 + część główna + schłodzenie 10 = dur_min ±2). Dni OFF/Z1/Z2/LONG: structure null.',
+    'Dni NIEZMIENIANE: przepisz structure BEZ ZMIAN. Dni zmieniane na SST/THR/OU/VO2: podaj nowe structure (parametry interwałów) — dur_min policzy serwer z segmentów. Dni OFF/Z1/Z2/LONG: structure null.',
     'Label: dla dni ze structure zostanie wygenerowany przez serwer (możesz pominąć). Dla pozostałych: krótka nazwa, MAX ~3 słowa, bez zdań.',
     'insight: 1–2 zdania PO POLSKU opisujące AKTUALNY tydzień PO zmianie — co to za tydzień i na co zwrócić uwagę (jak przy generacji planu, opis STANU). NIE pisz "zmieniłem/skróciłem" — to opis planu, nie edycji. MUSI zgadzać się z nowym planem.',
     'change: 1–2 zdania PO POLSKU co KONKRETNIE zmieniłeś i dlaczego (np. "Skróciłem wtorkowe interwały, bo brakowało regeneracji po weekendzie."). To idzie do rozmowy z zawodnikiem, NIE na kartę planu.',
@@ -355,15 +354,18 @@ export function validateWeek(
       if (zsum < 90 || zsum > 110) {
         return { ok: false, error: `dzień ${dow} (${type}): strefy sumują się do ${zsum}%, poza 90–110` };
       }
-      // SUBSTRUKTURA (SST/THR/OU/VO2): parametry z AI → walidacja kształtu + spójności czasu.
-      // Label i watt dnia DERYWOWANE ze structure (jedna prawda) — to co pisze AI jest ignorowane.
+      // SUBSTRUKTURA (SST/THR/OU/VO2): parametry z AI → walidacja kształtu + RECONCILE dur_min.
+      // dur_min NIE jest osobną daną — liczymy go z segmentów (rozgrzewka + główna + schłodzenie),
+      // nadpisując to, co podał model (był częstym źródłem 502 przy rozjeździe). Label i watt dnia
+      // DERYWOWANE ze structure (jedna prawda) — to co pisze AI jest ignorowane.
       if (isStructuredType(type)) {
         if (d.structure != null) {
           const p = parseDayStructure(d.structure, type);
           if (!p.ok) return { ok: false, error: `dzień ${dow} (${type}): structure — ${p.error}` };
           const ss = sessionStructure(type);
-          const durErr = checkStructureDuration(p.structure, durMin, ss.warmupDefault, ss.cooldownDefault);
-          if (durErr) return { ok: false, error: `dzień ${dow} (${type}): ${durErr}` };
+          const rec = reconcileStructureDuration(p.structure, ss.warmupDefault, ss.cooldownDefault);
+          if (rec.error) return { ok: false, error: `dzień ${dow} (${type}): ${rec.error}` };
+          durMin = rec.durMin; // reconcile: dur_min = suma segmentów, nie wartość modelu
           structure = p.structure;
           watt = structureWatt(structure);
         } else if (opts.requireStructure) {
