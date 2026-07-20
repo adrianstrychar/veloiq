@@ -57,7 +57,9 @@ export async function computePlanModification(
       const v = validateWeek(parsed.days, weekStart, { outline: false });
       if (!v.ok || !v.days) { lastErr = v.error ?? 'walidacja nieudana'; continue; }
 
-      // ── TWARDY ENFORCEMENT lockowanych dni (#43) — identyczny jak w /modify ──
+      // ── TWARDY ENFORCEMENT locka (#43) — kłódka = WYŁĄCZNIE jawna rezerwacja dnia wolnego.
+      // Lock zapada TYLKO na dniu, który user jawnie zażądał jako OFF (off ∩ userSpecified ∩ command).
+      // Nazwany trening ("wtorek Z2") NIE dostaje kłódki — nadużycie psujące suwak (#lock-overuse).
       const off = new Set<number>(Array.isArray(parsed.off) ? parsed.off.map(Number) : []);
       const unlock = new Set<number>(Array.isArray(parsed.unlock) ? parsed.unlock.map(Number) : []);
       const userSpecified = new Set<number>(Array.isArray(parsed.userSpecifiedDays) ? parsed.userSpecifiedDays.map(Number) : []);
@@ -70,7 +72,6 @@ export async function computePlanModification(
           return { ...aiDay, type: 'OFF' as const, label: 'Odpoczynek', tss: 0, dur_min: 0, watt: '–', hr: '–', zones: [0, 0, 0, 0, 0], locked: lockSet.has(dow), structure: null };
         }
         if (unlock.has(dow)) return { ...aiDay, locked: false };
-        if (lockSet.has(dow)) return { ...aiDay, locked: true };
         if (orig?.locked) return { ...orig };
         return { ...aiDay, locked: false };
       });

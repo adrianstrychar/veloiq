@@ -233,7 +233,7 @@ export function buildModifyPrompt(
     'Label: dla dni ze structure zostanie wygenerowany przez serwer (możesz pominąć). Dla pozostałych: krótka nazwa, MAX ~3 słowa, bez zdań.',
     'insight: 1–2 zdania PO POLSKU opisujące AKTUALNY tydzień PO zmianie — co to za tydzień i na co zwrócić uwagę (jak przy generacji planu, opis STANU). NIE pisz "zmieniłem/skróciłem" — to opis planu, nie edycji. MUSI zgadzać się z nowym planem.',
     'change: 1–2 zdania PO POLSKU co KONKRETNIE zmieniłeś i dlaczego (np. "Skróciłem wtorkowe interwały, bo brakowało regeneracji po weekendzie."). To idzie do rozmowy z zawodnikiem, NIE na kartę planu.',
-    'userSpecifiedDays: WYŁĄCZNIE dni (dow), które user JAWNIE wymienił w prośbie (np. "wtorek Z2, środa wolna" → [2,3]). NIE dokładaj tu dni, które tylko przebudowałeś dla równowagi TSS — te idą do changedDays. Serwer blokuje (lock) TYLKO userSpecifiedDays.',
+    'userSpecifiedDays: WYŁĄCZNIE dni (dow), które user JAWNIE wymienił w prośbie (np. "wtorek Z2, środa wolna" → [2,3]). NIE dokładaj tu dni, które tylko przebudowałeś dla równowagi TSS — te idą do changedDays. Serwer blokuje (lock) TYLKO dni, które user jawnie zażądał jako WOLNE (OFF) — samo wymienienie treningu (np. "wtorek Z2") dnia NIE blokuje.',
     'Zwróć WYŁĄCZNIE JSON (bez markdown): {"days":[...7 dni dow 1..7...],"insight":"...","change":"...","changedDays":[dow przebudowane w planie],"userSpecifiedDays":[dow jawnie wymienione przez usera],"unlock":[dow do odblokowania],"off":[dow jawnie wskazane jako wolne]}.',
   ].join(' ');
 
@@ -250,8 +250,9 @@ export function buildModifyPrompt(
 
 // Leksykon: dni tygodnia (dow 1..7) faktycznie WYSTĘPUJĄCE w surowym tekście komendy usera.
 // Diakrytyki normalizowane (sroda=środa), case-insensitive, dopasowanie po rdzeniu (wtorek/wtorki).
-// UŻYCIE: walidacja lock set — serwer lockuje TYLKO userSpecifiedDays ∩ parseCommandDows(message),
-// więc dzień nieobecny w tekście NIE zostanie zablokowany, choćby AI wrzucił go do userSpecifiedDays.
+// UŻYCIE: walidacja lock set — serwer lockuje TYLKO dzień jawnie zażądany jako WOLNE, tj.
+// off ∩ userSpecifiedDays ∩ parseCommandDows(message). Dzień nieobecny w tekście NIE zostanie
+// zablokowany, a nazwany trening (nie-OFF) też nie — kłódka wyłącznie dla rezerwacji dnia wolnego.
 // Przecięcie jest jednostronne (może lock set tylko zwęzić) → over-locking niemożliwy z konstrukcji.
 // Under-locking przy egzotycznym sformułowaniu = łagodna degradacja (dzień po prostu skalowalny).
 const DOW_PATTERNS: Array<[RegExp, number[]]> = [
