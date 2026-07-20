@@ -10,7 +10,8 @@ import { createBrowserSupabaseClient } from '@/lib/supabase-browser';
 import { typeColor, fmtDur, dowLabel, dateLabel, weekRangeLabel, scaleWeek, maxAchievableMin, type WeekKind } from '@/lib/plan';
 import type { DayStructure } from '@/lib/structure';
 import type { RaceMeta } from '@/lib/ai/plan-generate';
-import { estimateRaceDay, type RacePriority } from '@/lib/race-taper';
+import { type RacePriority } from '@/lib/race-taper';
+import { buildRaceByDate, overlayRaceDays } from '@/lib/race-overlay';
 
 // Wyścig z kalendarza (do nałożenia dnia startu na plan, także sprzed race-aware generatora).
 export interface PlanRaceRow {
@@ -65,16 +66,6 @@ interface PlanProps {
   // Wszystkie jazdy danego dnia (data lokalna), posortowane malejąco po TSS.
   activitiesByDate: Record<string, PlanActivityRow[]>;
   races?: PlanRaceRow[]; // starty z kalendarza — nakładane jako dzień RACE na pasującą datę
-}
-
-// Meta dnia startu z wiersza kalendarza (szacunek liczony jak w generatorze, deterministycznie).
-function raceMetaFromRow(r: PlanRaceRow): RaceMeta {
-  const est = estimateRaceDay(r.distance_km, r.elevation_m, r.discipline, r.priority);
-  return {
-    name: r.name, priority: r.priority,
-    distanceKm: r.distance_km, elevationM: r.elevation_m, discipline: r.discipline,
-    estTimeMin: est?.estTimeMin ?? 0, estTss: est?.estTss ?? 0,
-  };
 }
 
 // Czy dzień ma wykonaną jazdę (≥1 aktywność).
@@ -295,7 +286,7 @@ function computeBaseHours(days: PlanDayView[] | null, acts: Record<string, PlanA
 
 export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, races = [] }: PlanProps) {
   // Mapa data→meta startu — do nałożenia dnia RACE na plan (także sprzed race-aware generatora).
-  const raceByDate = new Map(races.map((r) => [r.date, raceMetaFromRow(r)]));
+  const raceByDate = buildRaceByDate(races);
   const [idx, setIdx] = useState(currentIdx);
   const [openWorkout, setOpenWorkout] = useState<PlanDayView | null>(null);
   const [openRide, setOpenRide] = useState<PlanActivityRow | null>(null);
@@ -427,21 +418,10 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
   }
 
   // Plan dnia: override po modyfikacji czatem albo wersja z bazy (props).
-  // Live race_calendar (raceByDate) jest AUTORYTATYWNY dla dni RACE — jedno źródło prawdy:
-  // - live wyścig na tę datę → RACE z szacunkiem (działa też dla planów sprzed race-aware generatora,
-  //   i odświeża materializowany RACE aktualnymi danymi live),
-  // - plan_json ma materializowany RACE, ale wyścig USUNIĘTY z kalendarza (brak live) → SIEROTA → OFF.
-  //   injectRaceDay nadpisał oryginalny trening bezpowrotnie, więc OFF to jedyna sensowna opcja.
-  // - reszta dni bez zmian. Robione PRZED scaleWeek/statystykami (RACE i OFF i tak wykluczone z suwaka).
+  // Reconcile RACE vs live race_calendar — zasada w lib/race-overlay (współdzielona z Kalendarzem).
+  // Robione PRZED scaleWeek/statystykami (RACE i OFF i tak wykluczone z suwaka).
   const rawDays = override[week.weekStart] ?? week.days;
-  const days = rawDays
-    ? rawDays.map((d) => {
-        const rm = raceByDate.get(d.date);
-        if (rm) return { ...d, type: 'RACE', label: rm.name, tss: rm.estTss, dur_min: rm.estTimeMin, race: rm };
-        if (d.type === 'RACE') return { ...d, type: 'OFF', label: 'Odpoczynek', tss: 0, dur_min: 0, watt: '–', hr: '–', zones: [0, 0, 0, 0, 0], structure: null, race: null };
-        return d;
-      })
-    : rawDays;
+  const days = rawDays ? overlayRaceDays(rawDays, raceByDate) : rawDays;
 
   // Suwak działa TYLKO na bieżącym tygodniu. Hierarchiczne skalowanie (scaleWeek):
   // ruszamy warmup/cooldown w zakresach, przy dużych cięciach usuwamy całe sesje.
