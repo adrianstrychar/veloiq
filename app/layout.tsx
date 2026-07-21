@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { Space_Grotesk, Inter, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
@@ -38,6 +38,11 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "VeloIQ",
   description: "Twój AI trener. Zawsze gotowy.",
+};
+
+// ETAP 2 — kolor paska statusu (PWA/mobile) = C.bg. Next auto-linkuje manifest + app/icon.svg.
+export const viewport: Viewport = {
+  themeColor: "#14161B",
 };
 
 export default function RootLayout({

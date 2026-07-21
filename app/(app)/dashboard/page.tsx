@@ -5,7 +5,7 @@ import { ReadinessModule } from '@/components/veloiq/ReadinessModule';
 import { DailyInsight } from '@/components/veloiq/DailyInsight';
 import { Progress } from '@/components/veloiq/Progress';
 import { LastActivityCard, type LastActivityRow } from '@/components/veloiq/LastActivityCard';
-import { SyncButton } from '@/components/veloiq/SyncButton';
+import { DashboardHeader } from '@/components/veloiq/DashboardHeader';
 import { FtpEngineNote } from '@/components/veloiq/FtpEngineNote';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { computeProgressStats, type ActivityStatRow } from '@/lib/progressStats';
@@ -42,7 +42,7 @@ export default async function DashboardPage() {
     // Najnowsza jazda — po dacie aktywności malejąco.
     supabase
       .from('strava_activities')
-      .select('strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, avg_cadence, normalized_power, intensity_factor, calories, avg_speed:raw_data->average_speed, max_speed:raw_data->max_speed, kilojoules:raw_data->kilojoules')
+      .select('strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, synced_at, avg_cadence, normalized_power, intensity_factor, calories, avg_speed:raw_data->average_speed, max_speed:raw_data->max_speed, kilojoules:raw_data->kilojoules')
       .eq('athlete_id', athleteId)
       .order('activity_date', { ascending: false })
       .limit(1)
@@ -139,15 +139,10 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-center justify-between py-2">
-        <span className="text-lg font-bold">VeloIQ</span>
-        <div className="flex items-center gap-3">
-          <SyncButton />
-          <span className="text-sm text-secondary">
-            Cześć, {athlete?.name ?? 'Zawodniku'} 👋
-          </span>
-        </div>
-      </header>
+      <DashboardHeader
+        athleteName={athlete?.name ?? 'Zawodniku'}
+        lastSyncedAt={(lastActivity as { synced_at?: string | null } | null)?.synced_at ?? null}
+      />
 
       {!stravaConnected && (
         <a

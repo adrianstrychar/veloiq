@@ -23,3 +23,10 @@ body {
     text-wrap: balance;
   }
 }
+
+/* ETAP 2 — spin ikony synchronizacji (DashboardHeader). */
+@keyframes veloiq-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
