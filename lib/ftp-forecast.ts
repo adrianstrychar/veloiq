@@ -20,6 +20,8 @@ export const FORECAST_CONFIG = {
   HORIZON_DAYS: 365,      // brak startów → horyzont roczny (cel poziomowy bywa >4 mies. przy wolnym buildzie)
   DEFAULT_RATE_WPW: 0.6,  // W/tydz build gdy brak historii do kalibracji (nowy user)
   MASSLESS_HEADROOM: 0.4, // brak wagi → stały headroom (nie zgadujemy sufitu)
+  BAND_LOWER_FRAC: 0.35,  // dolna krawędź pasma = ostrożny wzrost (frakcja projektowanego wzrostu środka)
+  BAND_UPPER_FRAC: 1.75,  // górna = optymistyczny wzrost (frakcja), przycięty do sufitu W/kg
 } as const;
 
 const DAY = 86_400_000;
@@ -99,6 +101,30 @@ export function forecastFtpPeriodized(inp: ForecastInputs): Forecast {
   }
 
   return { points, milestones, buildRatePerWeek: rate };
+}
+
+// Pasmo prognozy jako FRAKCJE skumulowanego wzrostu środka od dziś (anchor = wartość "dziś", węzeł
+// styku real↔forecast). REGUŁA PRODUKTOWA: prognoza ZAKŁADA trzymanie planu, więc pasmo pokazuje
+// "od małego wzrostu do dużego wzrostu", nie "od spadku do wzrostu" — to nie neutralna statystyka.
+// - dolna = anchor + BAND_LOWER_FRAC × wzrost środka → zawsze ≥ start i rosnąca w BUILD (frakcja
+//   nieujemnego, rosnącego wzrostu); najgorszy scenariusz przy trzymaniu planu = mały wzrost.
+// - górna = anchor + BAND_UPPER_FRAC × wzrost, PRZYCIĘTA do sufitu W/kg (WKG_CEIL × masa) — ambitna,
+//   ale nie fantazja: to wielokrotność WŁASNEGO tempa zawodnika i nie przekracza fizjologicznego
+//   sufitu (tego samego, którym forecast tłumi środek). Bez wagi → brak sufitu (tryb massless).
+// Względne (frakcje), więc skaluje się z każdym poziomem FTP; nie hardkodowane pod konkretne waty.
+export function forecastBand(
+  centerMonthly: { t: number; fc: number }[],
+  anchor: number,
+  massKg: number | null
+): { t: number; fc: number; band: [number, number] }[] {
+  const { BAND_LOWER_FRAC, BAND_UPPER_FRAC, WKG_CEIL } = FORECAST_CONFIG;
+  const ceilFtp = massKg != null && massKg > 0 ? WKG_CEIL * massKg : Infinity;
+  return centerMonthly.map((p) => {
+    const gain = Math.max(0, p.fc - anchor); // skumulowany wzrost środka od dziś (≥0 — prognoza nie schodzi)
+    const lo = anchor + BAND_LOWER_FRAC * gain;
+    const hi = Math.max(lo, Math.min(anchor + BAND_UPPER_FRAC * gain, ceilFtp)); // hi≥lo (guard nad-sufitowego FTP)
+    return { t: p.t, fc: p.fc, band: [Math.round(lo), Math.round(hi)] as [number, number] };
+  });
 }
 
 // Tempo buildu z envelope rekonstrukcji: nachylenie ostatnich `weeks` punktów envelope (tylko wzrost;

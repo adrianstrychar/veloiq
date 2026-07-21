@@ -5,7 +5,7 @@ import { C } from '@/lib/theme';
 import type { ProgressStats } from '@/lib/progressStats';
 import { wkgLabel } from '@/lib/level';
 import type { ReconPoint } from '@/lib/ftp-reconstruct';
-import type { ForecastPoint, Milestone } from '@/lib/ftp-forecast';
+import { forecastBand, type ForecastPoint, type Milestone } from '@/lib/ftp-forecast';
 
 interface ProgressProps {
   stats: ProgressStats;
@@ -17,12 +17,6 @@ interface ProgressProps {
   forecast: ForecastPoint[];  // prognoza periodyzowana (fazy BUILD/TAPER/REGEN)
   milestones: Milestone[];    // cele: starty lub progi W/kg
 }
-
-const MONTH_MS = 30 * 86_400_000;
-// Pas prognozy (warstwa renderu): półszerokość rośnie z horyzontem, asymetryczna — niedowiezienie
-// bardziej prawdopodobne niż nadodpowiedź, więc dół szerszy niż góra.
-const BAND_DOWN_PER_MONTH = 2.5; // W/mies. w dół
-const BAND_UP_PER_MONTH = 1.5;   // W/mies. w górę
 
 function dMs(iso: string): number {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
@@ -64,11 +58,11 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
   // "Dziś" = punkt styku (linia referencyjna + szerokość pasa 0 w tym punkcie).
   const todayT = startNode ? startNode.t : (forecast.length ? forecast[0].t : Date.now());
 
-  // Pas prognozy (warstwa renderu): lo-hi rozszerzają się z horyzontem (asymetrycznie). U dziś szerokość 0.
-  const fcBand = fcMonthly.map((p) => {
-    const mo = Math.max(0, (p.t - todayT) / MONTH_MS);
-    return { t: p.t, fc: p.fc, band: [Math.round(p.fc - BAND_DOWN_PER_MONTH * mo), Math.round(p.fc + BAND_UP_PER_MONTH * mo)] as [number, number] };
-  });
+  // Pas prognozy: frakcje wzrostu środka od dziś (lib/ftp-forecast.forecastBand) — dolna ostrożny
+  // wzrost (nigdy poniżej startu, nigdy płaska w BUILD), górna optymistyczna ≤ sufit W/kg. U dziś
+  // szerokość 0 (gain=0). anchor = wartość węzła "dziś" (styk real↔forecast).
+  const anchor = startNode ? startNode.fc : (fcMonthly[0]?.fc ?? ftpNow);
+  const fcBand = forecastBand(fcMonthly, anchor, weightKg);
 
   // MERGE po t → wiersz "dziś" niesie i ftp (real) i fc/band (forecast) = WSPÓLNY wierzchołek styku.
   const byT = new Map<number, { t: number; ftp?: number; fc?: number; band?: [number, number] }>();
