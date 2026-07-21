@@ -150,8 +150,8 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
               labelStyle={{ color: C.muted }}
               labelFormatter={(t) => new Date(t as number).toLocaleDateString('pl-PL', { month: 'short', year: '2-digit' })}
               formatter={(v, name) => {
-                if (Array.isArray(v)) return [`${v[0]}–${v[1]} W`, 'prognoza (zakres)'];
-                if (name === 'fc') return [`${v} W`, 'prognoza'];
+                if (Array.isArray(v)) return [`${v[0]}–${v[1]} W`, 'prognoza przy realizacji planu (zakres)'];
+                if (name === 'fc') return [`${v} W`, 'prognoza przy realizacji planu'];
                 return [`${v} W`, 'FTP'];
               }}
             />
@@ -169,9 +169,12 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
             ))}
           </ComposedChart>
         </ResponsiveContainer>
-        <span style={{ position: 'absolute', top: 4, right: 8, fontSize: 8, fontWeight: 700, letterSpacing: '0.12em', color: C.purple, pointerEvents: 'none' }}>
-          PROGNOZA
-        </span>
+        {/* Adnotacja warunkowości: pasmo jest optymistyczne Z ZAŁOŻENIA (zakłada trzymanie planu),
+            więc etykieta musi to nieść — inaczej aplikacja obiecuje wzrost bez zastrzeżenia. */}
+        <div style={{ position: 'absolute', top: 4, right: 8, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, pointerEvents: 'none' }}>
+          <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.12em', color: C.purple }}>PROGNOZA</span>
+          <span style={{ fontSize: 7.5, fontWeight: 600, color: C.muted }}>przy realizacji planu</span>
+        </div>
       </div>
 
       {levelLabel != null && (
