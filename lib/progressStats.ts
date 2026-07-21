@@ -5,6 +5,8 @@ export interface ActivityStatRow {
   activity_date: string; // 'YYYY-MM-DD'
   distance_km: number | null;
   name: string | null;
+  duration_seconds?: number | null; // do sumy godzin sezonu (footer "Twój silnik")
+  elevation_m?: number | null;      // do sumy przewyższenia sezonu
 }
 
 export interface ProgressStats {
@@ -12,6 +14,8 @@ export interface ProgressStats {
   longestKm: number;
   longestName: string | null;
   totalKm: number;
+  totalHours: number;      // suma czasu sezonu w godzinach (footer)
+  totalElevationM: number; // suma przewyższenia sezonu w metrach (footer)
   rideCount: number;
 }
 
@@ -43,13 +47,17 @@ export function computeProgressStats(rows: ActivityStatRow[], today: Date = new 
     cursor.setDate(cursor.getDate() - 7);
   }
 
-  // Najdłuższa jazda + suma km.
+  // Najdłuższa jazda + suma km/godzin/przewyższenia.
   let longestKm = 0;
   let longestName: string | null = null;
   let totalKm = 0;
+  let totalSeconds = 0;
+  let totalElevationM = 0;
   for (const r of rows) {
     const km = r.distance_km ?? 0;
     totalKm += km;
+    totalSeconds += r.duration_seconds ?? 0;
+    totalElevationM += r.elevation_m ?? 0;
     if (km > longestKm) {
       longestKm = km;
       longestName = r.name;
@@ -61,6 +69,8 @@ export function computeProgressStats(rows: ActivityStatRow[], today: Date = new 
     longestKm: Math.round(longestKm),
     longestName,
     totalKm: Math.round(totalKm),
+    totalHours: Math.round(totalSeconds / 3600),
+    totalElevationM: Math.round(totalElevationM),
     rideCount: rows.length,
   };
 }

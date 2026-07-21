@@ -1,9 +1,8 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { type PmcRow } from '@/components/veloiq/RawMetrics';
-import { EngineCards } from '@/components/veloiq/EngineCards';
+import { EngineCard } from '@/components/veloiq/EngineCard';
 import { ReadinessModule } from '@/components/veloiq/ReadinessModule';
 import { DailyInsight } from '@/components/veloiq/DailyInsight';
-import { Progress } from '@/components/veloiq/Progress';
 import { LastActivityCard, type LastActivityRow } from '@/components/veloiq/LastActivityCard';
 import { DashboardHeader } from '@/components/veloiq/DashboardHeader';
 import { FtpEngineNote } from '@/components/veloiq/FtpEngineNote';
@@ -14,6 +13,8 @@ import { localTodayISO } from '@/lib/plan';
 import type { RacePriority } from '@/lib/race-taper';
 import { reconstructFtp, type ReconRide } from '@/lib/ftp-reconstruct';
 import { forecastFtpPeriodized, buildRateFromEnvelope, type RaceLite } from '@/lib/ftp-forecast';
+import { C, RADIUS } from '@/lib/theme';
+import { Flame, Link2 } from 'lucide-react';
 
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
@@ -55,10 +56,10 @@ export default async function DashboardPage() {
       .not('avg_hr', 'is', null)
       .limit(1)
       .maybeSingle(),
-    // wszystkie jazdy sezonu 2026 — do statystyk rozwoju (streak, najdłuższa, suma km)
+    // wszystkie jazdy sezonu 2026 — statystyki rozwoju (streak, suma km/h/przewyższenie do stopki silnika)
     supabase
       .from('strava_activities')
-      .select('activity_date, distance_km, name')
+      .select('activity_date, distance_km, name, duration_seconds, elevation_m')
       .eq('athlete_id', athleteId)
       .gte('activity_date', '2026-01-01')
       .order('activity_date', { ascending: true }),
@@ -147,9 +148,9 @@ export default async function DashboardPage() {
       {!stravaConnected && (
         <a
           href="/api/strava/auth"
-          className="rounded-xl bg-accent text-background text-center text-sm font-semibold py-3"
+          className="rounded-xl bg-accent text-background text-center text-sm font-semibold py-3 inline-flex items-center justify-center gap-2"
         >
-          🔗 Połącz Stravę
+          <Link2 size={16} strokeWidth={2} /> Połącz Stravę
         </a>
       )}
 
@@ -161,16 +162,29 @@ export default async function DashboardPage() {
           <FtpEngineNote from={Number((athlete as any).ftp_prev_value)} to={Number((athlete as any).ftp_watts)} />
         )}
 
-      {/* 1. EngineCards: FTP + VO2max (estymata z 5-min mocy; null → kafel VO2 ukryty) */}
-      <EngineCards ftp={ftpData} vo2Estimate={(athlete as any)?.vo2_estimate != null ? Math.round(Number((athlete as any).vo2_estimate)) : null} />
-
-      {/* 2. ReadinessModule: gotowość z TSB + rozwijany RawMetrics (CTL/ATL/TSB) */}
+      {/* 1. Gotowość dziś */}
       {readiness && <ReadinessModule readiness={readiness} pmc={pmc} />}
+
+      {/* 2. Pasek "Dziś" — ETAP 6 (TodayBar) */}
 
       {/* 3. AI Insight: forma na dziś (fallback = statyczny advice gdy AI padnie) */}
       {readiness && <DailyInsight fallback={readiness.advice} />}
 
-      {/* 4. Ostatnia aktywność — klikalna, otwiera RideAnalysis */}
+      {/* 4. Ten tydzień — ETAP 5. Tymczasowo TYLKO streak (NIE usuwamy go — przenosi się do
+          karty "Ten tydzień" w ETAP 5). Reszta karty tygodnia dochodzi w E5. */}
+      {progressStats.streakWeeks > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          background: C.card, border: `1px solid ${C.border}`, borderRadius: RADIUS.card, padding: '12px 16px',
+        }}>
+          <Flame size={18} color={C.yellow} strokeWidth={2} />
+          <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>
+            {progressStats.streakWeeks} tyg. z rzędu z treningiem
+          </span>
+        </div>
+      )}
+
+      {/* 5. Ostatnia aktywność — klikalna, otwiera RideAnalysis */}
       {lastActivity && (
         <LastActivityCard
           activity={lastActivity as unknown as LastActivityRow}
@@ -178,15 +192,15 @@ export default async function DashboardPage() {
         />
       )}
 
-      {/* 5. Progress: FTP hero (rekonstrukcja + prognoza periodyzowana) + statystyki + cel sezonu */}
-      <Progress
-        stats={progressStats}
+      {/* 6. Twój silnik — FTP (rekonstrukcja + prognoza) + pułap tlenowy + stopka sezonu */}
+      <EngineCard
+        ftp={ftpData}
+        vo2Estimate={(athlete as any)?.vo2_estimate != null ? Math.round(Number((athlete as any).vo2_estimate)) : null}
         weightKg={weight}
-        seasonGoalKm={(athlete as any)?.season_km_goal ?? null}
-        ftpNow={ftpData.value}
         recon={recon}
         forecast={forecast.points}
         milestones={forecast.milestones}
+        stats={progressStats}
       />
     </div>
   );

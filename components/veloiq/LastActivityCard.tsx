@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Bike, Footprints, Mountain, Monitor } from 'lucide-react';
 import { C, RADIUS } from '@/lib/theme';
 import { CardLabel } from './CardLabel';
 import { createBrowserSupabaseClient } from '@/lib/supabase-browser';
@@ -142,14 +143,14 @@ function hhmm(seconds: number): string {
 // Ikona dyscypliny w kolorowym kwadraciku (SportBadge z mockupu).
 function SportBadge({ type }: { type: string | null }) {
   const t = (type ?? '').toLowerCase();
-  const icon = t.includes('run') ? '🏃' : t.includes('gravel') ? '🚵' : t.includes('virtual') ? '🖥️' : '🚴';
+  const Icon = t.includes('run') ? Footprints : t.includes('gravel') ? Mountain : t.includes('virtual') ? Monitor : Bike;
   return (
     <div style={{
       width: 40, height: 40, borderRadius: 10, flexShrink: 0,
       background: C.cyan + '1A', border: `1.5px solid ${C.cyan}44`,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
-      {icon}
+      <Icon size={18} color={C.cyan} strokeWidth={2} />
     </div>
   );
 }
