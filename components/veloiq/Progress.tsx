@@ -150,12 +150,31 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
               labelStyle={{ color: C.muted }}
               labelFormatter={(t) => new Date(t as number).toLocaleDateString('pl-PL', { month: 'short', year: '2-digit' })}
               formatter={(v, name) => {
-                if (Array.isArray(v)) return [`${v[0]}–${v[1]} W`, 'prognoza (zakres)'];
-                if (name === 'fc') return [`${v} W`, 'prognoza'];
+                if (Array.isArray(v)) return [`${v[0]}–${v[1]} W`, 'prognoza przy realizacji planu (zakres)'];
+                if (name === 'fc') return [`${v} W`, 'prognoza przy realizacji planu'];
                 return [`${v} W`, 'FTP'];
               }}
             />
-            <ReferenceLine x={todayT} stroke={C.border} strokeDasharray="4 4" />
+            {/* PROGNOZA + podpis zakotwiczone do STYKU (todayT = początek przerywanego odcinka), a nie
+                do piksela rogu. textAnchor="end" → etykieta rozciąga się w LEWO nad ogonem historii,
+                czysto od wartości końcowej "318" (prawy koniec) i od najbliższego marka "310" (tuż na
+                prawo od styku). viewBox.x = piksel todayT liczony przez Recharts z danych → skaluje się
+                dla dowolnego FTP i długości prognozy. */}
+            <ReferenceLine
+              x={todayT}
+              stroke={C.border}
+              strokeDasharray="4 4"
+              label={(props: { viewBox?: { x?: number; y?: number } }) => {
+                const vx = props.viewBox?.x ?? 0;
+                const vy = props.viewBox?.y ?? 0;
+                return (
+                  <g pointerEvents="none">
+                    <text x={vx - 4} y={vy + 9} textAnchor="end" fontSize={8} fontWeight={700} letterSpacing="0.12em" fill={C.purple}>PROGNOZA</text>
+                    <text x={vx - 4} y={vy + 18} textAnchor="end" fontSize={7.5} fontWeight={600} fill={C.muted}>przy realizacji planu</text>
+                  </g>
+                );
+              }}
+            />
             {/* PROGNOZA — pas niepewności lo-hi (purple ~14%), rozszerza się z horyzontem */}
             <Area dataKey="band" stroke="none" fill={C.purple} fillOpacity={0.14} isAnimationActive={false} connectNulls={false} activeDot={false} />
             {/* środkowa linia prognozy — przerywana purple */}
@@ -169,9 +188,6 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
             ))}
           </ComposedChart>
         </ResponsiveContainer>
-        <span style={{ position: 'absolute', top: 4, right: 8, fontSize: 8, fontWeight: 700, letterSpacing: '0.12em', color: C.purple, pointerEvents: 'none' }}>
-          PROGNOZA
-        </span>
       </div>
 
       {levelLabel != null && (
