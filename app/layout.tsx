@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { Space_Grotesk, Inter, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { SplashCloser } from "@/components/veloiq/SplashCloser";
 
@@ -12,6 +13,26 @@ const geistMono = localFont({
   src: "./fonts/GeistMonoVF.woff",
   variable: "--font-geist-mono",
   weight: "100 900",
+});
+
+// ETAP 1 — tokeny typografii (redesign "Forma"). latin-ext = polskie znaki (ą ć ę ł ń ó ś ż ź).
+// display: nagłówki + liczby; body: tekst; mono: etykiety kart (CardLabel).
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin", "latin-ext"],
+  weight: ["500", "600"],
+  variable: "--font-display",
+  display: "swap",
+});
+const inter = Inter({
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-body",
+  display: "swap",
+});
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin", "latin-ext"],
+  weight: ["500", "600"],
+  variable: "--font-mono",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -27,7 +48,7 @@ export default function RootLayout({
   return (
     <html lang="pl" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} ${inter.variable} ${plexMono.variable} antialiased bg-background text-foreground`}
       >
         {/* SPLASH — statyczny SSR, widoczny od pierwszego paintu (przed hydratacją).
             Tło #0a0a0f = realne --background z globals.css → zero błysku przy zniknięciu.

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { C } from '@/lib/theme';
+import { C, RADIUS } from '@/lib/theme';
 import type { FtpDisplay } from '@/lib/ftp';
 
 interface EngineCardsProps {
@@ -38,7 +38,7 @@ function Tag({ label, color }: { label: string; color: string }) {
 function CardShell({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
-      background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
+      background: C.card, border: `1px solid ${C.border}`, borderRadius: RADIUS.card,
       padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 14,
     }}>
       {children}

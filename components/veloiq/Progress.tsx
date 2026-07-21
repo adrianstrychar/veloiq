@@ -1,7 +1,7 @@
 'use client';
 
 import { ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis, Tooltip, ReferenceLine, ReferenceDot } from 'recharts';
-import { C } from '@/lib/theme';
+import { C, RADIUS } from '@/lib/theme';
 import type { ProgressStats } from '@/lib/progressStats';
 import { wkgLabel } from '@/lib/level';
 import type { ReconPoint } from '@/lib/ftp-reconstruct';
@@ -108,7 +108,7 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
   const marks = [earlierM, lastM].filter((m): m is Milestone => m != null);
 
   return (
-    <div style={{ background: C.bg, borderRadius: 12, border: `1px solid ${C.border}`, padding: 16, marginBottom: 12 }}>
+    <div style={{ background: C.bg, borderRadius: RADIUS.card, border: `1px solid ${C.border}`, padding: 16, marginBottom: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
         <div>
           <div style={{ fontSize: 10, color: C.muted, letterSpacing: '0.1em', fontWeight: 600, marginBottom: 4 }}>TWÓJ SILNIK · FTP</div>
@@ -194,7 +194,7 @@ function FtpHero({ recon, forecast, milestones, weightKg, ftpNow }: {
 // Onboarding/pole ręczne to osobny dług — tu tylko uczciwy komunikat.
 function FtpPlaceholder() {
   return (
-    <div style={{ background: C.bg, borderRadius: 12, border: `1px dashed ${C.border}`, padding: 16, marginBottom: 12, textAlign: 'center' }}>
+    <div style={{ background: C.bg, borderRadius: RADIUS.card, border: `1px dashed ${C.border}`, padding: 16, marginBottom: 12, textAlign: 'center' }}>
       <div style={{ fontSize: 10, color: C.muted, letterSpacing: '0.1em', fontWeight: 600, marginBottom: 6 }}>TWÓJ SILNIK · FTP</div>
       <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 4 }}>Ustaw FTP w profilu</div>
       <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
@@ -220,7 +220,7 @@ export function Progress({ stats, weightKg, seasonGoalKm, ftpNow, recon, forecas
   }
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: RADIUS.card, padding: 18 }}>
       {/* Nagłówek (mockup 1006-1009) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Twój rozwój</span>

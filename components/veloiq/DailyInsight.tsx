@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { C } from '@/lib/theme';
+import { C, RADIUS } from '@/lib/theme';
+import { CardLabel } from './CardLabel';
 
 // Wspólny kafelek — fallback MUSI wyglądać identycznie jak AI Insight (ta sama ramka,
 // padding, boczny akcent), żeby graceful degradation była niewidoczna jako degradacja.
@@ -9,12 +10,9 @@ const cardStyle: React.CSSProperties = {
   background: C.card,
   border: `1px solid ${C.border}`,
   borderLeft: `3px solid ${C.cyan}`,
-  borderRadius: '0 12px 12px 0',
+  borderRadius: `0 ${RADIUS.card}px ${RADIUS.card}px 0`,
   padding: '12px 14px',
   marginBottom: 10,
-};
-const headerStyle: React.CSSProperties = {
-  fontSize: 9, letterSpacing: '0.12em', fontWeight: 600, marginBottom: 7,
 };
 const bodyStyle: React.CSSProperties = { fontSize: 13, lineHeight: 1.65, color: C.text };
 
@@ -44,7 +42,7 @@ export function DailyInsight({ fallback }: { fallback?: string }) {
     if (!fallback) return null;
     return (
       <div style={cardStyle}>
-        <div style={{ ...headerStyle, color: C.muted }}>WSKAZÓWKA</div>
+        <CardLabel color={C.muted} style={{ marginBottom: 7 }}>WSKAZÓWKA</CardLabel>
         <div style={bodyStyle}>{fallback}</div>
       </div>
     );
@@ -52,7 +50,7 @@ export function DailyInsight({ fallback }: { fallback?: string }) {
 
   return (
     <div style={cardStyle}>
-      <div style={{ ...headerStyle, color: C.cyan }}>AI INSIGHT</div>
+      <CardLabel color={C.cyan} style={{ marginBottom: 7 }}>AI INSIGHT</CardLabel>
       {text ? (
         <div style={bodyStyle}>{text}</div>
       ) : (

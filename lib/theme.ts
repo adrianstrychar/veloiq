@@ -12,3 +12,14 @@ export const C = {
   muted: '#9AA0AB',
   dim: '#21252C',
 };
+
+// Tokeny typografii (ETAP 1). Wartości CSS var wstrzykuje next/font w app/layout.tsx.
+// display = Space Grotesk (nagłówki, liczby), body = Inter (tekst), mono = IBM Plex Mono (etykiety).
+export const F = {
+  display: 'var(--font-display), "Space Grotesk", system-ui, sans-serif',
+  body: 'var(--font-body), Inter, system-ui, sans-serif',
+  mono: 'var(--font-mono), "IBM Plex Mono", ui-monospace, monospace',
+} as const;
+
+// Tokeny geometrii (ETAP 1). card = jednolity promień kart, obrys 1px w C.border.
+export const RADIUS = { card: 16, pill: 20, inner: 8 } as const;
