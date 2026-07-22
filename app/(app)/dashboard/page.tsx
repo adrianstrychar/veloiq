@@ -20,6 +20,7 @@ import { SeasonGoalCard } from '@/components/veloiq/SeasonGoalCard';
 import { TodayCard, type TodayPlan } from '@/components/veloiq/TodayCard';
 import { WeekCard, type WeekDay } from '@/components/veloiq/WeekCard';
 import { computeRecords, computePowerRecords, computeGoal, type Period, type PeriodRecords } from '@/lib/dashboard-engagement';
+import styles from './dashboard.module.css';
 
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
@@ -248,7 +249,7 @@ export default async function DashboardPage() {
       {/* Siatka kart (ETAP 3.5): desktop 2 kolumny ≥860px, mobile 1 kolumna; span2 = pełna szerokość.
           Kolejność: 1 Gotowość | 2 Dziś · 3 AI Insight(span2) · 4 Tydzień | 5 Ostatnia ·
           6 Silnik(span2) · 7 Rekordy | 8 Moc · 9 Cel sezonu(span2). */}
-      <div className="grid grid-cols-1 min-[860px]:grid-cols-2 gap-4">
+      <div className={styles.grid}>
         {/* 1. Gotowość */}
         {readiness && <ReadinessModule readiness={readiness} pmc={pmc} />}
 
@@ -256,7 +257,7 @@ export default async function DashboardPage() {
         <TodayCard plan={todayPlan} />
 
         {/* 3. AI Insight (span2) */}
-        <div className="min-[860px]:col-span-2">
+        <div className={styles.span2}>
           {readiness && <DailyInsight fallback={readiness.advice} />}
         </div>
 
@@ -272,7 +273,7 @@ export default async function DashboardPage() {
         )}
 
         {/* 6. Twój silnik (span2) — FTP + pułap tlenowy (bez stopki sezonu) */}
-        <div className="min-[860px]:col-span-2">
+        <div className={styles.span2}>
           <EngineCard
             ftp={ftpData}
             vo2Estimate={(athlete as any)?.vo2_estimate != null ? Math.round(Number((athlete as any).vo2_estimate)) : null}
@@ -290,7 +291,7 @@ export default async function DashboardPage() {
         <PowerShelfCard power={power} />
 
         {/* 9. Cel sezonu (span2, slim strip) */}
-        <div className="min-[860px]:col-span-2">
+        <div className={styles.span2}>
           <SeasonGoalCard goal={goal} />
         </div>
       </div>
