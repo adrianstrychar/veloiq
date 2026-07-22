@@ -6,7 +6,6 @@ import { ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis, Tooltip, 
 import { TrendingUp, TrendingDown, Wind } from 'lucide-react';
 import { C, F, RADIUS } from '@/lib/theme';
 import { CardLabel } from './CardLabel';
-import type { ProgressStats } from '@/lib/progressStats';
 import { wkgLabel } from '@/lib/level';
 import type { ReconPoint } from '@/lib/ftp-reconstruct';
 import type { ForecastPoint, Milestone } from '@/lib/ftp-forecast';
@@ -40,7 +39,6 @@ interface EngineCardProps {
   recon: ReconPoint[];         // historia zrekonstruowana (envelope) — linia CIĄGŁA
   forecast: ForecastPoint[];   // prognoza periodyzowana — linia PRZERYWANA
   milestones: Milestone[];
-  stats: ProgressStats;        // sezon: km · h · przewyższenie (footer)
 }
 
 // ── Wykres FTP (fakt/model) ────────────────────────────────────────────────────
@@ -138,7 +136,7 @@ function FtpChart({ recon, forecast, milestones }: { recon: ReconPoint[]; foreca
   );
 }
 
-export function EngineCard({ ftp, vo2Estimate, weightKg, recon, forecast, milestones, stats }: EngineCardProps) {
+export function EngineCard({ ftp, vo2Estimate, weightKg, recon, forecast, milestones }: EngineCardProps) {
   const router = useRouter();
   const [accepting, setAccepting] = useState(false);
 
@@ -165,8 +163,6 @@ export function EngineCard({ ftp, vo2Estimate, weightKg, recon, forecast, milest
   const fromMonth = realMonthly.length ? PL_MONTH_GEN[new Date(realMonthly[0].t).getUTCMonth()] : '';
   const wkg = weightKg && ftpNow ? ftpNow / weightKg : null;
   const valueColor = ftp.est ? C.yellow : C.cyan;
-
-  const footer = `Sezon 2026: ${stats.totalKm.toLocaleString('pl')} km · ${stats.totalHours} h · ${stats.totalElevationM.toLocaleString('pl')} m`;
 
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: RADIUS.card, padding: 18 }}>
@@ -246,11 +242,6 @@ export function EngineCard({ ftp, vo2Estimate, weightKg, recon, forecast, milest
           </span>
         </div>
       )}
-
-      {/* Stopka sezonu: km · h · przewyższenie */}
-      <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.border}`, fontSize: 11, color: C.muted, letterSpacing: '0.02em', textAlign: 'center' }}>
-        {footer}
-      </div>
     </div>
   );
 }

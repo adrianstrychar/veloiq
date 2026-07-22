@@ -9,12 +9,17 @@ import { FtpEngineNote } from '@/components/veloiq/FtpEngineNote';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { computeProgressStats, type ActivityStatRow } from '@/lib/progressStats';
 import { ftpDisplay, deriveFtpSource } from '@/lib/ftp';
-import { localTodayISO } from '@/lib/plan';
+import { localTodayISO, mondayOfISO } from '@/lib/plan';
 import type { RacePriority } from '@/lib/race-taper';
 import { reconstructFtp, type ReconRide } from '@/lib/ftp-reconstruct';
 import { forecastFtpPeriodized, buildRateFromEnvelope, type RaceLite } from '@/lib/ftp-forecast';
-import { C, RADIUS } from '@/lib/theme';
-import { Flame, Link2 } from 'lucide-react';
+import { Link2 } from 'lucide-react';
+import { RecordsCard } from '@/components/veloiq/RecordsCard';
+import { PowerShelfCard } from '@/components/veloiq/PowerShelfCard';
+import { SeasonGoalCard } from '@/components/veloiq/SeasonGoalCard';
+import { TodayCard, type TodayPlan } from '@/components/veloiq/TodayCard';
+import { WeekCard, type WeekDay } from '@/components/veloiq/WeekCard';
+import { computeRecords, computePowerRecords, computeGoal, type Period, type PeriodRecords } from '@/lib/dashboard-engagement';
 
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
@@ -33,7 +38,8 @@ export default async function DashboardPage() {
   const stravaConnected = !!athlete?.strava_id;
   const todayISO = localTodayISO();
 
-  const [{ data: pmcRows }, { data: lastActivity }, { data: hrCheck }, { data: season2026 }, { data: powerRides }, { data: upcomingRaces }] = await Promise.all([
+  const weekStart = mondayOfISO(todayISO);
+  const [{ data: pmcRows }, { data: lastActivity }, { data: hrCheck }, { data: season2026 }, { data: powerRides }, { data: upcomingRaces }, { data: weekPlan }] = await Promise.all([
     // Pełna historia sezonu — potrzebna do gotowości (szczyt CTL, rampa) i progresu.
     supabase
       .from('fitness_metrics')
@@ -56,10 +62,11 @@ export default async function DashboardPage() {
       .not('avg_hr', 'is', null)
       .limit(1)
       .maybeSingle(),
-    // wszystkie jazdy sezonu 2026 — statystyki rozwoju (streak, suma km/h/przewyższenie do stopki silnika)
+    // wszystkie jazdy sezonu 2026 — streak, suma km, rekordy okresowe (RecordsCard) + słupki tygodnia.
+    // start_date_local: bucketowanie rekordów po dacie lokalnej (spójnie ze specem).
     supabase
       .from('strava_activities')
-      .select('activity_date, distance_km, name, duration_seconds, elevation_m')
+      .select('activity_date, distance_km, name, duration_seconds, elevation_m, tss, start_date_local:raw_data->start_date_local')
       .eq('athlete_id', athleteId)
       .gte('activity_date', '2026-01-01')
       .order('activity_date', { ascending: true }),
@@ -78,6 +85,13 @@ export default async function DashboardPage() {
       .eq('athlete_id', athleteId)
       .gte('date', todayISO)
       .order('date', { ascending: true }),
+    // Plan bieżącego tygodnia — karta "Dziś" (sesja na dziś) + "Ten tydzień" (dni plan vs wykonane).
+    supabase
+      .from('weekly_plans')
+      .select('plan_json')
+      .eq('athlete_id', athleteId)
+      .eq('week_start', weekStart)
+      .maybeSingle(),
   ]);
 
   // Wyprowadź source FTP i zbuduj display object
@@ -138,6 +152,75 @@ export default async function DashboardPage() {
       })
     : { points: [], milestones: [], buildRatePerWeek: 0 };
 
+  // ── Moduły zaangażowania (ETAP 3.5) — czyste helpery (lib/dashboard-engagement) ──
+  const addDaysISO = (isoDate: string, n: number): string => {
+    const d = new Date(isoDate + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  const [ty, tm, td] = todayISO.split('-').map(Number);
+  const todayDate = new Date(ty, tm - 1, td); // tylko części daty → niezależne od TZ serwera
+
+  // Rekordy per okres (tydzień/miesiąc/sezon) — data lokalna jazdy (start_date_local ?? activity_date).
+  const rideStats = (season2026 ?? []).map((r) => ({
+    date: (typeof (r as { start_date_local?: unknown }).start_date_local === 'string'
+      ? (r as { start_date_local: string }).start_date_local
+      : (r.activity_date as string)).slice(0, 10),
+    distance_km: r.distance_km as number | null,
+    elevation_m: (r as { elevation_m?: number | null }).elevation_m ?? null,
+    duration_seconds: (r as { duration_seconds?: number | null }).duration_seconds ?? null,
+  }));
+  const records: Record<Period, PeriodRecords> = {
+    week: computeRecords(rideStats, 'week', todayDate),
+    month: computeRecords(rideStats, 'month', todayDate),
+    season: computeRecords(rideStats, 'season', todayDate),
+  };
+
+  // Rekordy mocy sezonu (best_efforts per aktywność).
+  const power = computePowerRecords(
+    (powerRides ?? []).map((r) => ({ date: r.activity_date as string, best_efforts: (r as { best_efforts?: Record<string, number | null> | null }).best_efforts ?? null })),
+    todayDate
+  );
+
+  // Cel sezonu — stała w configu (TODO: przenieść do configu/athletes.season_km_goal, bez UI w tym etapie).
+  const SEASON_KM_GOAL = 12000;
+  const goal = computeGoal(progressStats.totalKm, SEASON_KM_GOAL, todayDate);
+
+  // Plan bieżącego tygodnia → Dziś + Ten tydzień.
+  const planDays = (((weekPlan as { plan_json?: { days?: Array<{ dow: number; date: string; type: string; label: string; tss: number; dur_min: number; zones: number[] }> } } | null)?.plan_json)?.days) ?? [];
+  const todayPlanDay = planDays.find((d) => d.date === todayISO) ?? null;
+  const todayPlan: TodayPlan | null = todayPlanDay
+    ? { label: todayPlanDay.label, type: todayPlanDay.type, tss: todayPlanDay.tss, durMin: todayPlanDay.dur_min, zones: todayPlanDay.zones ?? [] }
+    : null;
+
+  // Ten tydzień: wykonane (jazdy sezonu w oknie tygodnia) vs plan.
+  const weekEnd = addDaysISO(weekStart, 6);
+  const weekActs = (season2026 ?? []).filter((a) => (a.activity_date as string) >= weekStart && (a.activity_date as string) <= weekEnd);
+  const doneTssByDate = new Map<string, number>();
+  for (const a of weekActs) {
+    const k = a.activity_date as string;
+    doneTssByDate.set(k, (doneTssByDate.get(k) ?? 0) + Number((a as { tss?: number | null }).tss ?? 0));
+  }
+  const DOW_LABELS = ['PN', 'WT', 'ŚR', 'CZW', 'PT', 'SO', 'ND'];
+  const rawWeek = Array.from({ length: 7 }, (_, i) => {
+    const date = addDaysISO(weekStart, i);
+    const plan = planDays.find((d) => d.date === date);
+    const doneTss = doneTssByDate.get(date) ?? 0;
+    const planTss = plan && plan.type !== 'OFF' ? plan.tss : 0;
+    return { label: DOW_LABELS[i], hasDone: doneTssByDate.has(date), doneTss, planTss, isToday: date === todayISO, planned: !doneTssByDate.has(date) && !!plan && plan.type !== 'OFF' };
+  });
+  const maxWeek = Math.max(1, ...rawWeek.map((d) => (d.hasDone ? d.doneTss : d.planTss)));
+  const weekDays: WeekDay[] = rawWeek.map((d) => ({
+    label: d.label, done: d.hasDone, planned: d.planned, isToday: d.isToday,
+    heightPct: ((d.hasDone ? d.doneTss : d.planTss) / maxWeek) * 100,
+  }));
+  const weekTotals = {
+    rides: weekActs.length,
+    km: Math.round(weekActs.reduce((s, x) => s + Number(x.distance_km ?? 0), 0)),
+    doneTss: Math.round(weekActs.reduce((s, x) => s + Number((x as { tss?: number | null }).tss ?? 0), 0)),
+    planTss: planDays.filter((d) => d.type !== 'OFF').reduce((s, d) => s + (d.tss ?? 0), 0),
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <DashboardHeader
@@ -162,46 +245,55 @@ export default async function DashboardPage() {
           <FtpEngineNote from={Number((athlete as any).ftp_prev_value)} to={Number((athlete as any).ftp_watts)} />
         )}
 
-      {/* 1. Gotowość dziś */}
-      {readiness && <ReadinessModule readiness={readiness} pmc={pmc} />}
+      {/* Siatka kart (ETAP 3.5): desktop 2 kolumny ≥860px, mobile 1 kolumna; span2 = pełna szerokość.
+          Kolejność: 1 Gotowość | 2 Dziś · 3 AI Insight(span2) · 4 Tydzień | 5 Ostatnia ·
+          6 Silnik(span2) · 7 Rekordy | 8 Moc · 9 Cel sezonu(span2). */}
+      <div className="grid grid-cols-1 min-[860px]:grid-cols-2 gap-4">
+        {/* 1. Gotowość */}
+        {readiness && <ReadinessModule readiness={readiness} pmc={pmc} />}
 
-      {/* 2. Pasek "Dziś" — ETAP 6 (TodayBar) */}
+        {/* 2. Dziś — zaplanowana sesja (pasek stref, bez tekstu struktury) */}
+        <TodayCard plan={todayPlan} />
 
-      {/* 3. AI Insight: forma na dziś (fallback = statyczny advice gdy AI padnie) */}
-      {readiness && <DailyInsight fallback={readiness.advice} />}
-
-      {/* 4. Ten tydzień — ETAP 5. Tymczasowo TYLKO streak (NIE usuwamy go — przenosi się do
-          karty "Ten tydzień" w ETAP 5). Reszta karty tygodnia dochodzi w E5. */}
-      {progressStats.streakWeeks > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          background: C.card, border: `1px solid ${C.border}`, borderRadius: RADIUS.card, padding: '12px 16px',
-        }}>
-          <Flame size={18} color={C.yellow} strokeWidth={2} />
-          <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>
-            {progressStats.streakWeeks} tyg. z rzędu z treningiem
-          </span>
+        {/* 3. AI Insight (span2) */}
+        <div className="min-[860px]:col-span-2">
+          {readiness && <DailyInsight fallback={readiness.advice} />}
         </div>
-      )}
 
-      {/* 5. Ostatnia aktywność — klikalna, otwiera RideAnalysis */}
-      {lastActivity && (
-        <LastActivityCard
-          activity={lastActivity as unknown as LastActivityRow}
-          ftp={(athlete as any)?.ftp_watts ?? null}
-        />
-      )}
+        {/* 4. Ten tydzień — słupki plan vs wykonane + streak */}
+        <WeekCard days={weekDays} streakWeeks={progressStats.streakWeeks} totals={weekTotals} />
 
-      {/* 6. Twój silnik — FTP (rekonstrukcja + prognoza) + pułap tlenowy + stopka sezonu */}
-      <EngineCard
-        ftp={ftpData}
-        vo2Estimate={(athlete as any)?.vo2_estimate != null ? Math.round(Number((athlete as any).vo2_estimate)) : null}
-        weightKg={weight}
-        recon={recon}
-        forecast={forecast.points}
-        milestones={forecast.milestones}
-        stats={progressStats}
-      />
+        {/* 5. Ostatnia aktywność */}
+        {lastActivity && (
+          <LastActivityCard
+            activity={lastActivity as unknown as LastActivityRow}
+            ftp={(athlete as any)?.ftp_watts ?? null}
+          />
+        )}
+
+        {/* 6. Twój silnik (span2) — FTP + pułap tlenowy (bez stopki sezonu) */}
+        <div className="min-[860px]:col-span-2">
+          <EngineCard
+            ftp={ftpData}
+            vo2Estimate={(athlete as any)?.vo2_estimate != null ? Math.round(Number((athlete as any).vo2_estimate)) : null}
+            weightKg={weight}
+            recon={recon}
+            forecast={forecast.points}
+            milestones={forecast.milestones}
+          />
+        </div>
+
+        {/* 7. Twoje rekordy */}
+        <RecordsCard records={records} />
+
+        {/* 8. Rekordy mocy */}
+        <PowerShelfCard power={power} />
+
+        {/* 9. Cel sezonu (span2, slim strip) */}
+        <div className="min-[860px]:col-span-2">
+          <SeasonGoalCard goal={goal} />
+        </div>
+      </div>
     </div>
   );
 }
