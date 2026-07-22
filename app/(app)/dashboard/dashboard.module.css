@@ -1,3 +1,11 @@
+/* Kontener strony dashboardu — wycentrowany, max 1100px. Shell (app)/layout.tsx NIE narzuca już
+   szerokości; dashboard sam ustala swój tor. Bez tego grid był więziony w 448px (max-w-md shella),
+   a @media(min-width:860px) mierzy viewport → 2 kolumny w 448px = ściśnięte, nierówne karty. */
+.page {
+  max-width: 1100px;
+  margin-inline: auto;
+}
+
 /* Siatka kart dashboardu (ETAP 3.5) — DETERMINISTYCZNY CSS, nie Tailwind arbitrary.
    Mobile-first: JEDNA kolumna, karty pełnej szerokości pod sobą. Dwie kolumny DOPIERO od 860px.
    align-items: start → krótka karta (np. "Dziś") nie rozciąga się do wysokości sąsiada w wierszu. */

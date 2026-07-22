@@ -23,7 +23,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <ChatProvider>
       <div className="min-h-screen pb-20">
-        <main className="max-w-md mx-auto px-4 py-4">{children}</main>
+        {/* Shell NIE narzuca szerokości — każda strona deklaruje własny kontener:
+            mobilne widoki (plan/chat/kalendarz/wyścigi) = max-w-md mx-auto,
+            dashboard = własny kontener ~1100px (dashboard.module.css .page).
+            Wcześniej twardy max-w-md=448px więził dashboard: grid @media(min-width:860px)
+            mierzy viewport (np. 2500px → 2 kolumny) przy realnej szerokości 448px → ściśnięte karty. */}
+        <main className="px-4 py-4">{children}</main>
         <BottomNav />
       </div>
     </ChatProvider>

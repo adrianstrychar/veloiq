@@ -223,7 +223,7 @@ export default async function DashboardPage() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={`flex flex-col gap-4 ${styles.page}`}>
       <DashboardHeader
         athleteName={athlete?.name ?? 'Zawodniku'}
         lastSyncedAt={(lastActivity as { synced_at?: string | null } | null)?.synced_at ?? null}
