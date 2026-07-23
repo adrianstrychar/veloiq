@@ -19,7 +19,7 @@ import { PowerShelfCard } from '@/components/veloiq/PowerShelfCard';
 import { SeasonGoalCard } from '@/components/veloiq/SeasonGoalCard';
 import { TodayCard, type TodayPlan } from '@/components/veloiq/TodayCard';
 import { WeekCard, type WeekDay } from '@/components/veloiq/WeekCard';
-import { computeRecords, computePowerRecords, computeGoal, type Period, type PeriodRecords } from '@/lib/dashboard-engagement';
+import { computeRecords, computePowerByPeriod, computeGoal, type Period, type PeriodRecords } from '@/lib/dashboard-engagement';
 import styles from './dashboard.module.css';
 
 export default async function DashboardPage() {
@@ -75,7 +75,7 @@ export default async function DashboardPage() {
     // niepotrzebne). intensity_factor = sygnał "twardej jazdy" do envelope dowodowego (hold vs zejście).
     supabase
       .from('strava_activities')
-      .select('activity_date, type, best_efforts, intensity_factor')
+      .select('activity_date, type, best_efforts, intensity_factor, start_date_local:raw_data->start_date_local')
       .eq('athlete_id', athleteId)
       .not('best_efforts', 'is', null)
       .order('activity_date', { ascending: true }),
@@ -177,9 +177,15 @@ export default async function DashboardPage() {
     season: computeRecords(rideStats, 'season', todayDate),
   };
 
-  // Rekordy mocy sezonu (best_efforts per aktywność).
-  const power = computePowerRecords(
-    (powerRides ?? []).map((r) => ({ date: r.activity_date as string, best_efforts: (r as { best_efforts?: Record<string, number | null> | null }).best_efforts ?? null })),
+  // Rekordy mocy per okres — best_efforts, bucketowane po dacie lokalnej (start_date_local ?? activity_date),
+  // spójnie z RecordsCard. Okno okresu (tydzień/miesiąc/sezon) filtruje helper.
+  const power = computePowerByPeriod(
+    (powerRides ?? []).map((r) => ({
+      date: (typeof (r as { start_date_local?: unknown }).start_date_local === 'string'
+        ? (r as { start_date_local: string }).start_date_local
+        : (r.activity_date as string)).slice(0, 10),
+      best_efforts: (r as { best_efforts?: Record<string, number | null> | null }).best_efforts ?? null,
+    })),
     todayDate
   );
 
