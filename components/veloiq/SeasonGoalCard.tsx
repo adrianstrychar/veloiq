@@ -37,7 +37,11 @@ export function SeasonGoalCard({ goal }: { goal: GoalStatus }) {
           </div>
           {/* tick poza overflow paska (pełna wysokość) */}
           <div style={{ position: 'relative', height: 0 }}>
-            <div title="dziś wg planu" style={{ position: 'absolute', top: -12, left: `${goal.tickPct}%`, width: 2, height: 14, background: C.muted, transform: 'translateX(-1px)' }} />
+            <div title="zakładane tempo" style={{ position: 'absolute', top: -12, left: `${goal.tickPct}%`, width: 2, height: 14, background: C.muted, transform: 'translateX(-1px)' }} />
+          </div>
+          {/* mikro-podpis pod znacznikiem — wyjaśnia, co oznacza pionowa kreska */}
+          <div style={{ position: 'relative', height: 10, marginTop: 5 }}>
+            <span style={{ position: 'absolute', left: `${goal.tickPct}%`, transform: 'translateX(-50%)', fontSize: 8, lineHeight: 1, color: C.muted, whiteSpace: 'nowrap' }}>zakładane tempo</span>
           </div>
         </div>
 

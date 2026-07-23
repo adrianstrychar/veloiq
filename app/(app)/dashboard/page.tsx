@@ -5,6 +5,7 @@ import { ReadinessModule } from '@/components/veloiq/ReadinessModule';
 import { DailyInsight } from '@/components/veloiq/DailyInsight';
 import { LastActivityCard, type LastActivityRow } from '@/components/veloiq/LastActivityCard';
 import { DashboardHeader } from '@/components/veloiq/DashboardHeader';
+import { FtpBar } from '@/components/veloiq/FtpBar';
 import { FtpEngineNote } from '@/components/veloiq/FtpEngineNote';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { computeProgressStats, type ActivityStatRow } from '@/lib/progressStats';
@@ -224,7 +225,11 @@ export default async function DashboardPage() {
   const weekTotals = {
     rides: weekActs.length,
     km: Math.round(weekActs.reduce((s, x) => s + Number(x.distance_km ?? 0), 0)),
+    // Czas w ruchu — suma duration_seconds jazd tygodnia (do podpisu "H:MM h").
+    movingSec: weekActs.reduce((s, x) => s + Number((x as { duration_seconds?: number | null }).duration_seconds ?? 0), 0),
     doneTss: Math.round(weekActs.reduce((s, x) => s + Number((x as { tss?: number | null }).tss ?? 0), 0)),
+    // Zweryfikowane na realnej bazie: plan_json.days każdego wiersza weekly_plans ma dokładnie 7 dni
+    // w oknie week_start..+6 → to suma TSS TYLKO bieżącego tygodnia (pon–nd), nie szerszego zakresu.
     planTss: planDays.filter((d) => d.type !== 'OFF').reduce((s, d) => s + (d.tss ?? 0), 0),
   };
 
@@ -256,6 +261,12 @@ export default async function DashboardPage() {
           Kolejność: 1 Gotowość | 2 Dziś · 3 AI Insight(span2) · 4 Tydzień | 5 Ostatnia ·
           6 Silnik(span2) · 7 Rekordy | 8 Moc · 9 Cel sezonu(span2). */}
       <div className={styles.grid}>
+        {/* 0. Pasek FTP (span2) — pierwszy element, nad Gotowością. Szybki rzut oka na FTP;
+            karta "Twój silnik" (poz. 6) niesie wykres/prognozę/VO2 bez zmian. */}
+        <div className={styles.span2}>
+          <FtpBar ftp={ftpData} />
+        </div>
+
         {/* 1. Gotowość */}
         {readiness && <ReadinessModule readiness={readiness} pmc={pmc} />}
 

@@ -13,11 +13,19 @@ export interface WeekDay {
   isToday: boolean;
   heightPct: number;   // 0..100 względem maks. tygodnia (done TSS lub plan TSS)
 }
-export interface WeekTotals { rides: number; km: number; doneTss: number; planTss: number }
+export interface WeekTotals { rides: number; km: number; movingSec: number; doneTss: number; planTss: number }
 
 const nf0 = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 0 });
 
+// Czas w ruchu → "H:MM" (np. 3600 s → "1:00").
+function hoursLabel(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+
 export function WeekCard({ days, streakWeeks, totals }: { days: WeekDay[]; streakWeeks: number; totals: WeekTotals }) {
+  const pct = totals.planTss > 0 ? Math.round((totals.doneTss / totals.planTss) * 100) : 0;
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: RADIUS.card, padding: '1.05rem 1.15rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -48,9 +56,37 @@ export function WeekCard({ days, streakWeeks, totals }: { days: WeekDay[]; strea
         ))}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 11, fontSize: 11, color: C.muted, flexWrap: 'wrap', gap: 8 }}>
-        <span><b style={{ color: C.text, fontWeight: 700 }}>{totals.rides} {totals.rides === 1 ? 'jazda' : 'jazdy'}</b> · {nf0.format(totals.km)} km · {totals.doneTss} TSS</span>
-        <span>plan: <b style={{ color: C.text, fontWeight: 700 }}>{totals.planTss} TSS</b></span>
+      {/* Legenda pod słupkami — co znaczy pełny słupek vs przerywany obrys. Mikro, stonowana. */}
+      <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginTop: 9, fontSize: 9, color: C.muted }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ width: 10, height: 8, borderRadius: 2, background: `linear-gradient(180deg, ${C.green}A6, ${C.green}26)` }} />
+          wykonane
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ width: 10, height: 8, borderRadius: 2, border: `1.5px dashed ${C.border}` }} />
+          zaplanowane
+        </span>
+      </div>
+
+      {/* Podsumowanie tygodnia — jazdy · km · czas w ruchu · TSS wykonane. */}
+      <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 11, fontSize: 11, color: C.muted }}>
+        <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+          <b style={{ color: C.text, fontWeight: 700 }}>{totals.rides} {totals.rides === 1 ? 'jazda' : 'jazdy'}</b> · {nf0.format(totals.km)} km · {hoursLabel(totals.movingSec)} h · {totals.doneTss} TSS
+        </span>
+
+        {/* Postęp tygodnia: wykonane / zaplanowane. Pasek bez glow (C.cyan). */}
+        {totals.planTss > 0 ? (
+          <>
+            <div style={{ height: 5, background: C.dim, borderRadius: 3, overflow: 'hidden', marginTop: 9 }}>
+              <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: C.cyan, borderRadius: 3 }} />
+            </div>
+            <div style={{ marginTop: 5, fontSize: 10.5, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>
+              <b style={{ color: C.text, fontWeight: 700 }}>{totals.doneTss}</b> / {totals.planTss} TSS · {pct}%
+            </div>
+          </>
+        ) : (
+          <div style={{ marginTop: 8, fontSize: 10.5, color: C.muted }}>brak planu na ten tydzień</div>
+        )}
       </div>
     </div>
   );
