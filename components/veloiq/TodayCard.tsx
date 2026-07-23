@@ -21,7 +21,7 @@ function durLabel(min: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}` : `${m} min`;
 }
 
-export function TodayCard({ plan }: { plan: TodayPlan | null }) {
+export function TodayCard({ plan, dayDate }: { plan: TodayPlan | null; dayDate: string }) {
   const isRest = !plan || plan.type === 'OFF';
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: RADIUS.card, padding: '1.05rem 1.15rem' }}>
@@ -50,7 +50,7 @@ export function TodayCard({ plan }: { plan: TodayPlan | null }) {
               z > 0 ? <div key={i} style={{ width: `${(z / (plan.zones.reduce((a, b) => a + b, 0) || 1)) * 100}%`, background: ZONE_COLORS[i] }} /> : null
             )}
           </div>
-          <Link href="/plan" style={{ display: 'inline-block', marginTop: 15, background: C.cyan, color: C.bg, borderRadius: 9, padding: '0.5rem 1.05rem', fontSize: 11.5, fontWeight: 700, textDecoration: 'none' }}>
+          <Link href={`/plan?date=${dayDate}`} style={{ display: 'inline-block', marginTop: 15, background: C.cyan, color: C.bg, borderRadius: 9, padding: '0.5rem 1.05rem', fontSize: 11.5, fontWeight: 700, textDecoration: 'none' }}>
             Zobacz szczegóły →
           </Link>
         </>

@@ -23,7 +23,7 @@ interface PlanJson {
 
 const CURRENT_IDX = 1; // okno: [poprzedni, BIEŻĄCY, następny, za 2 tyg]
 
-export default async function PlanPage() {
+export default async function PlanPage({ searchParams }: { searchParams: { date?: string } }) {
   const supabase = createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -123,7 +123,7 @@ export default async function PlanPage() {
         <span className="text-lg font-bold">Plan tygodnia</span>
       </header>
 
-      <Plan weeks={weeks} currentIdx={CURRENT_IDX} todayISO={todayISO} ftp={ftp} ctl={ctl} activitiesByDate={activitiesByDate} races={(raceRows ?? []) as PlanRaceRow[]} />
+      <Plan weeks={weeks} currentIdx={CURRENT_IDX} todayISO={todayISO} ftp={ftp} ctl={ctl} activitiesByDate={activitiesByDate} races={(raceRows ?? []) as PlanRaceRow[]} openDayDate={typeof searchParams?.date === 'string' ? searchParams.date : undefined} />
     </div>
   );
 }

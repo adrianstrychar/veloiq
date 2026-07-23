@@ -271,7 +271,7 @@ export default async function DashboardPage() {
         {readiness && <ReadinessModule readiness={readiness} pmc={pmc} />}
 
         {/* 2. Dziś — zaplanowana sesja (pasek stref, bez tekstu struktury) */}
-        <TodayCard plan={todayPlan} />
+        <TodayCard plan={todayPlan} dayDate={todayISO} />
 
         {/* 3. AI Insight (span2) */}
         <div className={styles.span2}>
