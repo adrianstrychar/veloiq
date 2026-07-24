@@ -230,7 +230,14 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
     raceLine = `NAJBLIŻSZY START: ${nextRace.name} za ${daysAway} dni (prio ${prio})${inTaper ? ' · OKNO TAPERU (nie zwiększaj obciążenia)' : ''}`;
   }
 
-  const anchor = `ZAWODNIK: ${athlete?.name ?? 'Nieznany'} | Dyscyplina: ${athlete?.discipline ?? 'gravel'}
+  const athleteName = typeof athlete?.name === 'string' && athlete.name.trim() ? athlete.name.trim() : null;
+  // Twarda reguła: imię DOKŁADNIE z profilu, zero zdrobnień/wariantów; brak → pomiń zwrot po imieniu.
+  const nameRule = athleteName
+    ? `IMIĘ: zwracaj się DOKŁADNIE "${athleteName}" — NIGDY nie skracaj, nie zdrabniaj ani nie twórz wariantów (np. NIE "Adi").`
+    : 'IMIĘ: nieznane — POMIŃ zwrot po imieniu (nie zgaduj), mów na "Ty".';
+
+  const anchor = `ZAWODNIK: ${athleteName ?? 'Nieznany'} | Dyscyplina: ${athlete?.discipline ?? 'gravel'}
+${nameRule}
 ${ftpLine}
 DZIŚ: ${todayISO} (${dayName})
 FORMA DZIŚ: CTL ${ctl} | ATL ${atl} | TSB ${tsb}${trend !== null ? ` | Trend CTL ${trend >= 0 ? '+' : ''}${trend}/tydzień` : ''}${

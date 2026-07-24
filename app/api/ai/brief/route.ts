@@ -38,7 +38,7 @@ export async function GET() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, daily_brief_text, daily_brief_date')
+    .select('id, name, daily_brief_text, daily_brief_date')
     .eq('user_id', user.id)
     .single();
   if (!athlete) return NextResponse.json({ error: 'athlete_not_found' }, { status: 404 });
@@ -89,6 +89,7 @@ export async function GET() {
   }
 
   const inputs: BriefInputs = {
+    name: typeof athlete.name === 'string' && athlete.name.trim() ? athlete.name.trim() : null,
     tsb: metrics?.tsb != null ? Number(metrics.tsb) : 0,
     todaySession: todaySession ? { type: todaySession.type, label: todaySession.label } : null,
     isRest,

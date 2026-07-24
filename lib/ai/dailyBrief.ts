@@ -4,6 +4,7 @@
 // planu w 2 zdaniach; brief wita i zaprasza do rozmowy). Filozofia spójna: nie namawiać do docisku.
 
 export interface BriefInputs {
+  name: string | null; // imię z profilu; null → model pomija zwrot po imieniu (nie zgaduje)
   tsb: number;
   todaySession: { type: string; label: string } | null; // null = dzień otwarty
   isRest: boolean;                                        // dziś OFF / brak sesji
@@ -12,8 +13,14 @@ export interface BriefInputs {
 }
 
 export function buildDailyBriefPrompt(x: BriefInputs): { system: string; user: string } {
+  // Twarda reguła imienia: DOKŁADNIE z profilu, zero zdrobnień/wariantów; brak imienia → pomiń zwrot.
+  const nameRule = x.name
+    ? `Zawodnik ma na imię "${x.name}". Jeśli zwracasz się po imieniu, użyj DOKŁADNIE "${x.name}" — NIGDY nie skracaj, nie zdrabniaj ani nie twórz wariantów (np. NIE "Adi" zamiast "Adrian").`
+    : 'Nie znasz imienia zawodnika — POMIŃ zwrot po imieniu (nie zgaduj), mów po prostu na "Ty".';
+
   const system = [
-    'Jesteś trenerem kolarstwa i piszesz do zawodnika (Adrian) na "Ty" — ciepło, zwięźle, jak kolega.',
+    'Jesteś trenerem kolarstwa i piszesz do zawodnika na "Ty" — ciepło, zwięźle, jak kolega.',
+    nameRule,
     'Napisz BRIEF DNIA: 2–4 krótkie zdania, konwersacyjny opener czatu (nie wykład).',
     'Zacznij od stanu (świeżość/gotowość), wspomnij dzisiejszą sesję, dorzuć najbliższy start jeśli jest',
     'i świeży rekord jeśli padł. Zakończ JEDNYM otwartym pytaniem zapraszającym do rozmowy',

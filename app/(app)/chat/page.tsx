@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { useChatStore, type Message, type PendingCard } from '@/components/veloiq/ChatStore';
 import { C, F } from '@/lib/theme';
 import { Activity, TrendingUp, SlidersHorizontal, Flag, LineChart, ChevronRight } from 'lucide-react';
+import { LogoVeloIQ } from '@/components/veloiq/LogoVeloIQ';
 
 // Reskin (ETAP CHAT część 2): tekst trenera BEZ dymka, <b> zielony (C.green), tabele scrollowalne.
 // GFM (tabele, ~strike~, task-listy). Tabela w overflow-x-auto — na wąskim iPhone scrolluje, nie rozpycha.
@@ -252,8 +253,11 @@ export default function ChatPage() {
       {/* Self-contained CSS: bounce typingu + ukrycie scrollbara chipów (bez dotykania globals.css) */}
       <style>{`@keyframes veloChatBounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-4px);opacity:1}}.velo-noscroll::-webkit-scrollbar{display:none}`}</style>
 
-      {/* HEADER wycentrowany (część 2.1): "Trener" + mikro-status z zieloną kropką */}
+      {/* HEADER wycentrowany: logo VeloIQ (spójnie z innymi zakładkami) + "Trener" + mikro-status */}
       <header style={{ padding: '12px 0 11px', borderBottom: `1px solid ${C.border}`, textAlign: 'center', flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 7 }}>
+          <LogoVeloIQ height={22} />
+        </div>
         <div style={{ fontFamily: F.display, fontWeight: 700, fontSize: 16, color: C.text, lineHeight: 1.1 }}>Trener</div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 3, fontSize: 10.5, color: C.muted }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.green, flexShrink: 0 }} />
@@ -335,8 +339,9 @@ export default function ChatPage() {
 
       {/* DOLNA STREFA: chipy (empty-state) + input. Tło C.bg, top border, safe-area iPhone (wymóg 1.4). */}
       <div style={{ flexShrink: 0, background: C.bg, borderTop: `1px solid ${C.border}`, paddingBottom: 'calc(8px + env(safe-area-inset-bottom))' }}>
-        {/* CHIPY SUGESTII (2.7): przewijane poziomo, bez scrollbara */}
-        {messages.length === 0 && suggestions.length > 0 && (
+        {/* CHIPY SUGESTII: TYLKO w trwającej rozmowie (po 1. wiadomości usera) — na ekranie startowym
+            byłyby dublem starterów. W rozmowie są kontekstowe (pytania otwarte, patrz chat-suggestions). */}
+        {hasUserMessage && suggestions.length > 0 && (
           <div className="velo-noscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 16px 0', scrollbarWidth: 'none' }}>
             {suggestions.map((s, i) => (
               <button
