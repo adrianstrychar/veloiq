@@ -25,18 +25,51 @@ export default function ChatPage() {
   const { messages, setMessages, input, setInput, suggestions, setSuggestions, touch, ensureFresh } = useChatStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const nearBottomRef = useRef(true); // czy user był przy dole listy (próg 120px) — steruje auto-scrollem
 
   // Wejście na czat: jeśli minęło > 30 min bezczynności, wyczyść wątek (świeży start).
   useEffect(() => {
     ensureFresh();
   }, [ensureFresh]);
 
-  // Auto-scroll do ostatniej wiadomości po wysłaniu i po odpowiedzi.
+  // Kotwiczenie WŁASNE (wymóg 1.6): scroll do dołu TYLKO gdy user był przy dole (próg 120px) — nie
+  // szarpiemy, gdy czyta historię w górze. onListScroll aktualizuje flagę na każdym przewinięciu.
+  const NEAR_BOTTOM_PX = 120;
+  function scrollListToBottom() {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+  function onListScroll() {
+    const el = listRef.current;
+    if (el) nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+  }
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (nearBottomRef.current) scrollListToBottom();
   }, [messages, loading]);
+
+  // Klawiatura (wymóg 1.3, iOS fallback): visualViewport — gdy dostępny, wysokość kontenera =
+  // viewport widoczny − BottomNav (NAV_PX = pb-20 shella, 5rem). Listener z cleanupem. Bez vv
+  // wysokość trzyma CSS calc(100dvh − 7rem). Klawiatura zmniejsza vv.height → input jedzie w górę.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const NAV_PX = 80;
+    const apply = () => {
+      const el = containerRef.current;
+      if (el) el.style.height = `${vv.height - NAV_PX}px`;
+    };
+    apply();
+    vv.addEventListener('resize', apply);
+    return () => vv.removeEventListener('resize', apply);
+  }, []);
+
+  // Focus na polu (wymóg 1.5): po rAF przewiń listę do dołu, żeby klawiatura nie zasłoniła ostatniej.
+  function onInputFocus() {
+    requestAnimationFrame(scrollListToBottom);
+  }
 
   // Sugerowane pytania (chips) — deterministyczne. Pobierz raz; przy powrocie na czat ze
   // stanem w store już są, nie odpytujemy ponownie.
@@ -60,6 +93,7 @@ export default function ChatPage() {
     touch(); // aktywność → reset 30-min okna świeżości
 
     const nextMessages: Message[] = [...messages, { role: 'user', content: text }];
+    nearBottomRef.current = true; // user właśnie wysłał → zawsze zjedź do jego wiadomości
     setMessages(nextMessages);
     setInput('');
     if (taRef.current) taRef.current.style.height = 'auto'; // reset wysokości po wysłaniu
@@ -136,14 +170,22 @@ export default function ChatPage() {
   const canSend = !loading && input.trim().length > 0;
 
   return (
-    // 100vh − dolna nawigacja (5rem, pb-20 layoutu) − pionowy padding main (2rem, py-4)
-    <div className="flex flex-col h-[calc(100vh-7rem)] max-w-md mx-auto">
+    // Wymóg 1.1: wysokość 100dvh (NIE 100vh) − chrome shella (BottomNav 5rem + py-4 2rem = 7rem).
+    // Flex: header (shrink-0) + lista (flex-1, scroll) + input (shrink-0). visualViewport nadpisuje
+    // height pikselami przy klawiaturze (efekt wyżej). Nie ruszamy app-shella.
+    <div ref={containerRef} className="flex flex-col max-w-md mx-auto" style={{ height: 'calc(100dvh - 7rem)' }}>
       <header className="py-3 text-center border-b border-border shrink-0">
         <span className="font-bold text-sm">Chat z trenerem AI</span>
       </header>
 
-      {/* Lista wiadomości (przewijalna nad inputem) */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+      {/* Lista wiadomości (flex-1, scroll). Wymóg 1.6: overflow-anchor none + własne kotwiczenie;
+          wymóg 1.7: overscroll-behavior contain → strona pod spodem nie scrolluje. */}
+      <div
+        ref={listRef}
+        onScroll={onListScroll}
+        className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3"
+        style={{ overscrollBehavior: 'contain', overflowAnchor: 'none' }}
+      >
         {messages.length === 0 && (
           <p className="text-secondary text-sm text-center mt-8 mx-auto max-w-md">
             Napisz do swojego AI trenera — zapytaj o plan, formę, analizę jazdy, żywienie na trening albo przygotowanie do startu.
@@ -179,8 +221,6 @@ export default function ChatPage() {
             {error}
           </p>
         )}
-
-        <div ref={bottomRef} />
       </div>
 
       {/* Dolna strefa: chips (empty-state) + input. Tło motywu, top border, safe-area iPhone. */}
@@ -215,6 +255,7 @@ export default function ChatPage() {
               autoGrow(e.target);
             }}
             onKeyDown={handleKeyDown}
+            onFocus={onInputFocus}
             disabled={loading}
             // fontSize DOKŁADNIE 16px — poniżej iOS Safari zoomuje viewport przy focusie.
             style={{ fontSize: 16, minHeight: 48, maxHeight: TEXTAREA_MAX, borderRadius: 24 }}
