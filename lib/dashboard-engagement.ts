@@ -57,15 +57,21 @@ export const POWER_DURATIONS = ['5s', '1min', '5min', '20min'] as const;
 export type PowerDuration = (typeof POWER_DURATIONS)[number];
 export interface PowerRideRow { date: string; best_efforts: Record<string, number | null> | null }
 // Najlepsza moc każdej duracji w oknie każdego okresu (koniec = today). null = brak danych w okresie.
+// seasonDate = data jazdy trzymającej rekord sezonu; recordIn* = czy rekord sezonu PADŁ w oknie okresu
+// (data rekordu ∈ [start, today]) — steruje zielonym wyróżnieniem w kaflu (nie samo równe wartości).
 export interface PowerPeriodRecord {
   dur: PowerDuration;
   week: number | null;
   month: number | null;
   season: number | null;
+  seasonDate: string | null;
+  recordInWeek: boolean;
+  recordInMonth: boolean;
 }
 
 // Okna okresów są niezależne, ale wszystkie kończą się na `today` i mieszczą w sezonie → season zawsze ≥
-// week/month (w zakładce Sezon każdy kafel jest rekordem — poprawne). Podpis w karcie porównuje z `season`.
+// week/month. Zieleń "rekord sezonu" pokazujemy TYLKO gdy jazda-rekordzistka ma datę w oknie okresu
+// (recordInWeek/Month), a nie gdy wartość okresu = rekord (te mogą się zrównać przy identycznych jazdach).
 export function computePowerByPeriod(rows: PowerRideRow[], today: Date): PowerPeriodRecord[] {
   const to = iso(today);
   const starts: Record<Period, string> = {
@@ -82,12 +88,29 @@ export function computePowerByPeriod(rows: PowerRideRow[], today: Date): PowerPe
     }
     return best;
   };
-  return POWER_DURATIONS.map((dur) => ({
-    dur,
-    week: bestIn(dur, starts.week),
-    month: bestIn(dur, starts.month),
-    season: bestIn(dur, starts.season),
-  }));
+  // Najwcześniejsza data osiągająca rekord sezonu (remis → pierwsza jazda, kiedy rekord "padł").
+  const seasonRecordDate = (dur: PowerDuration, seasonBest: number | null): string | null => {
+    if (seasonBest == null) return null;
+    let date: string | null = null;
+    for (const r of rows) {
+      if (!r.best_efforts || r.date < starts.season || r.date > to) continue;
+      if (r.best_efforts[dur] === seasonBest && (date == null || r.date < date)) date = r.date;
+    }
+    return date;
+  };
+  return POWER_DURATIONS.map((dur) => {
+    const season = bestIn(dur, starts.season);
+    const seasonDate = seasonRecordDate(dur, season);
+    return {
+      dur,
+      week: bestIn(dur, starts.week),
+      month: bestIn(dur, starts.month),
+      season,
+      seasonDate,
+      recordInWeek: seasonDate != null && seasonDate >= starts.week,   // seasonDate ≤ today z definicji
+      recordInMonth: seasonDate != null && seasonDate >= starts.month,
+    };
+  });
 }
 
 // ── Cel sezonu (km) ───────────────────────────────────────────────────────────
