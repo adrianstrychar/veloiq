@@ -5,6 +5,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useChatStore, type Message, type PendingCard } from '@/components/veloiq/ChatStore';
 import { C, F } from '@/lib/theme';
+import { Activity, TrendingUp, SlidersHorizontal, Flag, LineChart, ChevronRight } from 'lucide-react';
 
 // Reskin (ETAP CHAT część 2): tekst trenera BEZ dymka, <b> zielony (C.green), tabele scrollowalne.
 // GFM (tabele, ~strike~, task-listy). Tabela w overflow-x-auto — na wąskim iPhone scrolluje, nie rozpycha.
@@ -25,12 +26,56 @@ const TEXTAREA_MAX = 120; // ~4 linie przy 16px; powyżej scroll wewnętrzny (cz
 const CYAN_FOCUS = 'rgba(74,143,199,0.55)'; // C.cyan @55% — obrys pola w focusie (część 2.7)
 const GOLD = '#C99A4E'; // C.yellow — karta propozycji (część 2.5)
 
-// Etykieta "TRENER" nad wiadomością trenera / typingiem (mono uppercase cyan, część 2.2/2.6).
-function CoachLabel() {
+// Etykieta "TRENER" (opc. "· BRIEF DNIA") nad wiadomością trenera / briefem / typingiem (część 2.2/2.6/3.1).
+function CoachLabel({ suffix }: { suffix?: string }) {
   return (
     <div style={{ fontFamily: F.mono, fontSize: 8, letterSpacing: '0.16em', textTransform: 'uppercase', color: C.cyan, marginBottom: 6, fontWeight: 600 }}>
-      Trener
+      {suffix ? `Trener · ${suffix}` : 'Trener'}
     </div>
+  );
+}
+
+// Brief dnia + startery (część 3). Endpoint /api/ai/brief zwraca tekst briefu (cache Haiku) + dane
+// do podtytułów starterów; ikony/kolory (lucide + C.*) buduje klient. Tap startera = preset (jak chip).
+interface BriefStarter { key: string; icon: React.ReactNode; tint: string; title: string; subtitle: string; prompt: string }
+interface BriefData {
+  brief: string | null;
+  today: { type: string; label: string; isRest: boolean };
+  last: { name: string; km: number; tss: number } | null;
+  race: { name: string; days: number } | null;
+}
+
+function buildStarters(d: BriefData): BriefStarter[] {
+  const { today, last, race } = d;
+  return [
+    { key: 'today', icon: <Activity size={17} color={C.cyan} strokeWidth={2} />, tint: C.cyan, title: 'Omów dzisiejszy trening',
+      subtitle: today && !today.isRest && today.label ? today.label : 'Dzień wolny — co warto wiedzieć',
+      prompt: 'Omów mój dzisiejszy trening z planu.' },
+    { key: 'last', icon: <TrendingUp size={17} color={C.green} strokeWidth={2} />, tint: C.green, title: 'Jak wypadła ostatnia jazda?',
+      subtitle: last ? `${last.name} · ${last.km} km · ${last.tss} TSS` : 'Brak jazdy do analizy',
+      prompt: 'Jak wypadła moja ostatnia jazda?' },
+    { key: 'plan', icon: <SlidersHorizontal size={17} color={C.yellow} strokeWidth={2} />, tint: C.yellow, title: 'Zmień coś w planie',
+      subtitle: 'Przełóż, skróć albo dołóż trening — przeliczy tydzień',
+      prompt: 'Chcę zmienić coś w planie na ten tydzień.' },
+    race
+      ? { key: 'race', icon: <Flag size={17} color={C.purple} strokeWidth={2} />, tint: C.purple, title: `Strategia na ${race.name}`,
+          subtitle: `Pacing, żywienie i taper na start za ${race.days} dni`, prompt: `Jak przygotować się do startu "${race.name}"?` }
+      : { key: 'ftp', icon: <LineChart size={17} color={C.purple} strokeWidth={2} />, tint: C.purple, title: 'Prognoza formy',
+          subtitle: 'Dokąd zmierza Twoje FTP', prompt: 'Jak rozwija się moja forma i FTP?' },
+  ];
+}
+
+// Karta startera (3.3): ikona lucide w kolorowym kwadracie 32px + tytuł + podtytuł z danych + chevron.
+function StarterCard({ s, onClick }: { s: BriefStarter; onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 12px', cursor: 'pointer' }}>
+      <span style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: s.tint + '22' }}>{s.icon}</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.text }}>{s.title}</span>
+        <span style={{ display: 'block', fontSize: 11, color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.subtitle}</span>
+      </span>
+      <ChevronRight size={16} color={C.faint} style={{ flexShrink: 0 }} />
+    </button>
   );
 }
 
@@ -40,6 +85,8 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
+  const [briefText, setBriefText] = useState<string | null>(null);
+  const [starters, setStarters] = useState<BriefStarter[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -95,6 +142,17 @@ export default function ChatPage() {
       .then((d) => setSuggestions(Array.isArray(d.suggestions) ? d.suggestions : []))
       .catch(() => setSuggestions([]));
   }, [suggestions.length, setSuggestions]);
+
+  // Brief dnia + startery (część 3.1-3.3): tylko na pustym czacie (brak dzisiejszej rozmowy). Tekst
+  // briefu cache'owany server-side per dzień → brak kosztu przy kolejnych wejściach. Błąd AI → same
+  // startery (data-driven, bez AI). Startery znikają po pierwszej wiadomości usera (patrz hasUserMessage).
+  useEffect(() => {
+    if (messages.length > 0) return;
+    fetch('/api/ai/brief')
+      .then((r) => r.json())
+      .then((d: BriefData) => { setBriefText(d.brief ?? null); setStarters(buildStarters(d)); })
+      .catch(() => { setBriefText(null); setStarters([]); });
+  }, [messages.length]);
 
   // Auto-grow textarea do TEXTAREA_MAX, potem scroll wewnętrzny (część 2.8).
   function autoGrow(el: HTMLTextAreaElement) {
@@ -182,8 +240,9 @@ export default function ChatPage() {
     }
   }
 
-  const statusText = loading ? 'pisze…' : 'zawsze online'; // wariant "przeanalizował…" dojdzie z częścią 3
+  const statusText = loading ? 'pisze…' : 'zawsze online';
   const canSend = !loading && input.trim().length > 0;
+  const hasUserMessage = messages.some((m) => m.role === 'user'); // pierwsza wiadomość usera → chowa brief+startery
 
   return (
     // Wymóg 1.1: wysokość 100dvh (NIE 100vh) − chrome shella (BottomNav 5rem + py-4 2rem = 7rem).
@@ -209,10 +268,31 @@ export default function ChatPage() {
         className="flex-1 overflow-y-auto"
         style={{ overscrollBehavior: 'contain', overflowAnchor: 'none', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}
       >
-        {messages.length === 0 && !loading && (
-          <p style={{ color: C.muted, fontSize: 12.5, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
-            Napisz do trenera — plan, forma, analiza jazdy, żywienie albo przygotowanie do startu.
-          </p>
+        {/* BRIEF DNIA + STARTERY (część 3.1-3.3): przed pierwszą wiadomością usera. Brief jako wiadomość
+            trenera (etykieta "TRENER · BRIEF DNIA"); pod nim 4 startery. Fallback: sam hint, gdy brak briefu. */}
+        {!hasUserMessage && (
+          <>
+            {briefText && (
+              <div>
+                <CoachLabel suffix="Brief dnia" />
+                <div style={{ fontSize: '0.78rem', lineHeight: 1.65, color: C.text, fontFamily: F.body }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{briefText}</ReactMarkdown>
+                </div>
+              </div>
+            )}
+            {starters.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {starters.map((s) => (
+                  <StarterCard key={s.key} s={s} onClick={() => sendMessage(s.prompt)} />
+                ))}
+              </div>
+            )}
+            {!briefText && starters.length === 0 && !loading && (
+              <p style={{ color: C.muted, fontSize: 12.5, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
+                Napisz do trenera — plan, forma, analiza jazdy, żywienie albo przygotowanie do startu.
+              </p>
+            )}
+          </>
         )}
 
         {messages.map((m, i) => (
@@ -318,7 +398,8 @@ function ProposalCard({ p, onCommit, onCancel }: { p: PendingCard; onCommit: () 
       <div style={{ padding: '8px 14px', fontFamily: F.mono, fontSize: 9, letterSpacing: '0.1em', fontWeight: 600, color: GOLD, background: 'rgba(201,154,78,0.1)' }}>
         {headerText}
       </div>
-      <pre style={{ padding: '12px 14px', margin: 0, fontSize: 12, lineHeight: 1.55, whiteSpace: 'pre-wrap', fontFamily: F.body, color: C.text }}>{p.diff}</pre>
+      {/* Monospace na CAŁYM bloku — wyrównuje linie ze "→" (czysta prezentacja, bez parsowania stringa). */}
+      <pre style={{ padding: '12px 14px', margin: 0, fontSize: 11.5, lineHeight: 1.55, whiteSpace: 'pre-wrap', fontFamily: F.mono, color: C.text }}>{p.diff}</pre>
 
       {p.status === 'pending' && (
         <div style={{ display: 'flex', gap: 8, padding: '2px 14px 14px' }}>
