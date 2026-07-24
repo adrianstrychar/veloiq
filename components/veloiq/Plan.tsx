@@ -67,6 +67,7 @@ interface PlanProps {
   // Wszystkie jazdy danego dnia (data lokalna), posortowane malejąco po TSS.
   activitiesByDate: Record<string, PlanActivityRow[]>;
   races?: PlanRaceRow[]; // starty z kalendarza — nakładane jako dzień RACE na pasującą datę
+  openDayDate?: string;  // deep-link ?date=YYYY-MM-DD (np. z karty "Dziś") → auto-otwarcie rozpiski tego dnia
 }
 
 // Czy dzień ma wykonaną jazdę (≥1 aktywność).
@@ -318,7 +319,7 @@ function computeBaseHours(days: PlanDayView[] | null, acts: Record<string, PlanA
   return Math.round(min / 60) || 1;
 }
 
-export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, races = [] }: PlanProps) {
+export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, races = [], openDayDate }: PlanProps) {
   // Mapa data→meta startu — do nałożenia dnia RACE na plan (także sprzed race-aware generatora).
   const raceByDate = buildRaceByDate(races);
   const [idx, setIdx] = useState(currentIdx);
@@ -493,6 +494,20 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
       ? scaleWeek(days, hoursClamped * 60, (date) => isDoneDate(activitiesByDate, date), todayISO)
       : days
     : null;
+
+  // Deep-link ?date= (karta "Dziś" na dashboardzie) → jednorazowe auto-otwarcie rozpiski tego dnia.
+  // Szuka w scaledDays bieżącego tygodnia (idx startuje na currentIdx, więc dziś tu jest). Pomija
+  // OFF/RACE/removed/outline (brak rozpiski). Zależność od scaledDays: po promocji szkicu efekt trafi
+  // na gotowy dzień; ref gwarantuje pojedyncze otwarcie (bez re-otwierania po zamknięciu przez usera).
+  const autoOpenedDay = useRef(false);
+  useEffect(() => {
+    if (autoOpenedDay.current || !openDayDate || !scaledDays) return;
+    const day = scaledDays.find((d) => d.date === openDayDate);
+    if (day && day.type !== 'OFF' && day.type !== 'RACE' && !day.removed && !day.outline) {
+      autoOpenedDay.current = true;
+      setOpenWorkout(day);
+    }
+  }, [openDayDate, scaledDays]);
 
   // ── HYBRYDA (b): WYKONANE (Strava, cały tydzień, łącznie z poza planem) + POZOSTAŁO (plan) ──
   // Daty tygodnia (pn–nd) od weekStart.

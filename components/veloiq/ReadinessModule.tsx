@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { C } from '@/lib/theme';
+import { C, RADIUS } from '@/lib/theme';
 import type { Readiness } from '@/lib/readiness';
 import { RawMetrics, type PmcRow } from './RawMetrics';
 
@@ -62,7 +62,7 @@ export function ReadinessModule({ readiness, pmc }: ReadinessModuleProps) {
 
   return (
     <div style={{
-      background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
+      background: C.card, border: `1px solid ${C.border}`, borderRadius: RADIUS.card,
       marginBottom: 10, padding: '18px 18px 14px',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>

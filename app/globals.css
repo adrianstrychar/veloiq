@@ -14,11 +14,19 @@
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  /* ETAP 1 — tekst bazowy: Inter (token body). Fallback zanim next/font wstrzyknie zmienną. */
+  font-family: var(--font-body), Inter, system-ui, sans-serif;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+}
+
+/* ETAP 2 — spin ikony synchronizacji (DashboardHeader). */
+@keyframes veloiq-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
