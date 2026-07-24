@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { LogoVeloIQ } from '@/components/veloiq/LogoVeloIQ';
 import { Plan, type PlanDayView, type WeekSlot, type PlanActivityRow, type PlanRaceRow } from '@/components/veloiq/Plan';
 import { localTodayISO, mondayOfISO, addWeeks, weekKind } from '@/lib/plan';
 
@@ -120,7 +121,8 @@ export default async function PlanPage({ searchParams }: { searchParams: { date?
   return (
     <div className="flex flex-col gap-4 max-w-md mx-auto">
       <header className="flex items-center justify-between py-2">
-        <span className="text-lg font-bold">Plan tygodnia</span>
+        <LogoVeloIQ height={26} />
+        <span className="text-sm text-secondary">Plan tygodnia</span>
       </header>
 
       <Plan weeks={weeks} currentIdx={CURRENT_IDX} todayISO={todayISO} ftp={ftp} ctl={ctl} activitiesByDate={activitiesByDate} races={(raceRows ?? []) as PlanRaceRow[]} openDayDate={typeof searchParams?.date === 'string' ? searchParams.date : undefined} />
