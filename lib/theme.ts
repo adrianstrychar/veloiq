@@ -11,6 +11,8 @@ export const C = {
   text: '#EDEFF2',
   muted: '#9AA0AB',
   dim: '#21252C',
+  panelHi: '#1E222A', // panel podniesiony (dymek użytkownika w czacie) — jaśniejszy niż card
+  faint: '#5B616B',   // szary słabszy niż muted — separatory dni, przekreślenia (ETAP CHAT)
 };
 
 // Tokeny typografii (ETAP 1). Wartości CSS var wstrzykuje next/font w app/layout.tsx.

@@ -41,8 +41,11 @@ export const metadata: Metadata = {
 };
 
 // ETAP 2 — kolor paska statusu (PWA/mobile) = C.bg. Next auto-linkuje manifest + app/icon.svg.
+// interactiveWidget: 'resizes-content' → Android Chrome NIE nakłada klawiatury na content
+// (zmienia layout viewport zamiast overlay), fundament stabilności czatu (ETAP CHAT, część 1.2).
 export const viewport: Viewport = {
   themeColor: "#14161B",
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

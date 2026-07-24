@@ -22,11 +22,6 @@ export interface Message {
   pendings?: PendingCard[];
 }
 
-export interface Suggestion {
-  label: string;
-  prompt: string;
-}
-
 const TTL_MS = 30 * 60 * 1000; // 30 min bezczynności → wątek się kasuje przy następnym wejściu
 
 interface ChatStoreValue {
@@ -34,8 +29,6 @@ interface ChatStoreValue {
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   input: string;
   setInput: React.Dispatch<React.SetStateAction<string>>;
-  suggestions: Suggestion[];
-  setSuggestions: React.Dispatch<React.SetStateAction<Suggestion[]>>;
   touch: () => void;       // odśwież znacznik aktywności (wysłanie / akcja pending)
   ensureFresh: () => void; // wejście na czat: wyczyść wątek+input, jeśli minęło > TTL bezczynności
 }
@@ -45,7 +38,6 @@ const ChatContext = createContext<ChatStoreValue | null>(null);
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   // 0 = brak aktywności (świeży draft nie wygasa, dopóki nic nie wysłano).
   const lastActivity = useRef<number>(0);
 
@@ -61,7 +53,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <ChatContext.Provider value={{ messages, setMessages, input, setInput, suggestions, setSuggestions, touch, ensureFresh }}>
+    <ChatContext.Provider value={{ messages, setMessages, input, setInput, touch, ensureFresh }}>
       {children}
     </ChatContext.Provider>
   );
