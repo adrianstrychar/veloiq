@@ -89,7 +89,8 @@ export async function GET() {
   }
 
   const inputs: BriefInputs = {
-    name: typeof athlete.name === 'string' && athlete.name.trim() ? athlete.name.trim() : null,
+    name: (athlete.name as string | null) ?? null, // pełne name; buildDailyBriefPrompt bierze firstName
+
     tsb: metrics?.tsb != null ? Number(metrics.tsb) : 0,
     todaySession: todaySession ? { type: todaySession.type, label: todaySession.label } : null,
     isRest,

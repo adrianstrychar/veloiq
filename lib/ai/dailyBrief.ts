@@ -2,9 +2,10 @@
 // 2–4 zdania z realnych danych (świeżość, dzisiejsza sesja, najbliższy start, świeży rekord),
 // zakończone otwartym pytaniem. Model: Haiku (tier #104). Osobny od daily-insight (tamten broni
 // planu w 2 zdaniach; brief wita i zaprasza do rozmowy). Filozofia spójna: nie namawiać do docisku.
+import { firstName } from '@/lib/name';
 
 export interface BriefInputs {
-  name: string | null; // imię z profilu; null → model pomija zwrot po imieniu (nie zgaduje)
+  name: string | null; // pełne name z profilu (Strava = "Imię Nazwisko"); builder bierze z niego firstName
   tsb: number;
   todaySession: { type: string; label: string } | null; // null = dzień otwarty
   isRest: boolean;                                        // dziś OFF / brak sesji
@@ -13,9 +14,11 @@ export interface BriefInputs {
 }
 
 export function buildDailyBriefPrompt(x: BriefInputs): { system: string; user: string } {
-  // Twarda reguła imienia: DOKŁADNIE z profilu, zero zdrobnień/wariantów; brak imienia → pomiń zwrot.
-  const nameRule = x.name
-    ? `Zawodnik ma na imię "${x.name}". Jeśli zwracasz się po imieniu, użyj DOKŁADNIE "${x.name}" — NIGDY nie skracaj, nie zdrabniaj ani nie twórz wariantów (np. NIE "Adi" zamiast "Adrian").`
+  // Tylko pierwszy człon (name = "Imię Nazwisko"). Twarda reguła: DOKŁADNIE ta forma, bez zdrobnień
+  // i bez doklejania nazwiska; brak imienia → pomiń zwrot (nie zgaduj).
+  const name = firstName(x.name);
+  const nameRule = name
+    ? `Zawodnik ma na imię "${name}". Jeśli zwracasz się po imieniu, użyj DOKŁADNIE "${name}" — NIGDY nie skracaj, nie zdrabniaj, nie twórz wariantów ani nie dodawaj nazwiska (np. NIE "Adi", NIE imię z nazwiskiem).`
     : 'Nie znasz imienia zawodnika — POMIŃ zwrot po imieniu (nie zgaduj), mów po prostu na "Ty".';
 
   const system = [

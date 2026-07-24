@@ -4,6 +4,7 @@
 // ku odpoczynkowi przy przemęczeniu — dozwolona; ku wysiłkowi — prawie nigdy, w taperze NIGDY.
 // Bez WHOOP jedyne "dane" to PMC (TSB/rampa) + kalendarz startów (okno taperu z race-taper #58).
 import { taperDaysFor, type RacePriority } from '@/lib/race-taper';
+import { firstName } from '@/lib/name';
 
 export interface DailyInsightMetrics {
   date: string;
@@ -142,9 +143,19 @@ export function buildDailyInsightPrompt(
   m: DailyInsightMetrics,
   today: PlanDaySlim | null,
   yesterday: YesterdayContext | null,
-  race: RaceContext | null
+  race: RaceContext | null,
+  name?: string | null // pełne name z profilu; builder bierze firstName (brak → zwrot bez imienia)
 ): { system: string; user: string } {
   const d = computeDirectives(m, today, yesterday, race);
+
+  // Tylko pierwszy człon imienia; reguła: DOKŁADNIE ta forma, bez zdrobnień i bez nazwiska.
+  const nm = firstName(name);
+  const coachLine = nm
+    ? `Jesteś trenerem kolarstwa i OBROŃCĄ planu treningowego. Mówisz do zawodnika (${nm}) na "Ty".`
+    : 'Jesteś trenerem kolarstwa i OBROŃCĄ planu treningowego. Mówisz do zawodnika na "Ty".';
+  const nameRule = nm
+    ? `IMIĘ: zwracaj się DOKŁADNIE "${nm}" — NIGDY nie skracaj, nie zdrabniaj, nie twórz wariantów ani nie dodawaj nazwiska (np. NIE "Adi", NIE imię z nazwiskiem).`
+    : 'IMIĘ: nieznane — POMIŃ zwrot po imieniu (nie zgaduj), mów na "Ty".';
 
   // Reguły dnia — treść zależna od danych, budowana w KODZIE. Model tylko je wykonuje.
   const rules: string[] = [];
@@ -170,8 +181,8 @@ export function buildDailyInsightPrompt(
   }
 
   const system = [
-    'Jesteś trenerem kolarstwa i OBROŃCĄ planu treningowego. Mówisz do zawodnika (Adrian) na "Ty".',
-    'IMIĘ: jeśli zwracasz się po imieniu, użyj DOKŁADNIE "Adrian" — NIGDY nie skracaj, nie zdrabniaj ani nie twórz wariantów (np. NIE "Adi").',
+    coachLine,
+    nameRule,
     'Plan jest domyślną prawdą. Twoja domyślna rola: wytłumaczyć PO CO jest dzisiejszy trening w kontekście wczorajszego i fazy sezonu — bronić struktury planu, nie recenzować jej.',
     'Sugestia zmiany planu to WYJĄTEK wymagający twardego uzasadnienia z danych (TSB, rampa CTL), a nie norma.',
     'ASYMETRIA (twarda reguła): korekta ku odpoczynkowi przy sygnale przemęczenia — dozwolona; korekta ku większemu wysiłkowi — prawie nigdy, a w oknie startowym NIGDY.',
