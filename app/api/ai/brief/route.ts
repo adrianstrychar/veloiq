@@ -48,12 +48,12 @@ export async function GET() {
   const todayIso = today.toISOString().slice(0, 10);
   const sevenAgoIso = new Date(today.getTime() - 7 * 86400000).toISOString().slice(0, 10);
 
-  // Dane do briefu + starterów (świeże przy każdym wejściu — tanie odczyty; drogi jest tylko tekst AI).
-  const [{ data: metrics }, todaySession, { data: race }, { data: lastAct }, { data: powerRides }] = await Promise.all([
+  // Dane WYŁĄCZNIE do briefu (TSB, dzisiejsza sesja, najbliższy start, moc do świeżego rekordu).
+  // Startery są statyczne → zero dodatkowych zapytań pod nie.
+  const [{ data: metrics }, todaySession, { data: race }, { data: powerRides }] = await Promise.all([
     supabase.from('fitness_metrics').select('tsb').eq('athlete_id', athleteId).order('date', { ascending: false }).limit(1).maybeSingle(),
     todayPlanFor(supabase, athleteId, today),
     supabase.from('race_calendar').select('name, date').eq('athlete_id', athleteId).gte('date', todayIso).order('date', { ascending: true }).limit(1).maybeSingle(),
-    supabase.from('strava_activities').select('name, distance_km, tss').eq('athlete_id', athleteId).order('activity_date', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('strava_activities').select('activity_date, best_efforts, start_date_local:raw_data->start_date_local').eq('athlete_id', athleteId).not('best_efforts', 'is', null).order('activity_date', { ascending: true }),
   ]);
 
@@ -76,16 +76,9 @@ export async function GET() {
     if (p?.season != null && p.seasonDate != null && p.seasonDate >= sevenAgoIso) { freshRecord = `moc ${DUR_LABEL[dur]} ${p.season} W`; break; }
   }
 
-  // Startery (dane do podtytułów — ikony/kolory buduje klient).
-  const starterData = {
-    today: todaySession ? { type: todaySession.type, label: todaySession.label, isRest } : { type: 'OFF', label: '', isRest: true },
-    last: lastAct ? { name: (lastAct.name as string) ?? 'Jazda', km: Math.round(Number(lastAct.distance_km ?? 0)), tss: Math.round(Number((lastAct as { tss?: number | null }).tss ?? 0)) } : null,
-    race: raceCtx,
-  };
-
   // Cache: brief tekstowy z dziś → zwróć bez generacji. Inaczej Haiku + zapis.
   if (athlete.daily_brief_date === todayIso && typeof athlete.daily_brief_text === 'string' && athlete.daily_brief_text.length > 0) {
-    return NextResponse.json({ brief: athlete.daily_brief_text, ...starterData, cached: true });
+    return NextResponse.json({ brief: athlete.daily_brief_text, cached: true });
   }
 
   const inputs: BriefInputs = {
@@ -110,9 +103,9 @@ export async function GET() {
     if (brief) {
       await supabase.from('athletes').update({ daily_brief_text: brief, daily_brief_date: todayIso, daily_brief_generated_at: new Date().toISOString() }).eq('id', athleteId);
     }
-    return NextResponse.json({ brief, ...starterData, cached: false });
+    return NextResponse.json({ brief, cached: false });
   } catch (err: unknown) {
-    // Brief niedostępny → klient pokaże same startery (data-driven, bez AI). Nie psujemy czatu.
-    return NextResponse.json({ brief: null, ...starterData, error: aiErrorMessage(err) }, { status: 200 });
+    // Brief niedostępny → briefText null; startery (statyczne) i tak się pokażą. Nie psujemy czatu.
+    return NextResponse.json({ brief: null, error: aiErrorMessage(err) }, { status: 200 });
   }
 }

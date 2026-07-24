@@ -5,7 +5,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useChatStore, type Message, type PendingCard } from '@/components/veloiq/ChatStore';
 import { C, F } from '@/lib/theme';
-import { Activity, TrendingUp, SlidersHorizontal, Flag, LineChart, ChevronRight } from 'lucide-react';
+import { Target, TrendingUp, Gauge, SlidersHorizontal, ChevronRight } from 'lucide-react';
 import { LogoVeloIQ } from '@/components/veloiq/LogoVeloIQ';
 
 // Reskin (ETAP CHAT część 2): tekst trenera BEZ dymka, <b> zielony (C.green), tabele scrollowalne.
@@ -36,37 +36,29 @@ function CoachLabel({ suffix }: { suffix?: string }) {
   );
 }
 
-// Brief dnia + startery (część 3). Endpoint /api/ai/brief zwraca tekst briefu (cache Haiku) + dane
-// do podtytułów starterów; ikony/kolory (lucide + C.*) buduje klient. Tap startera = preset (jak chip).
+// Brief dnia (część 3). Endpoint /api/ai/brief zwraca sam tekst briefu (cache Haiku).
 interface BriefStarter { key: string; icon: React.ReactNode; tint: string; title: string; subtitle: string; prompt: string }
-interface BriefData {
-  brief: string | null;
-  today: { type: string; label: string; isRest: boolean };
-  last: { name: string; km: number; tss: number } | null;
-  race: { name: string; days: number } | null;
-}
+interface BriefData { brief: string | null }
 
-function buildStarters(d: BriefData): BriefStarter[] {
-  const { today, last, race } = d;
-  return [
-    { key: 'today', icon: <Activity size={17} color={C.cyan} strokeWidth={2} />, tint: C.cyan, title: 'Omów dzisiejszy trening',
-      subtitle: today && !today.isRest && today.label ? today.label : 'Dzień wolny — co warto wiedzieć',
-      prompt: 'Omów mój dzisiejszy trening z planu.' },
-    { key: 'last', icon: <TrendingUp size={17} color={C.green} strokeWidth={2} />, tint: C.green, title: 'Jak wypadła ostatnia jazda?',
-      subtitle: last ? `${last.name} · ${last.km} km · ${last.tss} TSS` : 'Brak jazdy do analizy',
-      prompt: 'Jak wypadła moja ostatnia jazda?' },
-    { key: 'plan', icon: <SlidersHorizontal size={17} color={C.yellow} strokeWidth={2} />, tint: C.yellow, title: 'Zmień coś w planie',
-      subtitle: 'Przełóż, skróć albo dołóż trening — przeliczy tydzień',
-      prompt: 'Chcę zmienić coś w planie na ten tydzień.' },
-    race
-      ? { key: 'race', icon: <Flag size={17} color={C.purple} strokeWidth={2} />, tint: C.purple, title: `Strategia na ${race.name}`,
-          subtitle: `Pacing, żywienie i taper na start za ${race.days} dni`, prompt: `Jak przygotować się do startu "${race.name}"?` }
-      : { key: 'ftp', icon: <LineChart size={17} color={C.purple} strokeWidth={2} />, tint: C.purple, title: 'Prognoza formy',
-          subtitle: 'Dokąd zmierza Twoje FTP', prompt: 'Jak rozwija się moja forma i FTP?' },
-  ];
-}
+// Startery ekranu startowego: pytania wymagające SYNTEZY danych usera — których NIE DA SIĘ kliknąć
+// nigdzie indziej w apce (nie skróty do modułów). Podtytuły STATYCZNE (zero zapytań do bazy).
+// Tap = wysłanie gotowej wiadomości; znikają po pierwszej wiadomości usera (patrz render, hasUserMessage).
+const STARTERS: BriefStarter[] = [
+  { key: 'improve', icon: <Target size={17} color={C.cyan} strokeWidth={2} />, tint: C.cyan,
+    title: 'Co powinienem najbardziej poprawić?', subtitle: 'Twoje słabe punkty na podstawie danych',
+    prompt: 'Co powinienem najbardziej poprawić w treningu — na podstawie moich danych?' },
+  { key: 'trend', icon: <TrendingUp size={17} color={C.green} strokeWidth={2} />, tint: C.green,
+    title: 'Czy idę w dobrą stronę?', subtitle: 'Trend formy i mocy z ostatnich tygodni',
+    prompt: 'Czy idę w dobrą stronę — jak wygląda trend mojej formy i mocy z ostatnich tygodni?' },
+  { key: 'load', icon: <Gauge size={17} color={C.yellow} strokeWidth={2} />, tint: C.yellow,
+    title: 'Nie przesadzam z obciążeniem?', subtitle: 'Ryzyko przetrenowania i potrzeba odpoczynku',
+    prompt: 'Czy nie przesadzam z obciążeniem — jakie jest ryzyko przetrenowania i potrzeba odpoczynku?' },
+  { key: 'plan', icon: <SlidersHorizontal size={17} color={C.purple} strokeWidth={2} />, tint: C.purple,
+    title: 'Zmień coś w planie', subtitle: 'Przełóż, skróć albo dołóż trening — przeliczy tydzień',
+    prompt: 'Chcę zmienić coś w planie na ten tydzień.' },
+];
 
-// Karta startera (3.3): ikona lucide w kolorowym kwadracie 32px + tytuł + podtytuł z danych + chevron.
+// Karta startera (3.3): ikona lucide w kolorowym kwadracie 32px + tytuł + statyczny podtytuł + chevron.
 function StarterCard({ s, onClick }: { s: BriefStarter; onClick: () => void }) {
   return (
     <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 12px', cursor: 'pointer' }}>
@@ -81,13 +73,12 @@ function StarterCard({ s, onClick }: { s: BriefStarter; onClick: () => void }) {
 }
 
 export default function ChatPage() {
-  // Stan wątku (messages/input/suggestions) ze store nad zakładkami — przeżywa nawigację.
-  const { messages, setMessages, input, setInput, suggestions, setSuggestions, touch, ensureFresh } = useChatStore();
+  // Stan wątku (messages/input) ze store nad zakładkami — przeżywa nawigację.
+  const { messages, setMessages, input, setInput, touch, ensureFresh } = useChatStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
   const [briefText, setBriefText] = useState<string | null>(null);
-  const [starters, setStarters] = useState<BriefStarter[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -134,25 +125,15 @@ export default function ChatPage() {
     requestAnimationFrame(scrollListToBottom);
   }
 
-  // Sugerowane pytania (chips) — deterministyczne. Pobierz raz; przy powrocie na czat ze
-  // stanem w store już są, nie odpytujemy ponownie.
-  useEffect(() => {
-    if (suggestions.length > 0) return;
-    fetch('/api/ai/suggestions')
-      .then((r) => r.json())
-      .then((d) => setSuggestions(Array.isArray(d.suggestions) ? d.suggestions : []))
-      .catch(() => setSuggestions([]));
-  }, [suggestions.length, setSuggestions]);
-
-  // Brief dnia + startery (część 3.1-3.3): tylko na pustym czacie (brak dzisiejszej rozmowy). Tekst
-  // briefu cache'owany server-side per dzień → brak kosztu przy kolejnych wejściach. Błąd AI → same
-  // startery (data-driven, bez AI). Startery znikają po pierwszej wiadomości usera (patrz hasUserMessage).
+  // Brief dnia (część 3.1): tylko na pustym czacie. Tekst briefu cache'owany server-side per dzień →
+  // brak kosztu przy kolejnych wejściach. Błąd AI → briefText null (startery są statyczne, pokażą się
+  // niezależnie). Startery znikają po pierwszej wiadomości usera (patrz hasUserMessage w render).
   useEffect(() => {
     if (messages.length > 0) return;
     fetch('/api/ai/brief')
       .then((r) => r.json())
-      .then((d: BriefData) => { setBriefText(d.brief ?? null); setStarters(buildStarters(d)); })
-      .catch(() => { setBriefText(null); setStarters([]); });
+      .then((d: BriefData) => setBriefText(d.brief ?? null))
+      .catch(() => setBriefText(null));
   }, [messages.length]);
 
   // Auto-grow textarea do TEXTAREA_MAX, potem scroll wewnętrzny (część 2.8).
@@ -284,18 +265,11 @@ export default function ChatPage() {
                 </div>
               </div>
             )}
-            {starters.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {starters.map((s) => (
-                  <StarterCard key={s.key} s={s} onClick={() => sendMessage(s.prompt)} />
-                ))}
-              </div>
-            )}
-            {!briefText && starters.length === 0 && !loading && (
-              <p style={{ color: C.muted, fontSize: 12.5, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
-                Napisz do trenera — plan, forma, analiza jazdy, żywienie albo przygotowanie do startu.
-              </p>
-            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {STARTERS.map((s) => (
+                <StarterCard key={s.key} s={s} onClick={() => sendMessage(s.prompt)} />
+              ))}
+            </div>
           </>
         )}
 
@@ -337,24 +311,8 @@ export default function ChatPage() {
         {error && <p style={{ textAlign: 'center', fontSize: 13, color: C.red }}>{error}</p>}
       </div>
 
-      {/* DOLNA STREFA: chipy (empty-state) + input. Tło C.bg, top border, safe-area iPhone (wymóg 1.4). */}
+      {/* DOLNA STREFA: sam input (chipy usunięte całkowicie). Tło C.bg, top border, safe-area iPhone (1.4). */}
       <div style={{ flexShrink: 0, background: C.bg, borderTop: `1px solid ${C.border}`, paddingBottom: 'calc(8px + env(safe-area-inset-bottom))' }}>
-        {/* CHIPY SUGESTII: TYLKO w trwającej rozmowie (po 1. wiadomości usera) — na ekranie startowym
-            byłyby dublem starterów. W rozmowie są kontekstowe (pytania otwarte, patrz chat-suggestions). */}
-        {hasUserMessage && suggestions.length > 0 && (
-          <div className="velo-noscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 16px 0', scrollbarWidth: 'none' }}>
-            {suggestions.map((s, i) => (
-              <button
-                key={i}
-                onClick={() => sendMessage(s.prompt)}
-                style={{ flexShrink: 0, background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '8px 14px', fontSize: 12.5, color: C.text, whiteSpace: 'nowrap', cursor: 'pointer' }}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* INPUT (2.7): pill radius 22, tło C.bg, border 1.5px (cyan w focusie) + przycisk okrągły 40px */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', padding: '12px 16px 0' }}>
           <textarea
