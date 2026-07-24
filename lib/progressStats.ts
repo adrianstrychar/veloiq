@@ -5,14 +5,13 @@ export interface ActivityStatRow {
   activity_date: string; // 'YYYY-MM-DD'
   distance_km: number | null;
   name: string | null;
+  duration_seconds?: number | null; // do sumy godzin sezonu (footer "Twój silnik")
+  elevation_m?: number | null;      // do sumy przewyższenia sezonu
 }
 
 export interface ProgressStats {
-  streakWeeks: number;
-  longestKm: number;
-  longestName: string | null;
-  totalKm: number;
-  rideCount: number;
+  streakWeeks: number;     // streak → nagłówek karty "Ten tydzień"
+  totalKm: number;         // suma km sezonu (fallback celu, gdy brak ytd_ride_km)
 }
 
 function ymd(d: Date): string {
@@ -43,24 +42,13 @@ export function computeProgressStats(rows: ActivityStatRow[], today: Date = new 
     cursor.setDate(cursor.getDate() - 7);
   }
 
-  // Najdłuższa jazda + suma km.
-  let longestKm = 0;
-  let longestName: string | null = null;
+  // Suma km sezonu (fallback celu, gdy brak ytd_ride_km ze Stravy). Rekordy per okres liczy
+  // osobno lib/dashboard-engagement (RecordsCard) — tu tylko streak + suma km.
   let totalKm = 0;
-  for (const r of rows) {
-    const km = r.distance_km ?? 0;
-    totalKm += km;
-    if (km > longestKm) {
-      longestKm = km;
-      longestName = r.name;
-    }
-  }
+  for (const r of rows) totalKm += r.distance_km ?? 0;
 
   return {
     streakWeeks,
-    longestKm: Math.round(longestKm),
-    longestName,
     totalKm: Math.round(totalKm),
-    rideCount: rows.length,
   };
 }

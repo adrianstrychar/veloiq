@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { C } from '@/lib/theme';
+import { Bike, Footprints, Mountain, Monitor } from 'lucide-react';
+import { C, RADIUS } from '@/lib/theme';
+import { CardLabel } from './CardLabel';
 import { createBrowserSupabaseClient } from '@/lib/supabase-browser';
 import { RideAnalysis, type RideActivity } from './RideAnalysis';
 
@@ -87,16 +89,14 @@ export function LastActivityCard({ activity, ftp }: LastActivityCardProps) {
         style={{
           background: C.card,
           border: `1px solid ${hover ? C.cyan : C.border}`,
-          borderRadius: 10, padding: '14px 16px',
+          borderRadius: RADIUS.card, padding: '14px 16px',
           display: 'flex', flexDirection: 'column', gap: 12,
           cursor: 'pointer', transition: 'border-color 120ms',
         }}
       >
         {/* Label sekcji + data */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            Ostatnia aktywność
-          </div>
+          <CardLabel>Ostatnia aktywność</CardLabel>
           {formattedDate && <div style={{ fontSize: 11, color: C.muted }}>{formattedDate}</div>}
         </div>
 
@@ -143,14 +143,14 @@ function hhmm(seconds: number): string {
 // Ikona dyscypliny w kolorowym kwadraciku (SportBadge z mockupu).
 function SportBadge({ type }: { type: string | null }) {
   const t = (type ?? '').toLowerCase();
-  const icon = t.includes('run') ? '🏃' : t.includes('gravel') ? '🚵' : t.includes('virtual') ? '🖥️' : '🚴';
+  const Icon = t.includes('run') ? Footprints : t.includes('gravel') ? Mountain : t.includes('virtual') ? Monitor : Bike;
   return (
     <div style={{
       width: 40, height: 40, borderRadius: 10, flexShrink: 0,
       background: C.cyan + '1A', border: `1.5px solid ${C.cyan}44`,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
-      {icon}
+      <Icon size={18} color={C.cyan} strokeWidth={2} />
     </div>
   );
 }
