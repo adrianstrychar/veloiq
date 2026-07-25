@@ -91,7 +91,7 @@ export async function GET() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id')
+    .select('id, name')
     .eq('user_id', user.id)
     .single();
   if (!athlete) return NextResponse.json({ error: 'athlete_not_found' }, { status: 404 });
@@ -136,7 +136,7 @@ export async function GET() {
     ctlRamp,
   };
 
-  const { system, user: userMsg } = buildDailyInsightPrompt(metrics, todayPlan, yesterdayCtx, race);
+  const { system, user: userMsg } = buildDailyInsightPrompt(metrics, todayPlan, yesterdayCtx, race, (athlete as { name?: string | null }).name ?? null);
 
   try {
     const response = await anthropic.messages.create({

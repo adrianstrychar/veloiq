@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { LogoVeloIQ } from '@/components/veloiq/LogoVeloIQ';
 import { type RaceRow } from '@/components/veloiq/Races';
 import { type CalActivity, type CalPlanDay } from '@/components/veloiq/Calendar';
 import { type PlanDayView } from '@/components/veloiq/Plan';
@@ -64,7 +65,7 @@ export default async function CalendarPage() {
   return (
     <div className="flex flex-col gap-4 max-w-md mx-auto">
       <header className="flex items-center justify-between py-2">
-        <span className="text-lg font-bold">VeloIQ</span>
+        <LogoVeloIQ height={26} />
         <span className="text-sm text-secondary">Kalendarz</span>
       </header>
 

@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { LogoVeloIQ } from '@/components/veloiq/LogoVeloIQ';
 import { Races, type RaceRow } from '@/components/veloiq/Races';
 import { type CtlPoint } from '@/lib/race-prep';
 import { localTodayISO } from '@/lib/plan';
@@ -68,7 +69,7 @@ export default async function RacesPage() {
   return (
     <div className="flex flex-col gap-4 max-w-md mx-auto">
       <header className="flex items-center justify-between py-2">
-        <span className="text-lg font-bold">VeloIQ</span>
+        <LogoVeloIQ height={26} />
         <span className="text-sm text-secondary">Wyścigi</span>
       </header>
 

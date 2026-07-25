@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildTimeContext, userTodayISO } from '@/lib/timezone';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { taperDaysFor, type RacePriority } from '@/lib/race-taper';
+import { firstName } from '@/lib/name';
 
 interface AthleteRow {
   id: string;
@@ -230,7 +231,15 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
     raceLine = `NAJBLIŻSZY START: ${nextRace.name} za ${daysAway} dni (prio ${prio})${inTaper ? ' · OKNO TAPERU (nie zwiększaj obciążenia)' : ''}`;
   }
 
-  const anchor = `ZAWODNIK: ${athlete?.name ?? 'Nieznany'} | Dyscyplina: ${athlete?.discipline ?? 'gravel'}
+  // Tylko pierwszy człon (name = "Imię Nazwisko"). Reguła: DOKŁADNIE ta forma, bez zdrobnień i bez
+  // nazwiska; brak → pomiń zwrot po imieniu.
+  const athleteName = firstName(athlete?.name);
+  const nameRule = athleteName
+    ? `IMIĘ: zwracaj się DOKŁADNIE "${athleteName}" — NIGDY nie skracaj, nie zdrabniaj, nie twórz wariantów ani nie dodawaj nazwiska (np. NIE "Adi", NIE imię z nazwiskiem).`
+    : 'IMIĘ: nieznane — POMIŃ zwrot po imieniu (nie zgaduj), mów na "Ty".';
+
+  const anchor = `ZAWODNIK: ${athleteName ?? 'Nieznany'} | Dyscyplina: ${athlete?.discipline ?? 'gravel'}
+${nameRule}
 ${ftpLine}
 DZIŚ: ${todayISO} (${dayName})
 FORMA DZIŚ: CTL ${ctl} | ATL ${atl} | TSB ${tsb}${trend !== null ? ` | Trend CTL ${trend >= 0 ? '+' : ''}${trend}/tydzień` : ''}${
