@@ -7,8 +7,8 @@ import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { syncActivityDetails } from '@/lib/strava/details';
 import { mondayOfISO } from '@/lib/plan';
 import { userTodayISO, dayNamePl, shiftISO } from '@/lib/timezone';
-import { estimateRaceDay, type RacePriority } from '@/lib/race-taper';
 import { findDiscrepancies, type MyRace } from '@/lib/race-verify';
+import { fetchPlanView } from '@/lib/plan-view';
 
 // Brak kolumny wieku w athletes → zawodnik M19-34 (30 lat) → reguła dystansu = Gran Fondo (max zakresu).
 // Zmiana progu 55+ (Medio) = tu jedna stała.
@@ -85,7 +85,7 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
   {
     name: 'get_weekly_plan',
     description:
-      "The athlete's training plan for a week: each day's workout type, label, target TSS, duration, zones, plus the week's AI insight, chosen weekly hours, and a `completion` object. Use for 'plan this week', 'what's on Thursday', 'how much training is left', 'am I keeping up with the plan'. `completion` (sessions_done_to_date / sessions_due_to_date / sessions_completion_pct) measures whether PLANNED SESSIONS HAPPENED (a ride on a planned day counts as done), NOT whether the athlete hit the planned load — riding harder/longer than planned still counts as done. Say \"you did X of Y sessions\", NEVER \"you completed X% of your load\". week_start is the Monday (local YYYY-MM-DD); omit for the current week.",
+      "The athlete's training plan for a week: each day's workout type, label, target TSS, duration, zones, plus the week's AI insight, chosen weekly hours, and a `completion` object. Use for 'plan this week', 'what's on Thursday', 'how much training is left', 'am I keeping up with the plan'. `completion` (sessions_done_to_date / sessions_due_to_date / sessions_completion_pct) measures whether PLANNED SESSIONS HAPPENED (a ride on a planned day counts as done), NOT whether the athlete hit the planned load — riding harder/longer than planned still counts as done. Say \"you did X of Y sessions\", NEVER \"you completed X% of your load\". week_start is the Monday (local YYYY-MM-DD); omit for the current week. IMPORTANT: the CURRENT week's plan is already in your system prompt (section \"PLAN TYGODNIA\") — do NOT call this tool for today, tomorrow, or this week; use it for OTHER weeks (previous, next, a specific week_start).",
     input_schema: {
       type: 'object',
       additionalProperties: false,
@@ -287,82 +287,20 @@ async function getFitnessHistory({ supabase, athleteId }: ToolCtx, input: Record
 async function getWeeklyPlan({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
   const today = userTodayISO();
   const ws = typeof input.week_start === 'string' ? input.week_start : mondayOfISO(today);
-  const { data: r } = await supabase.from('weekly_plans').select('week_start, plan_json, user_hours').eq('athlete_id', athleteId).eq('week_start', ws).maybeSingle();
-  if (!r) return { found: false, week_start: ws, message: `Brak planu na tydzień od ${ws}. Możesz go wygenerować w widoku Plan.` };
-
-  const planDays = (r.plan_json as { days?: Array<Record<string, unknown>>; insight?: string })?.days ?? [];
-  const dates = planDays.map((d) => d.date as string);
-  // Done-dates + LIVE race_calendar RÓWNOLEGLE (oba keyed po datach planu; +1 round-trip bez latencji).
-  // Live race_calendar jest autorytatywny dla dni RACE — reconcile niżej (spójnie z Plan.tsx).
-  const [{ data: acts }, { data: raceRows }] = await Promise.all([
-    supabase.from('strava_activities').select('activity_date').eq('athlete_id', athleteId).in('activity_date', dates),
-    supabase.from('race_calendar').select('date, name, priority, distance_km, elevation_m, discipline').eq('athlete_id', athleteId).in('date', dates),
-  ]);
-  const doneDates = new Set((acts ?? []).map((a) => a.activity_date));
-  const raceByDate = new Map(
-    (raceRows ?? []).map((rc) => {
-      const est = estimateRaceDay(rc.distance_km as number | null, rc.elevation_m as number | null, rc.discipline as string | null, (rc.priority as RacePriority) ?? 'C');
-      return [rc.date as string, { name: rc.name as string, estTss: est?.estTss ?? 0, estTimeMin: est?.estTimeMin ?? 0 }];
-    }),
-  );
-
-  const days = planDays.map((d) => {
-    const dateStr = d.date as string;
-    // Reconcile RACE vs live race_calendar (WYŁĄCZNIE warstwa odczytu — plan_json NIETKNIĘTY):
-    // - live wyścig na tę datę → RACE (z szacunkiem live),
-    // - materializowany RACE bez live wyścigu (sierota po usuniętym starcie) → OFF.
-    const rm = raceByDate.get(dateStr);
-    let type = d.type as string;
-    let label = d.label as unknown;
-    let tss = d.tss as unknown;
-    let dur_min = d.dur_min as unknown;
-    let zones = d.zones as unknown;
-    if (rm) {
-      type = 'RACE'; label = rm.name; tss = rm.estTss; dur_min = rm.estTimeMin; zones = [0, 0, 0, 0, 0];
-    } else if (type === 'RACE') {
-      type = 'OFF'; label = 'Odpoczynek'; tss = 0; dur_min = 0; zones = [0, 0, 0, 0, 0];
-    }
-    return {
-      dow: d.dow,
-      date: dateStr,
-      date_local: dateStr,
-      day_name_pl: dayNamePl(dateStr),
-      type,
-      label,
-      tss,
-      dur_min,
-      zones,
-      locked: !!d.locked,
-      outline: !!d.outline,
-      past: dateStr < today,
-      done: doneDates.has(dateStr),
-    };
-  });
-
-  // Realizacja sesji do teraz — TANI wariant z flag past/done + zaplanowanego tss (bez streams).
-  // Dni treningowe minione (typ≠OFF) = "należne"; z jazdą tego dnia = "odbyte". Ważone
-  // zaplanowanym TSS. MIERZY, czy sesje się ODBYŁY, NIE czy trafiłeś w obciążenie.
-  const dueDays = days.filter((d) => d.past && d.type !== 'OFF');
-  const doneDoneDays = dueDays.filter((d) => d.done);
-  const tssDue = dueDays.reduce((a, d) => a + ((d.tss as number) || 0), 0);
-  const tssDone = doneDoneDays.reduce((a, d) => a + ((d.tss as number) || 0), 0);
-  const completion = {
-    sessions_due_to_date: dueDays.length,
-    sessions_done_to_date: doneDoneDays.length,
-    tss_planned_to_date: tssDue,
-    tss_of_done_sessions: tssDone,
-    // Odsetek zaplanowanych sesji odbytych do teraz (wg zaplanowanego TSS). NIE mów
-    // "zrealizowałeś X% planu/obciążenia" (sugeruje jakość) — tylko "odbyłeś X z Y sesji".
-    sessions_completion_pct: tssDue > 0 ? Math.round((tssDone / tssDue) * 100) : null,
-  };
-
+  // Widok tygodnia liczy WSPÓLNY moduł lib/plan-view.ts — ten sam, z którego korzysta anchor
+  // system promptu. Dwa niezależne rendery planu rozjeżdżały się i to właśnie rozjazd między
+  // "co mówi trener" a "co jest w zakładce Plan" był zgłoszonym błędem.
+  const view = await fetchPlanView(supabase, athleteId, ws, today);
+  if (!view.found) return view;
   return {
-    week_start: r.week_start,
-    is_current: r.week_start === mondayOfISO(today),
-    user_hours: r.user_hours ?? null,
-    insight: (r.plan_json as { insight?: string })?.insight ?? null,
-    completion,
-    days,
+    week_start: view.week_start,
+    is_current: view.week_start === mondayOfISO(today),
+    user_hours: view.user_hours,
+    insight: view.insight,
+    completion: view.completion,
+    // days niesie teraz też watt/hr/structure (widok współdzielony) — model dostaje parametry
+    // interwałów bez dodatkowego round-tripu.
+    days: view.days,
   };
 }
 

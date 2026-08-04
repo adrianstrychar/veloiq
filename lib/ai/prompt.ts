@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { buildTimeContext, userTodayISO } from '@/lib/timezone';
+import { buildTimeContext, userTodayISO, shiftISO } from '@/lib/timezone';
+import { mondayOfISO } from '@/lib/plan';
+import { fetchPlanView, renderPlanAnchor } from '@/lib/plan-view';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { taperDaysFor, type RacePriority } from '@/lib/race-taper';
 import { firstName } from '@/lib/name';
@@ -103,7 +105,10 @@ Poza zakresem — NIE odpowiadaj merytorycznie, krótko i życzliwie przekieruj:
 // Anty-halucynacja: dane wyłącznie z anchora lub narzędzi; przy pustych danych — powiedz wprost.
 const TOOLS_SECTION = `### NARZĘDZIA I DANE
 - Nie masz danych w pamięci — masz NARZĘDZIA. Zanim odpowiesz na pytanie o konkretną
-  jazdę, plan, historię formy, start czy regenerację — NAJPIERW wywołaj właściwe narzędzie.
+  jazdę, historię formy, start czy regenerację — NAJPIERW wywołaj właściwe narzędzie.
+  WYJĄTEK: plan BIEŻĄCEGO tygodnia masz always-on w anchorze (sekcja "PLAN TYGODNIA") —
+  na pytania o dziś/jutro/ten tydzień odpowiadaj z niego, bez wołania get_weekly_plan.
+  Narzędzie zostaje do INNYCH tygodni (poprzedni, następny, konkretny week_start).
 - KAŻDA wartość liczbowa (waty, TSS, CTL/ATL/TSB, tętno, daty, dystanse) MUSI pochodzić
   z sekcji "FORMA DZIŚ" albo z wyniku narzędzia. NIGDY nie zmyślaj liczb ani nie szacuj "z głowy".
 - Jeśli narzędzie zwróci pusto / found:false → powiedz WPROST, że tych danych nie ma
@@ -131,6 +136,32 @@ ZAPIS ZMIAN (plan tygodnia i starty) — confirm-before-write:
   wywołaj cancel_change dla change_id tej propozycji i potwierdź rezygnację jednym zdaniem.
 - Jeśli commit_change zwróci błąd (wygasło / już zastosowano / dane się zmieniły) — przekaż to
   userowi po ludzku i zaproponuj przygotowanie nowej propozycji.`;
+
+// Spójność z planem — TWARDA reguła. Powód istnienia: model dostawał plan tygodnia wyłącznie
+// przez narzędzie get_weekly_plan i przy krótkim pytaniu w toku rozmowy ("A dzisiaj?") po prostu
+// go nie wołał — po czym podawał własną sesję ("kompletny odpoczynek albo 30–40 min Z1"), gdy
+// w planie stało 45 min z 20 min Z2. Zawodnik dostawał DWA różne plany z jednej aplikacji.
+// Teraz plan jest w anchorze always-on, a ta sekcja mówi, co z nim zrobić.
+const PLAN_CONSISTENCY_SECTION = `### SPÓJNOŚĆ Z PLANEM (twarda reguła, nadrzędna nad ogólną wiedzą trenerską)
+- Sekcja "PLAN TYGODNIA" w anchorze to ŹRÓDŁO PRAWDY o tym, co zawodnik ma robić. Jest tam
+  zawsze — NIE musisz wołać get_weekly_plan, żeby odpowiedzieć na pytanie o dziś, jutro
+  lub ten tydzień. Narzędzie zostaw na inne tygodnie i na szczegóły spoza anchora.
+- Każda odpowiedź dotycząca "co mam dziś/jutro robić" MUSI zaczynać się od tego, co JEST
+  w planie — z nazwą sesji, czasem i obciążeniem z anchora. Nie parafrazuj z pamięci.
+- NIGDY nie podawaj własnej sesji jako zalecenia, jeśli różni się od planu. To najcięższy błąd
+  tego czatu: zawodnik dostaje wtedy dwa sprzeczne plany z jednej aplikacji i traci zaufanie
+  do obu. Dotyczy też "drobiazgów" — inny czas, inna strefa, inne waty to JUŻ inny plan.
+- Jeśli uważasz, że plan na dany dzień jest nietrafiony (forma, TSB, zmęczenie, samopoczucie,
+  okno taperu), postępuj DOKŁADNIE tak, w tej kolejności:
+  1. Nazwij, co jest w planie ("w planie masz dziś 45 min z 20 min Z2").
+  2. Powiedz WPROST, że proponujesz odstępstwo, i uzasadnij je danymi ("TSB +11, dzień przed
+     startem — proponuję skrócić do 30 min Z1").
+  3. Od razu wywołaj propose_plan_change z tą zmianą i pokaż diff. Zawodnik zatwierdza lub odrzuca.
+  Nigdy nie zatrzymuj się na kroku 2 z alternatywą wiszącą w powietrzu — to właśnie tworzy
+  "drugi plan", którego nie ma w aplikacji.
+- Gdy zawodnik zwraca uwagę na rozbieżność ("ale w planie mam co innego") — przyznaj to od razu,
+  wróć do treści planu z anchora i dopiero wtedy ewentualnie zaproponuj zmianę. Nie brnij.
+- Jeśli w anchorze nie ma planu na ten tydzień, powiedz to wprost i wskaż zakładkę Plan.`;
 
 // Zwięzłość + forma (2.1) — statyczne, cache'owalne. Twardy limit długości wg typu pytania;
 // tryb per intencja (linia doklejana na końcu dynamicznego promptu) dodatkowo to zawęża.
@@ -189,13 +220,19 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
 
   // Historia formy (trend 7d) + najbliższy start — RÓWNOLEGLE. Start w anchorze always-on,
   // żeby model nigdy nie pytał "masz jakiś wyścig?" (dane, które reszta apki zna).
-  const [{ data: fmRows }, { data: nextRace }] = await Promise.all([
+  // Plan bieżącego tygodnia dołącza do tej samej równoległej partii — jest ALWAYS-ON, bo zostawiony
+  // za narzędziem powodował, że model improwizował sesję sprzeczną z zakładką Plan.
+  const tomorrowISO = shiftISO(todayISO, 1);
+  const [{ data: fmRows }, { data: nextRace }, planView] = await Promise.all([
     athleteId
       ? supabase.from('fitness_metrics').select('date, ctl, atl, tsb').eq('athlete_id', athleteId).order('date', { ascending: true })
       : Promise.resolve({ data: null }),
     athleteId
       ? supabase.from('race_calendar').select('name, date, priority').eq('athlete_id', athleteId).gte('date', todayISO).order('date', { ascending: true }).limit(1).maybeSingle()
       : Promise.resolve({ data: null }),
+    athleteId
+      ? fetchPlanView(supabase, athleteId, mondayOfISO(todayISO), todayISO)
+      : Promise.resolve(null),
   ]);
   const rows = (fmRows ?? []) as MetricRow[];
   const now = rows.length ? rows[rows.length - 1] : null;
@@ -208,7 +245,7 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
   const trend = now && weekAgo ? r1(now.ctl - weekAgo.ctl) : null;
 
   // --- STATIC (cache'owalny): tożsamość + filozofia + zakres + narzędzia + zwięzłość ---
-  const staticPart = `${buildLayer1(athlete?.discipline ?? null, hasPower)}\n\n${APLIKACJA_SECTION}\n\n${ZAKRES_SECTION}\n\n${TOOLS_SECTION}\n\n${BREVITY_SECTION}`;
+  const staticPart = `${buildLayer1(athlete?.discipline ?? null, hasPower)}\n\n${APLIKACJA_SECTION}\n\n${ZAKRES_SECTION}\n\n${TOOLS_SECTION}\n\n${PLAN_CONSISTENCY_SECTION}\n\n${BREVITY_SECTION}`;
 
   // --- Anchor: lekki, always-on. Reszta danych przez narzędzia. ---
   const ftpW = athlete?.ftp_watts;
@@ -231,6 +268,9 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
     raceLine = `NAJBLIŻSZY START: ${nextRace.name} za ${daysAway} dni (prio ${prio})${inTaper ? ' · OKNO TAPERU (nie zwiększaj obciążenia)' : ''}`;
   }
 
+  // Blok planu: dziś/jutro w pełnym szczególe, reszta tygodnia skrótem. null → brak planu w bazie.
+  const planBlock = planView ? renderPlanAnchor(planView, todayISO, tomorrowISO, hasPower) : null;
+
   // Tylko pierwszy człon (name = "Imię Nazwisko"). Reguła: DOKŁADNIE ta forma, bez zdrobnień i bez
   // nazwiska; brak → pomiń zwrot po imieniu.
   const athleteName = firstName(athlete?.name);
@@ -246,8 +286,9 @@ FORMA DZIŚ: CTL ${ctl} | ATL ${atl} | TSB ${tsb}${trend !== null ? ` | Trend CT
     readiness ? `\nGOTOWOŚĆ: ${readiness.raceReady}% (${readiness.state}) | Świeżość ${readiness.freshPct}%` : ''
   }
 ${raceLine}
+${planBlock ?? 'PLAN TYGODNIA: brak planu na bieżący tydzień w aplikacji — powiedz to wprost i wskaż zakładkę Plan (tam można go wygenerować). NIE układaj planu w czacie.'}
 
-Dane szczegółowe (jazdy, plan tygodnia, historia formy, starty, regeneracja) NIE są tutaj — pobierasz je NARZĘDZIAMI na żądanie.`;
+Pozostałe dane szczegółowe (konkretne jazdy, historia formy, starty, regeneracja, plan INNYCH tygodni) NIE są tutaj — pobierasz je NARZĘDZIAMI na żądanie.`;
 
   // DYNAMIC (per-request, POZA cache): blok czasowy (nadrzędny nad static powyżej) + anchor.
   // Linię trybu (per intencja) dokleja route na SAMYM KOŃCU. Static idzie przed dynamic w route.
