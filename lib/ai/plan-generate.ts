@@ -10,6 +10,7 @@ import {
 } from '@/lib/structure';
 import { sessionStructure } from '@/lib/workout';
 import { buildTaperGuidance, type RacePriority } from '@/lib/race-taper';
+import type { RecentLoadContext } from '@/lib/recent-load';
 
 // RACE = dzień startu (nie trening). Dyskryminator dnia jak OFF/Z2; metadane startu (nazwa,
 // szacunki) niesie osobny obiekt `race` na PlanDay, bo nie mieszczą się w polach treningowych.
@@ -70,6 +71,10 @@ export interface GeneratorInputs {
   race: RaceContext | null;   // null = brak wyścigu w zasięgu → budowanie
   weeklyTssTarget: number;        // cel TSS tygodnia bieżącego
   nextWeeklyTssTarget: number;    // cel TSS tygodnia zarysu (next)
+  // Co REALNIE wydarzyło się przed planowanym tygodniem (Strava + minione starty). null = brak
+  // danych/nowe konto. Nośnik ciągłości między tygodniami: bez tego generator startował od zera
+  // po każdej promocji zarysu i "zapominał" o starcie sprzed dwóch dni.
+  recentLoad: RecentLoadContext | null;
 }
 
 // Przedział twardej reguły dla promptu (target ±, węższy niż walidacja serwera).
@@ -109,12 +114,28 @@ export function buildTwoWeekPrompt(inp: GeneratorInputs): { system: string; user
   // próbuje POGODZIĆ "min 2 sesje jakościowe + progresja CTL" z redukcją taperu i grzęźnie w
   // sprzecznym rozumowaniu, wyczerpując budżet tokenów zanim wyemituje JSON (zaobserwowane).
   const isTaper = !!(inp.race && inp.race.taperInCurrent && inp.race.raceDowCurrent != null);
+  // Ile dni tygodnia jest zajętych przez wymuszoną regenerację po ciężkim wysiłku. Sterule wymogiem
+  // sesji jakościowych: utrzymanie "min 2 sesje jakościowe" obok 2–3 dni zakazu intensywności to ta
+  // sama sprzeczność, która przy taperze wyczerpywała budżet tokenów zanim model wyemitował JSON.
+  const recoveryCount = inp.recentLoad?.recoveryDows.length ?? 0;
+  const qualityLine =
+    recoveryCount >= 3
+      ? 'Zawodnik: Adrian — puncheur. BIEŻĄCY tydzień jest REGENERACYJNY po ciężkim wysiłku — NIE wymagaj sesji jakościowych ani progresji CTL. Priorytet to powrót świeżości, nie bodziec.'
+      : recoveryCount === 2
+      ? 'Zawodnik: Adrian — puncheur. GŁÓWNA SŁABOŚĆ: próg utrzymany 20–60 min. Ale bieżący tydzień zaczyna się od regeneracji po ciężkim wysiłku — zaplanuj TYLKO 1 sesję jakościową (THR/SST/OU), po dniach regeneracji, nie przed.'
+      : 'Zawodnik: Adrian — puncheur. GŁÓWNA SŁABOŚĆ: próg utrzymany 20–60 min. To priorytet rozwojowy: w BIEŻĄCYM tygodniu zaplanuj min. 2 sesje jakościowe (THR/SST/OU) celujące w utrzymany wysiłek progowy 20–60 min.';
   const system = [
     'Jesteś doświadczonym trenerem kolarstwa. Budujesz horyzont DWÓCH tygodni:',
     'BIEŻĄCY tydzień w pełnym SZCZEGÓLE oraz NASTĘPNY tydzień jako ZARYS (kierunek, dopnie się po sesjach).',
     isTaper
       ? 'Zawodnik: Adrian — puncheur (67 kg). BIEŻĄCY tydzień to TYDZIEŃ STARTOWY (tapering) — NIE stosuj reguł budowania: pomiń wymóg 2 sesji jakościowych i progresji CTL. Jedynym źródłem struktury bieżącego tygodnia jest OPIS TAPERU niżej — wypełnij dni dokładnie wg niego.'
-      : 'Zawodnik: Adrian — puncheur. GŁÓWNA SŁABOŚĆ: próg utrzymany 20–60 min. To priorytet rozwojowy: w BIEŻĄCYM tygodniu zaplanuj min. 2 sesje jakościowe (THR/SST/OU) celujące w utrzymany wysiłek progowy 20–60 min.',
+      : qualityLine,
+    // Regeneracja jest NADRZĘDNA nad taperem: taper chroni dni PRZED startem, ale nie wie nic
+    // o zmęczeniu przywleczonym z poprzedniego tygodnia. Gdy oba okna nachodzą na ten sam dzień,
+    // wygrywa regeneracja — i to ją waliduje serwer.
+    recoveryCount > 0
+      ? 'PIERWSZEŃSTWO REGUŁ: gdy dzień jest jednocześnie objęty OPISEM TAPERU i REGUŁĄ REGENERACJI niżej, obowiązuje REGENERACJA (OFF/Z1/Z2). Bezpieczeństwo zawodnika przed szczytowaniem.'
+      : '',
     'ZASADY ROZGRZEWKI (wlicz w dur_min i w rozkład stref): min 20 min spokojnej rozgrzewki przed Z2/SST,',
     'min 25 min przed THR/OU/VO2. Każda jakościowa sesja ma rozgrzewkę + część główną + schłodzenie.',
     'TWARDA REGUŁA dla zones[] (tylko tydzień bieżący): rozgrzewka i schłodzenie MUSZĄ być widoczne w strefach.',
@@ -122,6 +143,8 @@ export function buildTwoWeekPrompt(inp: GeneratorInputs): { system: string; user
     'Dla Z2/SST udział Z1+Z2 >= round(20 / dur_min * 100)%. Przykład: THR 90 min → Z1+Z2 >= 28%.',
     isTaper
       ? 'NIE buduj progresywnie i NIE wymuszaj układu 2 OFF — tydzień startowy rządzi się OPISEM TAPERU niżej (liczba i rozkład dni wolnych wynika z niego). Dzień startu (RACE) zostaw jako OFF, serwer go wypełni.'
+      : recoveryCount > 0
+      ? 'Buduj progresywnie względem CTL, ale DOPIERO po dniach regeneracji. Zasada "nigdy dwa OFF z rzędu" NIE obowiązuje w oknie regeneracji — tam dwa lub trzy lekkie dni z rzędu są WŁAŚCIWE. Poza oknem: jeden dzień OFF w środku tygodnia, sesje jakościowe (THR/OU/VO2) nigdy bezpośrednio obok siebie.'
       : 'Buduj progresywnie względem CTL. Zostaw regenerację: dni OFF/Z1 i jedną długą LONG w weekend. OBOWIĄZKOWO 2 dni OFF w tygodniu. Jeden zwykle w poniedziałek (regeneracja po weekendzie), drugi w środku tygodnia (czwartek lub piątek — przed lub po sesji jakościowej). Nigdy dwa OFF z rzędu. Sesje jakościowe (THR/OU/VO2) nigdy bezpośrednio obok siebie — zawsze Z1/Z2/OFF między nimi.',
     'MINIMALNY czas sesji to 45 min (dur_min >= 45). Sesje poniżej 45 min nie mają sensu treningowego — jeśli budżet jest za mały, lepiej dać OFF niż krótką sesję. Nie planuj Z1/Z2/regeneracji poniżej 45 min.',
     'Typy: OFF=wolne, Z1=regeneracja, Z2=endurance, SST=sweet spot, THR=threshold, OU=over-under, VO2=vo2max, LONG=długa.',
@@ -138,7 +161,7 @@ export function buildTwoWeekPrompt(inp: GeneratorInputs): { system: string; user
     'INSIGHT (oba tygodnie): MAX 1-2 zdania, prosty codzienny język. Krótko: co to za tydzień i na co zwrócić uwagę.',
     'NIE tłumacz każdej sesji po kolei, nie pisz o TSS ani szczegółów — to ma być zwięzła myśl, nie rozprawka.',
     'KRYTYCZNE: wszystkie obliczenia (TSS, minuty, strefy) wykonaj PO CICHU i ZWIĘŹLE. NIE rozpisuj planu prozą dzień po dniu przed JSON — długie rozumowanie ucina odpowiedź. Cała odpowiedź to JEDEN obiekt JSON — zero tekstu przed "{" i po "}", bez markdown.',
-  ].join(' ');
+  ].filter(Boolean).join(' ');
 
   // Faza tygodnia zależy od wyścigu: TYDZIEŃ STARTOWY → tapering ze strukturą wstecz od startu
   // (znosi dawne bezwarunkowe "Faza budowania"); poza taperem → budowanie z kontekstem startu.
@@ -151,12 +174,19 @@ export function buildTwoWeekPrompt(inp: GeneratorInputs): { system: string; user
     raceLine = 'Brak nadchodzącego wyścigu w zasięgu — budowanie ogólnej formy.';
   }
 
-  const [curLo, curHi] = tssBand(inp.weeklyTssTarget);
+  // Dolna granica pasma TSS ROZLUŹNIONA w tygodniu z regeneracją: przy 2–3 dniach zakazu
+  // intensywności trafienie w wąskie ±5% bywa niewykonalne, a plan ZBYT LEKKI po ciężkim starcie
+  // jest bezpieczny — odrzucanie go retry'em kończyło się 502 zamiast rozsądnym tygodniem.
+  const curLoFactor = recoveryCount > 0 ? 0.82 : 0.95;
+  const [curLo, curHi] = tssBand(inp.weeklyTssTarget, curLoFactor);
   const [nxtLo, nxtHi] = tssBand(inp.nextWeeklyTssTarget);
 
   const user = [
     `Profil: FTP ${inp.ftp}W, masa ${inp.mass ?? '—'} kg, VO2max ${inp.vo2max ?? '—'}.`,
     `Forma: CTL ${inp.ctl ?? '—'}, ATL ${inp.atl ?? '—'}, TSB ${inp.tsb ?? '—'}.`,
+    // Historia PRZED regułami tygodnia — model ma najpierw zobaczyć stan zawodnika, potem cel.
+    // Spread zamiast pustego stringa: '' w tej tablicy to CELOWE puste linie separujące sekcje.
+    ...(inp.recentLoad?.guidance ? [inp.recentLoad.guidance] : []),
     raceLine,
     `TWARDA REGUŁA TSS: suma TSS BIEŻĄCEGO tygodnia MUSI mieścić się w przedziale ${curLo}–${curHi} (cel ${inp.weeklyTssTarget}). Wyjście poza ten przedział = BŁĘDNY plan, popraw rozkład.`,
     `Suma TSS NASTĘPNEGO tygodnia (zarys) MUSI mieścić się w przedziale ${nxtLo}–${nxtHi} (cel ${inp.nextWeeklyTssTarget}). Trzymaj sensowną progresję, nie skacz.`,

@@ -15,6 +15,7 @@ import {
   type RaceMeta,
 } from '@/lib/ai/plan-generate';
 import { estimateRaceDay, taperDaysFor, taperVolumeFactor, taperLast48hViolation, outlineTaperPlaceholders, type RacePriority } from '@/lib/race-taper';
+import { buildRecentLoad, recoveryViolation, RECOVERY_CONFIG, type RecentActivity, type PastRace } from '@/lib/recent-load';
 
 // dow (1=Pn..7=Nd) daty w tygodniu zaczynającym się od weekStart (Mon), albo null gdy poza tygodniem.
 function dowInWeek(weekStart: string, dateIso: string): number | null {
@@ -73,7 +74,21 @@ export async function POST(req: NextRequest) {
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const [{ data: fm }, { data: races }] = await Promise.all([
+  // Anchor: week_start z body (przycisk "Wygeneruj" dla konkretnego tygodnia) albo bieżący tydzień.
+  // PODNIESIONE PRZED fetch: okno historii (poniżej) liczy się względem planowanego tygodnia.
+  const weekStartParam = typeof (body as Record<string, unknown>)?.week_start === 'string'
+    ? String((body as Record<string, unknown>).week_start)
+    : null;
+  const weekStart = weekStartParam ? mondayOf(new Date(weekStartParam)) : mondayOf(new Date());
+
+  // Okno historii: 14 dni wstecz od PIERWSZEGO planowanego dnia (max(weekStart, dziś)) + zapas na
+  // wykrycie startu tuż sprzed okna. Bez tego generator nie miał ŻADNEGO kanału na fakt "dwa dni
+  // temu był pięciogodzinny wyścig" — patrz lib/recent-load.ts.
+  const planFromIso = todayIso > weekStart ? todayIso : weekStart;
+  const histStartIso = new Date(Date.parse(`${planFromIso}T00:00:00Z`) - RECOVERY_CONFIG.windowDays * 86400000)
+    .toISOString().slice(0, 10);
+
+  const [{ data: fm }, { data: races }, { data: recentActs }, { data: pastRaceRows }] = await Promise.all([
     supabase
       .from('fitness_metrics')
       .select('ctl, atl, tsb')
@@ -88,13 +103,25 @@ export async function POST(req: NextRequest) {
       .eq('athlete_id', athleteId)
       .gte('date', todayIso)
       .order('date', { ascending: true }),
+    // Zrealizowane jazdy w oknie historii — źródło prawdy o tym, co się NAPRAWDĘ wydarzyło.
+    supabase
+      .from('strava_activities')
+      .select('activity_date, name, type, tss, duration_seconds')
+      .eq('athlete_id', athleteId)
+      .gte('activity_date', histStartIso)
+      .lt('activity_date', planFromIso)
+      .order('activity_date', { ascending: true }),
+    // Starty, które JUŻ SIĘ ODBYŁY w oknie. OSOBNE zapytanie (nie rozszerzenie zakresu tego wyżej):
+    // `races` steruje wyborem najbliższego startu przez raceRows[0] — wpuszczenie tam przeszłości
+    // wskazałoby jako "najbliższy" wyścig, który już był.
+    supabase
+      .from('race_calendar')
+      .select('name, date, priority')
+      .eq('athlete_id', athleteId)
+      .gte('date', histStartIso)
+      .lt('date', planFromIso)
+      .order('date', { ascending: true }),
   ]);
-
-  // Anchor: week_start z body (przycisk "Wygeneruj" dla konkretnego tygodnia) albo bieżący tydzień.
-  const weekStartParam = typeof (body as Record<string, unknown>)?.week_start === 'string'
-    ? String((body as Record<string, unknown>).week_start)
-    : null;
-  const weekStart = weekStartParam ? mondayOf(new Date(weekStartParam)) : mondayOf(new Date());
 
   // IDEMPOTENTNY RE-CHECK (anti-double-gen dla lazy promocji szkicu). Jeśli kotwiczny tydzień ma
   // już PEŁNY plan (żaden dzień nie jest outline), ktoś go zdążył wygenerować/awansować —
@@ -143,12 +170,40 @@ export async function POST(req: NextRequest) {
       }
     : null;
 
+  // ── Kontekst obciążenia z PRZESZŁOŚCI (ciągłość między tygodniami) ──
+  // Liczony po raceDowCurrent, bo dzień startu jest wykluczany z okna regeneracji.
+  const recentLoad = buildRecentLoad({
+    weekStart,
+    today: todayIso,
+    activities: ((recentActs ?? []) as Array<{ activity_date: string; name: string | null; type: string | null; tss: number | null; duration_seconds: number | null }>)
+      .map<RecentActivity>((a) => ({
+        date: a.activity_date,
+        name: a.name,
+        type: a.type,
+        tss: a.tss != null ? Number(a.tss) : 0,
+        durationSeconds: a.duration_seconds,
+      })),
+    pastRaces: ((pastRaceRows ?? []) as Array<{ name: string; date: string; priority: RacePriority }>)
+      .map<PastRace>((r) => ({ name: r.name, date: r.date, priority: r.priority })),
+    raceDowCurrent,
+  });
+
   // Cel tygodniowy: override z body albo CTL*7*intensity (domyślnie 1.1); fallback gdy brak CTL.
   // Tydzień startowy: redukcja objętości treningowej wg rangi (dzień RACE liczony osobno, wstrzykiwany).
   // Post-race (start w bieżącym → next = regeneracja): next celuje niżej, nie w progresję +5%.
   const baseTarget = ctl != null ? Math.round(ctl * 7 * intensityMul) : 350;
   const taperFactor = taperInCurrent && raceInWindow ? taperVolumeFactor(raceInWindow.priority) : 1;
-  const weeklyTssTarget = overrideTarget ?? Math.round(baseTarget * taperFactor);
+  // GŁĘBSZY z dwóch współczynników, NIE ich iloczyn. Taper (0.85) × regeneracja (0.76) = 0.65 —
+  // tydzień, w którym nie ma już czego zaplanować, a model i tak musi trafić w pasmo TSS.
+  // min() daje tę redukcję, która wynika z mocniejszego powodu, i zostaje sterowalny.
+  const loadFactor = Math.min(taperFactor, recentLoad.tssFactor);
+  // Regeneracja obniża cel TAKŻE gdy user ustawił godziny suwakiem (overrideTarget). Dni bez
+  // intensywności fizycznie zabierają pojemność tygodnia — trzymanie pełnego celu zmusiłoby model
+  // do upchnięcia obciążenia w pozostałe dni, czyli dokładnie tego, czemu reguła ma zapobiec.
+  // Wybór usera zostaje uszanowany co do KIERUNKU (skalujemy jego liczbę, nie ignorujemy jej).
+  const weeklyTssTarget = overrideTarget != null
+    ? Math.round(overrideTarget * recentLoad.tssFactor)
+    : Math.round(baseTarget * loadFactor);
   const nextWeeklyTssTarget = raceDowCurrent != null
     ? Math.round(baseTarget * 0.7) // start w tym tygodniu → następny tydzień regeneracyjny
     : Math.round((overrideTarget ?? baseTarget) * 1.05);
@@ -164,6 +219,7 @@ export async function POST(req: NextRequest) {
     race: raceCtx,
     weeklyTssTarget,
     nextWeeklyTssTarget,
+    recentLoad,
   };
 
   const { system, user } = buildTwoWeekPrompt(inputs);
@@ -198,7 +254,9 @@ export async function POST(req: NextRequest) {
       // Dzień startu WYKLUCZONY z sumy (jego TSS jest wstrzykiwany osobno, nie z celu treningowego).
       const sumCur = v.current.days.reduce((a, d) => a + (d.dow === raceDowCurrent ? 0 : d.tss), 0);
       const sumNext = v.next.days.reduce((a, d) => a + (d.dow === raceDowNext ? 0 : d.tss), 0);
-      const [curLo, curHi] = tssBand(weeklyTssTarget, 0.90, 1.15);
+      // Dolna granica rozluźniona w tygodniu z regeneracją (spójnie z pasmem w prompcie): plan
+      // ZBYT LEKKI po ciężkim starcie jest bezpieczny, a odrzucanie go retry'em kończyło się 502.
+      const [curLo, curHi] = tssBand(weeklyTssTarget, recentLoad.recoveryDows.length ? 0.75 : 0.90, 1.15);
       const [nxtLo, nxtHi] = tssBand(nextWeeklyTssTarget, 0.90, 1.15);
       if (sumCur < curLo || sumCur > curHi) {
         lastErr = `bieżący TSS ${sumCur} poza przedziałem ${curLo}–${curHi}`;
@@ -214,6 +272,13 @@ export async function POST(req: NextRequest) {
       if (taperInCurrent && raceInWindow && raceDowCurrent != null) {
         const viol = taperLast48hViolation(v.current.days, raceDowCurrent, raceInWindow.priority);
         if (viol) { lastErr = `tapering: ${viol}`; continue; }
+      }
+      // TWARDA OCHRONA REGENERACJI PO CIĘŻKIM WYSIŁKU — bliźniak ochrony 48h, ta sama zasada:
+      // prompt to prośba, walidacja to gwarancja. Bez tego model potrafił wstawić Threshold 3×12
+      // dwa dni po pięciogodzinnym starcie, bo pasmo TSS trzeba było czymś zapełnić.
+      {
+        const viol = recoveryViolation(v.current.days, recentLoad.recoveryDows);
+        if (viol) { lastErr = `regeneracja: ${viol}`; continue; }
       }
       // Wstrzyknij dzień startu (deterministyczny szacunek) w miejsce dnia OFF, który AI zostawiło.
       if (raceInWindow) {
@@ -262,7 +327,20 @@ export async function POST(req: NextRequest) {
 
   // dry_run: zwróć wynik BEZ zapisu (test bez nadpisywania istniejącego planu)
   if (dryRun) {
-    return NextResponse.json({ ok: true, dry_run: true, target: weeklyTssTarget, next_target: nextWeeklyTssTarget, current: curPayload, next: nextPayload });
+    return NextResponse.json({
+      ok: true, dry_run: true, target: weeklyTssTarget, next_target: nextWeeklyTssTarget,
+      // Kontekst regeneracji w dry_run — bez tego nie da się sprawdzić, CZY reguła się odpaliła
+      // (plan lekki „sam z siebie" wygląda identycznie jak plan lekki z wymuszenia).
+      recovery: {
+        dows: recentLoad.recoveryDows,
+        tss_factor: recentLoad.tssFactor,
+        load_factor: loadFactor,
+        hard_effort: recentLoad.hardEffort,
+        last7_tss: recentLoad.last7Tss,
+        prev7_tss: recentLoad.prev7Tss,
+      },
+      current: curPayload, next: nextPayload,
+    });
   }
 
   // ── Ręczny upsert tygodnia do weekly_plans (działa bez unique constraintu) ──
