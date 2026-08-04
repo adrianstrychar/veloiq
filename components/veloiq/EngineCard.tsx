@@ -8,7 +8,7 @@ import { C, F, RADIUS } from '@/lib/theme';
 import { CardLabel } from './CardLabel';
 import { wkgLabel } from '@/lib/level';
 import type { ReconPoint } from '@/lib/ftp-reconstruct';
-import type { ForecastPoint, Milestone } from '@/lib/ftp-forecast';
+import { forecastBand, type ForecastPoint, type Milestone } from '@/lib/ftp-forecast';
 import type { FtpDisplay } from '@/lib/ftp';
 
 // "Twój silnik" (ETAP 3) — scalenie FTP + Pułap tlenowy + rozwój w JEDNĄ kartę.
@@ -16,9 +16,13 @@ import type { FtpDisplay } from '@/lib/ftp';
 // prognoza = linia PRZERYWANA "2 6" (purple) + punkt prognozy jako PUSTY OKRĄG. Pas niepewności
 // (purple) i złote markery celów jak dotąd.
 
-const MONTH_MS = 30 * 86_400_000;
-const BAND_DOWN_PER_MONTH = 2.5; // W/mies. w dół (niedowiezienie bardziej prawdopodobne)
-const BAND_UP_PER_MONTH = 1.5;   // W/mies. w górę
+// Pasmo prognozy liczy forecastBand() z lib/ftp-forecast — TA SAMA warstwa, która liczy środek.
+// Wcześniej stały tu własne stałe BAND_DOWN_PER_MONTH = 2.5 / BAND_UP_PER_MONTH = 1.5 W/mies.,
+// czyli pasmo ODEJMOWANE od środka w tempie szybszym, niż środek rósł. Efekt: po ~3 miesiącach
+// "realizacji planu" dolna krawędź wracała do DZISIEJSZEGO FTP — komunikat "trzymaj plan przez
+// kwartał, żeby w najgorszym razie nie zyskać nic". Sprzeczne z regułą produktową opisaną
+// w forecastBand ("od małego wzrostu do dużego wzrostu, nie od spadku do wzrostu"), która była
+// zaimplementowana, udokumentowana i NIGDY nie wywoływana.
 
 function dMs(iso: string): number {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
@@ -42,7 +46,7 @@ interface EngineCardProps {
 }
 
 // ── Wykres FTP (fakt/model) ────────────────────────────────────────────────────
-function FtpChart({ recon, forecast, milestones }: { recon: ReconPoint[]; forecast: ForecastPoint[]; milestones: Milestone[] }) {
+function FtpChart({ recon, forecast, milestones, weightKg }: { recon: ReconPoint[]; forecast: ForecastPoint[]; milestones: Milestone[]; weightKg: number | null }) {
   const realMonthly = monthlyLast(recon.map((p) => ({ t: dMs(p.date), ftp: p.ftp })));
   const realLast = realMonthly.length ? realMonthly[realMonthly.length - 1] : null;
 
@@ -56,10 +60,10 @@ function FtpChart({ recon, forecast, milestones }: { recon: ReconPoint[]; foreca
 
   const todayT = startNode ? startNode.t : (forecast.length ? forecast[0].t : Date.now());
 
-  const fcBand = fcMonthly.map((p) => {
-    const mo = Math.max(0, (p.t - todayT) / MONTH_MS);
-    return { t: p.t, fc: p.fc, band: [Math.round(p.fc - BAND_DOWN_PER_MONTH * mo), Math.round(p.fc + BAND_UP_PER_MONTH * mo)] as [number, number] };
-  });
+  // Anchor pasma = wartość w węźle styku real↔forecast (dzisiejsze FTP na wykresie). Pasmo to
+  // FRAKCJE skumulowanego wzrostu środka od tego punktu, więc dolna krawędź nie może zejść poniżej
+  // dzisiejszego FTP i rośnie razem ze środkiem.
+  const fcBand = forecastBand(fcMonthly, startNode ? startNode.fc : (fcMonthly[0]?.fc ?? 0), weightKg);
   const fcEnd = fcBand.length ? fcBand[fcBand.length - 1] : null; // punkt prognozy → pusty okrąg
 
   const byT = new Map<number, { t: number; ftp?: number; fc?: number; band?: [number, number] }>();
@@ -241,7 +245,7 @@ export function EngineCard({ ftp, vo2Estimate, weightKg, recon, forecast, milest
             </button>
           )}
 
-          <FtpChart recon={recon} forecast={forecast} milestones={milestones} />
+          <FtpChart recon={recon} forecast={forecast} milestones={milestones} weightKg={weightKg} />
         </>
       )}
 
