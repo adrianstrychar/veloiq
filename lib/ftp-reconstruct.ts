@@ -12,7 +12,7 @@
 //  (IF wybrane zamiast best20: best20 = max 28-dniowy, więc STARY szczytowy wysiłek zostaje w oknie
 //   i fałszywie udaje "near-peak" mimo braku nowego twardego wysiłku — na realnych danych czerwca
 //   best20 dawał fałszywy zjazd 296→274, a max IF czerwca = 0.80 poprawnie mówił "regeneracja".)
-import { estimateFtp, type EffortRide } from '@/lib/ftp-engine';
+import { estimateFtp, FTP_HARD_IF, FTP_MAX_DECAY_PER_WEEK, type EffortRide } from '@/lib/ftp-engine';
 
 // Wejście rekonstrukcji: jazda z krzywą mocy + intensity_factor (sygnał "twardej jazdy" do envelope).
 export interface ReconRide extends EffortRide { intensity_factor?: number | null }
@@ -27,8 +27,10 @@ export interface ReconPoint {
 export const RECON_CONFIG = {
   WINDOW_DAYS: 28,                // okno silnika FTP
   STEP_DAYS: 7,                  // krok tygodniowy
-  HARD_IF: 0.85,                 // dowód testowania progu: max intensity_factor w oknie ≥ 0.85 (twarda jazda)
-  ENVELOPE_DECAY_PER_WEEK: 0.025, // miękkie zejście ≤2.5%/tydz gdy dowód spadku; bez dowodu = hold
+  // Progi reguły dowodowej WSPÓŁDZIELONE z lib/ftp-engine (decideFtpDisplayUpdate) — wykres
+  // i wyświetlane FTP muszą schodzić wg tej samej zasady, inaczej kafel i wykres się rozjeżdżają.
+  HARD_IF: FTP_HARD_IF,                            // dowód testowania progu: max intensity_factor w oknie
+  ENVELOPE_DECAY_PER_WEEK: FTP_MAX_DECAY_PER_WEEK, // miękkie zejście gdy dowód spadku; bez dowodu = hold
 } as const;
 
 const DAY = 86_400_000;

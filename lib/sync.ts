@@ -8,7 +8,7 @@ import {
 } from '@/lib/strava';
 import { calculateTSSfromHR, calculateTSSfromPower, calculateFitnessHistory } from '@/lib/fitness';
 import { computeBestEfforts, syncActivityDetails } from '@/lib/strava/details';
-import { estimateFtp, decideFtpDisplayUpdate, type EffortRide } from '@/lib/ftp-engine';
+import { estimateFtp, decideFtpDisplayUpdate, FTP_HARD_IF, type EffortRide } from '@/lib/ftp-engine';
 import { estimateVo2 } from '@/lib/vo2-engine';
 import { shouldPromoteToEngine } from '@/lib/onboarding';
 
@@ -196,14 +196,24 @@ export async function recalculateFtpEstimate(
     const since = new Date(Date.now() - FTP_WINDOW_DAYS * 24 * 3600 * 1000)
       .toISOString()
       .slice(0, 10);
+    // intensity_factor dociągany RAZEM z krzywą mocy: to dowód, że w oknie w ogóle był twardy
+    // wysiłek. Bez niego spadek estymaty (bo rekord 20-min wypadł z okna 28 dni) był
+    // nieodróżnialny od realnej utraty formy — patrz decideFtpDisplayUpdate.
     const { data: rides } = await supabase
       .from('strava_activities')
-      .select('activity_date, type, best_efforts')
+      .select('activity_date, type, best_efforts, intensity_factor')
       .eq('athlete_id', athleteId)
       .gte('activity_date', since);
 
     const est = estimateFtp((rides ?? []) as EffortRide[]);
     if (!est) return; // za mało danych w oknie — zostaw poprzednią estymatę
+
+    // Max IF w TYM SAMYM oknie, z którego liczona jest estymata.
+    const maxIF = (rides ?? []).reduce((mx, r) => {
+      const v = (r as { intensity_factor?: number | null }).intensity_factor;
+      return v != null && Number(v) > mx ? Number(v) : mx;
+    }, 0);
+    const hardEvidence = maxIF >= FTP_HARD_IF;
 
     const nowIso = new Date().toISOString();
     const updates: Record<string, unknown> = {
@@ -219,14 +229,24 @@ export async function recalculateFtpEstimate(
 
     if (ath?.ftp_updated_at != null && ath.ftp_watts != null) {
       // HYBRYDA (istniejąca): FTP już zaakceptowany/silnikowy → auto-aktualizacja wg reguły ≥14d / progu.
-      const decision = decideFtpDisplayUpdate(Number(ath.ftp_watts), String(ath.ftp_updated_at), est.ftp, nowIso);
+      const decision = decideFtpDisplayUpdate(
+        Number(ath.ftp_watts), String(ath.ftp_updated_at), est.ftp, nowIso, { hardEvidence }
+      );
+      if (decision.blocked === 'no_hard_evidence') {
+        // Widoczny ślad w logach: bez tego "dlaczego FTP nie drgnęło" jest nie do zdiagnozowania.
+        console.info(
+          `[ftp] athlete ${athleteId}: spadek estymaty ${est.ftp}W vs wyświetlane ${ath.ftp_watts}W ZABLOKOWANY — ` +
+          `brak twardej jazdy w oknie 28 dni (max IF ${maxIF.toFixed(2)} < ${FTP_HARD_IF}). Estymata zapisana, wyświetlane FTP bez zmian.`
+        );
+      }
       if (decision.update) {
-        updates.ftp_watts = est.ftp;
+        // decision.value, NIE est.ftp — przy spadku wartość jest ograniczona tempem zejścia.
+        updates.ftp_watts = decision.value;
         updates.ftp_updated_at = nowIso;
         await supabase.from('ftp_history').insert({
           athlete_id: athleteId,
           date: nowIso.slice(0, 10),
-          ftp_watts: est.ftp,
+          ftp_watts: decision.value,
           source: 'estimate',
         });
       }
