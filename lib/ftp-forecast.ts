@@ -1,6 +1,8 @@
 // Prognoza FTP PERIODYZOWANA (redesign) — deterministyczna, bez dipów. Fazy wyprowadzone z
-// race_calendar + taperDaysFor: BUILD (wzrost wg skalibrowanego tempa × headroom), TAPER (plateau
-// w oknie taperu), REGEN (plateau ~7 dni po starcie). Tempo buildu = nachylenie envelope
+// race_calendar + taperDaysFor: BUILD (pełne tempo), TAPER (ułamek tempa — objętość ścięta, ostrość
+// utrzymana, na końcu tygodnia start), REGEN (ułamek tempa — superkompensacja po starcie). Fazy
+// SPOWALNIAJĄ wzrost, nie zatrzymują go: zerowanie kosztowało ~2 tygodnie na każdy start i przy
+// gęstym kalendarzu dawało +2 W na kwartał niezależnie od jakości treningu. Tempo buildu = nachylenie envelope
 // rekonstrukcji przy dzisiejszym W/kg → real i prognoza mają to samo tempo w porównywalnych fazach.
 // Milestone'y ADAPTACYJNE: starty z kalendarza jeśli są; inaczej progi W/kg (WKG_LEVELS) powyżej
 // obecnego + koniec horyzontu. Liczone w locie (zero migracji).
@@ -28,6 +30,11 @@ export const FORECAST_CONFIG = {
   MAX_RATE_WPW: 1.5,
   RATE_SHORT_WEEKS: 6,    // okno "co robię teraz"
   RATE_LONG_WEEKS: 16,    // okno "co udowodniłem w sezonie" — przeżywa blok startowy i taper
+  // Ile z tempa buildu zostaje w tygodniu taperu i w tygodniu po starcie. NIE ZERO — patrz
+  // uzasadnienie przy pętli w forecastFtpPeriodized. Suma ≈ 1.0 → blok startowy (taper + regen)
+  // wart jest mniej więcej JEDEN tydzień buildu, a nie zero i nie dwa.
+  TAPER_BUILD_FRAC: 0.35, // objętość w dół, ale ostrość utrzymana, a sam start to maksymalny bodziec
+  REGEN_BUILD_FRAC: 0.65, // superkompensacja — tu adaptacja z wyścigu się realizuje
   MASSLESS_HEADROOM: 0.4, // brak wagi → stały headroom (nie zgadujemy sufitu)
   BAND_LOWER_FRAC: 0.35,  // dolna krawędź pasma = ostrożny wzrost (frakcja projektowanego wzrostu środka)
   BAND_UPPER_FRAC: 1.75,  // górna = optymistyczny wzrost (frakcja), przycięty do sufitu W/kg
@@ -83,11 +90,23 @@ export function forecastFtpPeriodized(inp: ForecastInputs): Forecast {
     return 'BUILD';
   };
 
+  // TAPER i REGEN NIE są zerem. Poprzednio rosły wyłącznie tygodnie BUILD, więc każdy start
+  // kosztował ~2 tygodnie zerowego postępu (tydzień taperu + tydzień regeneracji), a przy gęstym
+  // kalendarzu zostawało 15% tygodni budujących i prognoza pokazywała +2 W na kwartał NIEZALEŻNIE
+  // od tego, jak dobrze zawodnik trenuje. To była też WEWNĘTRZNA SPRZECZNOŚĆ aplikacji:
+  // rekonstrukcja (lib/ftp-reconstruct) liczy FTP z best_efforts KAŻDEJ jazdy, więc wyścig może
+  // ustanowić nowy rekord i podnieść zmierzone FTP — a prognoza w tym samym tygodniu zakładała
+  // zerowy postęp. Jedna warstwa uznaje start za dowód formy, druga za stracony czas.
+  // Fizjologicznie: tydzień taperu ma ściętą objętość, ale utrzymaną ostrość, a na jego końcu stoi
+  // wyścig — najmocniejszy bodziec progowy w całym bloku. Tydzień po starcie to superkompensacja.
+  const fracOf = (phase: Phase) =>
+    phase === 'BUILD' ? 1 : phase === 'TAPER' ? C.TAPER_BUILD_FRAC : C.REGEN_BUILD_FRAC;
+
   const points: ForecastPoint[] = [{ t: todayMs, ftp: inp.ftpNow, phase: phaseOf(todayMs) }];
   let ftp = inp.ftpNow;
   for (let ws = todayMs; ws <= horizonEnd; ws += 7 * DAY) {
     const phase = phaseOf(ws);
-    if (phase === 'BUILD') ftp += g * headroom(ftp, massKg);
+    ftp += fracOf(phase) * g * headroom(ftp, massKg);
     points.push({ t: ws + 7 * DAY, ftp: Math.round(ftp), phase });
   }
 
