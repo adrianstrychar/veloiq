@@ -145,22 +145,67 @@ export interface FtpDisplayDecision {
   update: boolean;
   reason: FtpUpdateReason | null;
   deltaW: number;
+  value: number;                      // wartość DO ZAPISANIA (przy spadku ograniczona tempem zejścia)
+  blocked?: 'no_hard_evidence';       // spadek wstrzymany brakiem dowodu — do logu/diagnostyki
 }
 
 export const FTP_RISE_THRESHOLD_W = 5;
 export const FTP_DROP_THRESHOLD_W = 8;
 export const FTP_STALE_DAYS = 14;
 
+// JEDNO źródło prawdy dla reguły dowodowej. Envelope rekonstrukcji (lib/ftp-reconstruct) używa
+// dokładnie tych progów — importuje je stąd, żeby wykres i wyświetlane FTP nie mogły się rozjechać.
+// Kierunek zależności: ftp-reconstruct → ftp-engine (nigdy odwrotnie).
+export const FTP_HARD_IF = 0.85;             // dowód testowania progu: max intensity_factor w oknie
+export const FTP_MAX_DECAY_PER_WEEK = 0.025; // maksymalne tempo zejścia wyświetlanego FTP (2.5%/tydz)
+
+/**
+ * Czy wyświetlane FTP ma zostać zaktualizowane estymatą silnika — i na jaką wartość.
+ *
+ * REGUŁA DOWODOWA (naprawa regresji "FTP spadło z 307 na 255"): estymata liczy się z okna 28 dni,
+ * więc gdy rekord 20-minutowy wypada z okna, a zawodnik w tym czasie ŚCIGAŁ SIĘ i regenerował
+ * zamiast testować próg, estymata leci w dół bez fizjologicznego powodu. Brak maksymalnego wysiłku
+ * to BRAK POMIARU, nie pomiar spadku — a poprzednia wersja traktowała jedno jak drugie.
+ *
+ * Dlatego:
+ *  - W GÓRĘ aktualizujemy bezwarunkowo: nowy rekord jest sam w sobie dowodem.
+ *  - W DÓŁ wymagamy DOWODU (twarda jazda w oknie, max IF ≥ FTP_HARD_IF) ORAZ ograniczamy krok do
+ *    FTP_MAX_DECAY_PER_WEEK. Próg nie spada o 17% w pięć tygodni.
+ *
+ * To ta sama reguła, którą envelope rekonstrukcji (smoothEnvelope) stosuje od początku na WYKRESIE.
+ * Wyświetlane FTP jej nie miało — stąd rozjazd: wykres trzymał 307 W, kafel pokazał 255 W.
+ */
 export function decideFtpDisplayUpdate(
   displayedW: number,
   displayedAtIso: string,
   estimateW: number,
-  nowIso: string
+  nowIso: string,
+  // Domyślnie true = "zakładaj, że dowód jest" (dla wywołań bez kontekstu okna). UWAGA: to znosi
+  // tylko bramkę dowodową — ograniczenie tempa zejścia obowiązuje ZAWSZE, także przy tym domyślnym.
+  // Ścieżka produkcyjna (lib/sync.ts) przekazuje realny max IF z tego samego okna co estymata.
+  guard: { hardEvidence: boolean } = { hardEvidence: true }
 ): FtpDisplayDecision {
   const deltaW = estimateW - displayedW;
-  if (deltaW >= FTP_RISE_THRESHOLD_W) return { update: true, reason: 'rise', deltaW };
-  if (deltaW <= -FTP_DROP_THRESHOLD_W) return { update: true, reason: 'drop', deltaW };
   const days = (new Date(nowIso).getTime() - new Date(displayedAtIso).getTime()) / 86400000;
-  if (days >= FTP_STALE_DAYS && deltaW !== 0) return { update: true, reason: 'stale14d', deltaW };
-  return { update: false, reason: null, deltaW };
+
+  let reason: FtpUpdateReason | null = null;
+  if (deltaW >= FTP_RISE_THRESHOLD_W) reason = 'rise';
+  else if (deltaW <= -FTP_DROP_THRESHOLD_W) reason = 'drop';
+  else if (days >= FTP_STALE_DAYS && deltaW !== 0) reason = 'stale14d';
+
+  if (reason == null) return { update: false, reason: null, deltaW, value: displayedW };
+
+  // Wzrost — bez ograniczeń. Zawodnik pokazał nową moc, to jest pomiar.
+  if (deltaW > 0) return { update: true, reason, deltaW, value: estimateW };
+
+  // Spadek bez dowodu — NIE ruszamy wartości ANI ftp_updated_at, więc gdy dowód się pojawi,
+  // dozwolone zejście będzie proporcjonalne do całej przerwy (nic się nie „gubi").
+  if (!guard.hardEvidence) {
+    return { update: false, reason: null, deltaW, value: displayedW, blocked: 'no_hard_evidence' };
+  }
+
+  const weeks = Math.max(0, days) / 7;
+  const maxDrop = displayedW * FTP_MAX_DECAY_PER_WEEK * weeks;
+  const value = Math.round(Math.max(estimateW, displayedW - maxDrop));
+  return { update: value !== displayedW, reason, deltaW, value };
 }
