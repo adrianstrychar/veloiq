@@ -16,6 +16,8 @@ body {
   background: var(--background);
   /* ETAP 1 — tekst bazowy: Inter (token body). Fallback zanim next/font wstrzyknie zmienną. */
   font-family: var(--font-body), Inter, system-ui, sans-serif;
+  /* iOS (aplikacja/PWA, viewport-fit=cover): treść pod paskiem statusu, nie na nim */
+  padding-top: env(safe-area-inset-top);
 }
 
 @layer utilities {
