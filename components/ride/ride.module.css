@@ -1,0 +1,198 @@
+/* VeloIQ Ride – style modułu treningu, spójne z dashboardem VeloIQ (tło #0A0A0F, karty #1A1D23, akcent #4A8FC7).
+   Uwaga: tło zawsze przez background-color / background-image osobno (znany błąd z shorthand). */
+
+.screen {
+  --bg: #0A0A0F;
+  --surface: #1A1D23;
+  --surface-2: #21252C;
+  --surface-3: #2A2F38;
+  --line: #262A31;
+  --line-2: #343A44;
+  --text: #EDEFF2;
+  --text-2: #C4C9D1;
+  --muted: #9AA0AB;
+  --cyan: #4A8FC7;
+  --cyan-ink: #14161B;
+  --cyan-deep: #2F5E85;
+  --cyan-wash: #172231;
+  --cyan-line: #2B4560;
+  --ok: #5B9B7E;
+  --over: #D98A57;
+  --under: #8C7BC0;
+  --amber: #C99A4E;
+  --amber-ink: #14161B;
+  --amber-wash: #211D15;
+  --amber-line: #4A3F27;
+  --danger: #D98A8A;
+  --danger-wash: #2A1C1E;
+  --hr: #C76B6B;
+  /* fonty jak w dashboardzie VeloIQ (ładowane przez layout aplikacji) */
+  --display: var(--font-display, 'Space Grotesk'), system-ui, sans-serif;
+  --body: var(--font-body, 'Inter'), system-ui, sans-serif;
+  --mono: var(--font-mono, 'IBM Plex Mono'), ui-monospace, monospace;
+
+  min-height: 100dvh;
+  max-width: 480px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--body);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* dół: miejsce na dolną nawigację aplikacji (BottomNav, 76 px) */
+  /* góra: wcięcie paska statusu dodaje body (globals.css), main ma już py-4 */
+  padding: 4px 0 calc(env(safe-area-inset-bottom) + 96px);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- nagłówki */
+.topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.backRow { display: flex; align-items: center; gap: 6px; margin-left: -8px; }
+.iconBtn {
+  width: 44px; height: 44px; border-radius: 22px; border: 1px solid var(--line);
+  background-color: var(--surface); color: var(--text);
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.iconBtnBare { composes: iconBtn; border: 0; background-color: transparent; }
+.eyebrow { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1.4px; text-transform: uppercase; font-weight: 600; }
+.eyebrowCyan { composes: eyebrow; color: var(--cyan); }
+.title { margin: 0; font-family: var(--display); font-size: 30px; font-weight: 700; }
+.h2 { composes: eyebrow; margin: 4px 0 0; }
+.clock { font-family: var(--display); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* --- chipy faz */
+.chip { font-family: var(--mono); font-weight: 600; font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; border-radius: 6px; padding: 5px 9px; }
+.chipInterval { composes: chip; background-color: var(--cyan); color: var(--cyan-ink); }
+.chipRest { composes: chip; background-color: var(--surface-3); color: var(--text-2); }
+.chipArmed { composes: chip; background-color: var(--cyan-wash); color: var(--cyan); }
+.chipPaused { composes: chip; background-color: var(--amber); color: var(--amber-ink); }
+.chipFree { composes: chip; background-color: #1A2A23; color: var(--ok); }
+
+/* --- karty */
+.card { background-color: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.cardCyan { composes: card; border-color: var(--cyan-line); }
+.cardAmber { composes: card; background-color: var(--amber-wash); border-color: var(--amber-line); }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.rowEnd { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; }
+.stack { display: flex; flex-direction: column; gap: 4px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; color: var(--muted); line-height: 1.45; }
+.body { margin: 0; font-size: 15px; line-height: 1.45; color: var(--text-2); }
+.strong { color: var(--text); font-weight: 700; }
+
+/* --- metryki */
+.metric { background-color: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.metricLabel { font-family: var(--mono); font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.2px; }
+.metricValue { font-family: var(--display); font-size: 26px; font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.metricSub { font-size: 12px; color: var(--muted); }
+.statValue { font-family: var(--display); font-size: 18px; font-weight: 700; line-height: 1.05; }
+
+.bigTimer { font-family: var(--display); font-size: 76px; font-weight: 700; line-height: 0.9; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.bigPower { font-family: var(--display); font-size: 88px; font-weight: 700; line-height: 0.85; font-variant-numeric: tabular-nums; }
+.unit { font-size: 18px; color: var(--muted); font-weight: 600; }
+
+.bar { height: 8px; background-color: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.barFill { height: 100%; border-radius: 4px; transition: width 0.4s linear; }
+
+/* --- pasek celu mocy */
+.gauge { position: relative; height: 44px; }
+.gaugeTrack { position: absolute; left: 0; right: 0; top: 11px; height: 6px; background-color: var(--surface-3); border-radius: 3px; }
+.gaugeBand { position: absolute; top: 7px; height: 14px; background-color: var(--cyan); opacity: 0.35; border-radius: 4px; }
+.gaugeNeedle { position: absolute; top: 2px; width: 4px; height: 24px; margin-left: -2px; background-color: var(--text); border-radius: 2px; transition: left 0.4s ease-out; }
+.gaugeMin, .gaugeMax { position: absolute; top: 30px; font-size: 11px; color: var(--muted); }
+.gaugeMin { left: 0; }
+.gaugeMax { right: 0; }
+
+/* --- komunikaty */
+.cue { display: flex; gap: 10px; align-items: flex-start; background-color: var(--cyan-wash); border: 1px solid var(--cyan-line); border-radius: 16px; padding: 12px 14px; font-size: 15px; line-height: 1.4; }
+.cueIcon { flex-shrink: 0; margin-top: 1px; color: var(--cyan); }
+
+/* --- przyciski */
+.btn { height: 56px; border-radius: 12px; border: 0; font: 600 16px var(--body); display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; text-decoration: none; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btnPrimary { composes: btn; background-color: var(--cyan); color: var(--cyan-ink); font-weight: 700; font-size: 18px; }
+.btnGhost { composes: btn; height: 52px; border: 1px solid var(--line-2); background-color: transparent; color: var(--text); }
+.btnDark { composes: btn; height: 58px; background-color: var(--surface-2); color: var(--text); font-size: 15px; }
+.btnDanger { composes: btn; height: 58px; background-color: var(--danger-wash); color: var(--danger); font-size: 15px; }
+.btnAmber { composes: btn; height: 58px; background-color: var(--amber); color: var(--amber-ink); font-weight: 700; font-size: 15px; }
+.btnText { composes: btn; height: 48px; background-color: transparent; color: var(--muted); font-size: 15px; }
+.controls { margin-top: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.controlsWide { composes: controls; grid-template-columns: 1fr 1.4fr 1fr; }
+.footer { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
+
+/* --- segmenty, przełączniki */
+.segment { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); background-color: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 4px; gap: 4px; }
+.segBtn { height: 44px; border: 0; border-radius: 10px; background-color: transparent; color: var(--muted); font: 600 15px var(--body); cursor: pointer; }
+.segBtnOn { composes: segBtn; background-color: var(--surface-3); color: var(--text); }
+.toggleRow { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 56px; border-bottom: 1px solid var(--surface-2); cursor: pointer; }
+.toggleRow:last-child { border-bottom: 0; }
+.checkbox { width: 22px; height: 22px; accent-color: var(--cyan); flex-shrink: 0; }
+
+/* --- listy */
+.list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background-color: var(--surface); }
+.listItem { padding: 12px 16px; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 12px; align-items: center; border-bottom: 1px solid var(--surface-2); }
+.listItem:last-child { border-bottom: 0; }
+.swatch { width: 10px; height: 32px; border-radius: 3px; }
+.sensorBtn { width: 100%; text-align: left; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; gap: 10px; border: 0; border-bottom: 1px solid var(--surface-2); background-color: transparent; color: var(--text); font: 500 15px var(--body); cursor: pointer; min-height: 56px; }
+.dot { width: 8px; height: 8px; border-radius: 4px; display: inline-block; }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+
+/* --- profil / wykresy */
+.profile { height: 72px; display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--line); padding-bottom: 2px; }
+.profileBar { border-radius: 3px 3px 0 0; }
+.progress { display: flex; gap: 3px; height: 6px; }
+.progress > span { border-radius: 3px; }
+.chart { position: relative; height: 130px; display: flex; align-items: flex-end; gap: 1px; }
+.chart > span { flex: 1; border-radius: 1px; }
+.chartFtp { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--line-2); }
+
+/* --- tabela serii */
+.seriesHead, .seriesRow { display: grid; grid-template-columns: 22px minmax(0, 1fr) 62px 50px 56px; gap: 6px; align-items: center; }
+.seriesHead { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.seriesRow { padding: 8px 0; border-bottom: 1px solid var(--surface-2); }
+.right { text-align: right; }
+.seriesStrip { display: flex; gap: 6px; }
+.seriesMini { flex: 1; background-color: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; min-width: 0; }
+
+.banner { background-color: var(--danger-wash); color: var(--danger); border-radius: 14px; padding: 12px 14px; font-size: 14px; }
+.devBar { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .barFill, .gaugeNeedle { transition: none; }
+}
+
+/* --- dolna nawigacja aplikacji: Forma · Plan · Jedź · Trener · Kalendarz */
+.nav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  height: calc(76px + env(safe-area-inset-bottom)); padding: 0 4px env(safe-area-inset-bottom);
+  background-color: rgba(8, 14, 22, 0.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid #262A31;
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: end;
+  font-family: var(--font-body, 'Inter'), system-ui, sans-serif;
+}
+.navInner { max-width: 480px; margin: 0 auto; width: 100%; grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: end; padding-bottom: 12px; }
+.navItem { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; min-height: 44px; justify-content: flex-end;
+  text-decoration: none; color: #9AA0AB; font-size: 10px; font-weight: 500; letter-spacing: 0.1px; }
+.navItemActive { composes: navItem; color: #EDEFF2; font-size: 12px; font-weight: 600; }
+.navItemActive::before { content: ''; position: absolute; top: -12px; width: 24px; height: 2px; border-radius: 1px; background-color: #4A8FC7; }
+.navItemActive svg { stroke: #4A8FC7; }
+.navRide { composes: navItem; color: #EDEFF2; font-size: 11px; font-weight: 700; }
+.navRideBtn { width: 56px; height: 56px; border-radius: 28px; margin-top: -28px; box-shadow: 0 0 0 5px #0A0A0F;
+  background-color: #4A8FC7; color: #14161B; display: flex; align-items: center; justify-content: center; }
+.navRideBtnLive { composes: navRideBtn; background-color: #0A0A0F; border: 3px solid #4A8FC7; box-sizing: border-box; color: #4A8FC7;
+  font-family: var(--font-display, 'Space Grotesk'), sans-serif; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* --- mini-pasek treningu nad nawigacją (gdy jazda trwa, na każdej zakładce poza „Jedź”) */
+.miniBar { position: fixed; left: 12px; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom)); z-index: 49; max-width: 456px; margin: 0 auto;
+  height: 56px; border-radius: 12px; background-color: #172231; border: 1px solid #2B4560; color: #EDEFF2; text-decoration: none;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 0 14px;
+  font-family: var(--font-body, 'Inter'), system-ui, sans-serif; }
+.miniTag { font-family: var(--font-mono, 'IBM Plex Mono'), monospace; font-weight: 600; font-size: 10px; letter-spacing: 1px;
+  background-color: #4A8FC7; color: #14161B; border-radius: 6px; padding: 4px 7px; text-transform: uppercase; }
+.miniMain { font-family: var(--font-display, 'Space Grotesk'), sans-serif; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.miniSub { font-size: 11px; font-weight: 600; }

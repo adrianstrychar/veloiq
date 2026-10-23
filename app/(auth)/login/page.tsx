@@ -29,8 +29,15 @@ export default function LoginPage() {
       return;
     }
 
-    // Po zalogowaniu — połącz konto ze Strava (sekcja 14)
-    window.location.href = '/api/strava/auth';
+    // Po zalogowaniu — połącz konto ze Strava (sekcja 14). Konto już połączone z pełnym scope
+    // (activity:write) idzie prosto do aplikacji: bez zbędnego OAuth przy każdym logowaniu
+    // (w aplikacji iOS przekierowanie na strava.com wyrzucało do zewnętrznej przeglądarki).
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: athlete } = user
+      ? await supabase.from('athletes').select('strava_scope').eq('user_id', user.id).maybeSingle()
+      : { data: null };
+    const scope = (athlete as { strava_scope?: string | null } | null)?.strava_scope ?? '';
+    window.location.href = scope.includes('activity:write') ? '/dashboard' : '/api/strava/auth';
   }
 
   async function handleSignUp(e: React.FormEvent) {

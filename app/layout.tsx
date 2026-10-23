@@ -46,6 +46,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#14161B",
   interactiveWidget: "resizes-content",
+  viewportFit: "cover", // iOS: env(safe-area-inset-*) działa (pasek statusu, wskaźnik home)
 };
 
 export default function RootLayout({

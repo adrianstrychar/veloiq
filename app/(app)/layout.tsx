@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
-import { BottomNav } from '@/components/veloiq/BottomNav';
+import { BottomNav } from '@/components/ride/BottomNav';
+import { RideProvider } from '@/components/ride/RideProvider';
 import { ChatProvider } from '@/components/veloiq/ChatStore';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { isProfileComplete } from '@/lib/onboarding';
@@ -20,8 +21,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   // ChatProvider owija zakładki → stan czatu przeżywa nawigację (layout nie remontuje się).
+  // RideProvider: jeden trening na całą aplikację — jazda trwa (i mini-pasek widać) przy przełączaniu zakładek.
   return (
     <ChatProvider>
+      <RideProvider>
       <div className="min-h-screen pb-20">
         {/* Shell NIE narzuca szerokości — każda strona deklaruje własny kontener:
             mobilne widoki (plan/chat/kalendarz/wyścigi) = max-w-md mx-auto,
@@ -31,6 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main className="px-4 py-4">{children}</main>
         <BottomNav />
       </div>
+      </RideProvider>
     </ChatProvider>
   );
 }
