@@ -17,10 +17,11 @@ for f in sorted(os.listdir('clips')):
     if not os.path.exists(dst) or os.path.getmtime(dst) < os.path.getmtime(f'clips/{f}'):
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', f'clips/{f}', '-af', RADIO, '-ac', '1', '-ar', '24000', '-c:a', 'aac', '-b:a', '48k', dst], check=True)
     clips[cid] = {'file': f'{cid}.m4a', 'dur': round(dur(dst), 2)}
+    if items.get(cid, {}).get('it'): clips[cid]['it'] = True
 # piknięcie radia + krótki szum otwarcia kanału
 subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=1400:duration=0.08', '-f', 'lavfi', '-i', 'anoisesrc=color=pink:amplitude=0.03:duration=0.14',
   '-filter_complex', '[0]volume=0.3[a];[1]highpass=f=300,lowpass=f=3400[b];[a][b]concat=n=2:v=0:a=1', '-ac', '1', '-ar', '24000', '-c:a', 'aac', '-b:a', '48k', f'{out}/fx.beep.m4a'], check=True)
 clips['fx.beep'] = {'file': 'fx.beep.m4a', 'dur': round(dur(f'{out}/fx.beep.m4a'), 2)}
-json.dump({'id': 'enzo', 'name': 'Dyrektor Enzo', 'version': 1, 'clips': clips}, open(f'{out}/manifest.json', 'w'), ensure_ascii=False)
+json.dump({'id': 'enzo', 'name': 'Dyrektor Enzo', 'version': 2, 'clips': clips}, open(f'{out}/manifest.json', 'w'), ensure_ascii=False)
 total = sum(os.path.getsize(f'{out}/{c["file"]}') for c in clips.values())
 print(f'{len(clips)} klipów, {total/1e6:.1f} MB, brakuje {len(items) - (len(clips) - 1)}')

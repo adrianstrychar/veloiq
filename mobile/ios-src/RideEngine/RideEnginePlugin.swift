@@ -33,7 +33,11 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     // speaker i speakerLanguage są używane wyłącznie na głównym wątku
     private var speaker = Speaker()
     /// Dyrektor Enzo (klipy w paczce aplikacji). nil = paczki brak → głos systemowy.
-    private lazy var director: DirectorVoice? = DirectorVoice(id: "enzo")
+    private lazy var director: DirectorVoice? = {
+        let d = DirectorVoice(id: "enzo")
+        d?.name = UserDefaults.standard.string(forKey: "veloiq.voice.name")
+        return d
+    }()
     private static let modeKey = "veloiq.voice.mode"
     private var voiceMode: String {
         get { UserDefaults.standard.string(forKey: Self.modeKey) ?? "enzo" }
@@ -376,8 +380,10 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         let id = call.getString("id")
         let rate = call.getDouble("rate").map { Float($0) }
         let mode = call.getString("mode")
+        let name = call.getString("name")
         DispatchQueue.main.async {
             if let m = mode { self.voiceMode = m }
+            if let n = name { UserDefaults.standard.set(n, forKey: "veloiq.voice.name"); self.director?.name = n }
             self.speaker.configure(voiceId: id, rate: rate)
             call.resolve()
         }

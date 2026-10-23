@@ -14,7 +14,7 @@ HEAD=$(git rev-parse HEAD)
 say "Czekam na merge do main…"
 until git fetch -q origin main && git merge-base --is-ancestor "$HEAD" origin/main; do sleep 20; done
 say "Merge jest. Czekam, aż Vercel wdroży produkcję…"
-until curl -fsS -o /dev/null "https://veloiq-three.vercel.app/voice/enzo/manifest.json"; do sleep 15; done
+until curl -fsS "https://veloiq-three.vercel.app/voice/enzo/manifest.json" 2>/dev/null | cmp -s - public/voice/enzo/manifest.json; do sleep 15; done
 say "Produkcja gotowa. Buduję projekt iOS (głos Enzo, adres Vercela)…"
 bash mobile/setup-ios.sh
 open ios/App/App.xcodeproj

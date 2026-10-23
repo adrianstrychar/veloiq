@@ -18,6 +18,8 @@ body {
   font-family: var(--font-body), Inter, system-ui, sans-serif;
   /* iOS (aplikacja/PWA, viewport-fit=cover): treść pod paskiem statusu, nie na nim */
   padding-top: env(safe-area-inset-top);
+  /* siatka bezpieczeństwa: aplikacja iOS nie zmniejsza strony jak Safari – nic nie może wystawać w bok */
+  overflow-x: clip;
 }
 
 @layer utilities {

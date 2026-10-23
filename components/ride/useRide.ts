@@ -84,7 +84,7 @@ export function useRide() {
     testVoice: (text: string) => run(() => engine.testVoice({ text })),
     voice,
     loadVoices: () => engine.getVoices().then(setVoiceState).catch(() => {}),
-    setVoice: (o: { id?: string; rate?: number; mode?: VoiceMode }) => run(async () => {
+    setVoice: (o: { id?: string; rate?: number; mode?: VoiceMode; name?: string }) => run(async () => {
       await engine.setVoice(o);
       setVoiceState((v) => ({ ...v, current: o.id ?? v.current, rate: o.rate ?? v.rate, mode: o.mode ?? v.mode }));
     }),

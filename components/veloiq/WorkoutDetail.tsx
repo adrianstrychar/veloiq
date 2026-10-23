@@ -86,7 +86,7 @@ export function WorkoutDetail({ day, ftp, onClose }: WorkoutDetailProps) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: C.bg, overflowY: 'auto', color: C.text }}>
       {/* Sticky header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'rgba(6,8,10,0.9)', backdropFilter: 'blur(16px)', borderBottom: `1px solid ${C.border}`, padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'rgba(6,8,10,0.9)', backdropFilter: 'blur(16px)', borderBottom: `1px solid ${C.border}`, padding: 'calc(12px + env(safe-area-inset-top)) 18px 12px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <button onClick={onClose} aria-label="Zamknij" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 9, cursor: 'pointer', padding: '6px 10px', color: C.muted, fontSize: 16, lineHeight: 1 }}>×</button>
         <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.18em', color: tc }}>PLANOWANY TRENING</div>
       </div>
