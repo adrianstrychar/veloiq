@@ -564,7 +564,7 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
         position: 'fixed', inset: 0, zIndex: 50,
         background: 'rgba(0,0,0,0.6)',
         display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
-        overflowY: 'auto', padding: '16px',
+        overflowY: 'auto', padding: 'calc(16px + env(safe-area-inset-top)) 16px 16px',
       }}
     >
       <div

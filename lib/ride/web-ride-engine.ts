@@ -145,10 +145,11 @@ export class WebRideEngine implements RideEnginePlugin {
     const pack = await this.loadPack();
     return { voices, current: this.voiceId, rate: this.rate, mode: this.mode, packs: pack ? [{ id: pack.id, name: pack.name }] : [] };
   }
-  async setVoice(o: { id?: string; rate?: number; mode?: 'enzo' | 'system' }) {
+  async setVoice(o: { id?: string; rate?: number; mode?: 'enzo' | 'system'; name?: string }) {
     if (o.id) this.voiceId = o.id;
     if (o.rate) this.rate = o.rate;
     if (o.mode) this.mode = o.mode;
+    if (o.name !== undefined) { this.userName = o.name; this.composer?.setName(o.name); }
   }
   async readRecording() {
     const e = this.engine;
@@ -204,6 +205,7 @@ export class WebRideEngine implements RideEnginePlugin {
   private stopTimer() { if (this.timer) clearInterval(this.timer); this.timer = undefined; }
   private voiceId?: string;
   private mode: 'enzo' | 'system' = 'enzo';
+  private userName?: string;
   private pack?: VoicePack | null;
   private composer?: DirectorComposer;
   private director?: WebDirectorPlayer;
@@ -213,7 +215,7 @@ export class WebRideEngine implements RideEnginePlugin {
       const r = await fetch('/voice/enzo/manifest.json');
       this.pack = r.ok ? ((await r.json()) as VoicePack) : null;
     } catch { this.pack = null; }
-    if (this.pack) { this.composer = new DirectorComposer(this.pack); this.director = new WebDirectorPlayer('/voice/enzo', this.pack); }
+    if (this.pack) { this.composer = new DirectorComposer(this.pack); this.composer.setName(this.userName); this.director = new WebDirectorPlayer('/voice/enzo', this.pack); }
     return this.pack;
   }
   /** Dyrektor Enzo, gdy paczka jest dostępna; inaczej synteza przeglądarki. */

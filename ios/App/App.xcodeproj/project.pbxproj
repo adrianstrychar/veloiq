@@ -22,8 +22,10 @@
 		96855E2B5B408B8C7A5C2B32 /* WorkoutEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65F7C4225F41DC502B1666D5 /* WorkoutEngine.swift */; };
 		A543ACEAC2F17748D230115E /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B146E765B00318275C9FBE5C /* Models.swift */; };
 		B2B15156D379783E1921B914 /* Recorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3C12CACE575DA9803BFC44 /* Recorder.swift */; };
+		BBD33F24B0C0A7DF175B7C65 /* DirectorVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F834A30591AF481C70EFE3C /* DirectorVoice.swift */; };
 		D1D75007FB4AEA6E5E350E8B /* Speaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0D3E1EF58F16AB3804B48D /* Speaker.swift */; };
 		F04DA5AB78F5526737AA0E08 /* SensorManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF4DCDC777C415E66D5EC4E6 /* SensorManager.swift */; };
+		F0B4A2B50DA36B9961F82B72 /* Voice in Resources */ = {isa = PBXBuildFile; fileRef = 58B7381C9DECC77ABE7B021C /* Voice */; };
 		F0FD3F9053AB045C02C61568 /* LocationTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC643F8DFB65660E0885C8FC /* LocationTracker.swift */; };
 /* End PBXBuildFile section */
 
@@ -39,9 +41,11 @@
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		58B7381C9DECC77ABE7B021C /* Voice */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; path = Voice; sourceTree = "<group>"; };
 		65F7C4225F41DC502B1666D5 /* WorkoutEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkoutEngine.swift; sourceTree = "<group>"; };
 		8D3C12CACE575DA9803BFC44 /* Recorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Recorder.swift; sourceTree = "<group>"; };
 		957178E586E231D06A96DEBC /* SensorSimulator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SensorSimulator.swift; sourceTree = "<group>"; };
+		9F834A30591AF481C70EFE3C /* DirectorVoice.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DirectorVoice.swift; sourceTree = "<group>"; };
 		B146E765B00318275C9FBE5C /* Models.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		BE4E2172F0A225E471B9FEDA /* VeloIQBridgeViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VeloIQBridgeViewController.swift; sourceTree = "<group>"; };
 		DC643F8DFB65660E0885C8FC /* LocationTracker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocationTracker.swift; sourceTree = "<group>"; };
@@ -74,6 +78,7 @@
 				FB0D3E1EF58F16AB3804B48D /* Speaker.swift */,
 				BE4E2172F0A225E471B9FEDA /* VeloIQBridgeViewController.swift */,
 				65F7C4225F41DC502B1666D5 /* WorkoutEngine.swift */,
+				9F834A30591AF481C70EFE3C /* DirectorVoice.swift */,
 			);
 			path = RideEngine;
 			sourceTree = "<group>";
@@ -106,6 +111,7 @@
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 				1E22E0C8C5B8E5BEA2EB7074 /* RideEngine */,
+				58B7381C9DECC77ABE7B021C /* Voice */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -181,6 +187,7 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+				F0B4A2B50DA36B9961F82B72 /* Voice in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -202,6 +209,7 @@
 				D1D75007FB4AEA6E5E350E8B /* Speaker.swift in Sources */,
 				7972D24FE53576FFDFC96DCA /* VeloIQBridgeViewController.swift in Sources */,
 				96855E2B5B408B8C7A5C2B32 /* WorkoutEngine.swift in Sources */,
+				BBD33F24B0C0A7DF175B7C65 /* DirectorVoice.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

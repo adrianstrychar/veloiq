@@ -4,7 +4,7 @@ import AVFoundation
 /// Komunikat silnika (klucz + zmienne) → emocjonalne wejście + liczby. Ta sama logika co lib/ride/director.ts.
 /// Działa przy zgaszonym ekranie (UIBackgroundModes: audio) i ścisza muzykę na czas komunikatu.
 final class DirectorVoice: NSObject {
-    struct Clip: Decodable { let file: String; let dur: Double }
+    struct Clip: Decodable { let file: String; let dur: Double; let it: Bool? }
     struct Pack: Decodable { let id: String; let name: String; let clips: [String: Clip] }
 
     let pack: Pack
@@ -12,6 +12,17 @@ final class DirectorVoice: NSObject {
     private let player = AVQueuePlayer()
     private let session = AVAudioSession.sharedInstance()
     private var last: [String: Int] = [:]
+    private var lastIt = Date.distantPast     // włoskie wtrącenie – nie częściej niż co 3 min
+    private var lastName = Date.distantPast   // imię – nie częściej niż co 8 min
+    private var nameIds: [String] = []
+    /// Imię zawodnika – jeśli paczka ma jego nagrania (name.<imię>.N).
+    var name: String? {
+        didSet {
+            let slug = (name ?? "").folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+                .replacingOccurrences(of: "ł", with: "l").lowercased().split(separator: " ").first.map(String.init) ?? ""
+            nameIds = slug.isEmpty ? [] : pack.clips.keys.filter { $0.hasPrefix("name.\(slug).") }.sorted()
+        }
+    }
     private var leadIds: [String: [String]] = [:]
     private var endObserver: NSObjectProtocol?
 
@@ -51,10 +62,14 @@ final class DirectorVoice: NSObject {
     private func num(_ s: String?) -> Double? { s.flatMap { Double($0.replacingOccurrences(of: ",", with: ".")) } }
 
     private func lead(_ ev: String) -> String? {
-        guard let ids = leadIds[ev], !ids.isEmpty else { return nil }
+        guard var ids = leadIds[ev], !ids.isEmpty else { return nil }
+        // włoskie „Forza / Bravissimo / Dai” to przyprawa – świeżo użyte → wybierz polski wariant
+        let plain = ids.filter { pack.clips[$0]?.it != true }
+        if Date().timeIntervalSince(lastIt) < 180 && !plain.isEmpty { ids = plain }
         var i = Int.random(in: 0..<ids.count)
         if ids.count > 1 && i == last[ev] { i = (i + 1) % ids.count }   // nigdy ten sam wariant dwa razy z rzędu
         last[ev] = i
+        if pack.clips[ids[i]]?.it == true { lastIt = Date() }
         return ids[i]
     }
 
@@ -110,6 +125,12 @@ final class DirectorVoice: NSObject {
         case "effort":
             seg += dur(vars["dur"]) + watts(vars["avg"])
         default: break
+        }
+        // imię tylko w kluczowych momentach i rzadko – wtedy działa
+        let peak: Set<String> = ["autoStart", "intervalStart", "lastMinute", "seriesEnd", "planDone", "praise", "effort"]
+        if peak.contains(key), !nameIds.isEmpty, Date().timeIntervalSince(lastName) > 480, Bool.random() {
+            lastName = Date()
+            seg.insert(nameIds.randomElement()!, at: 0)
         }
         return seg
     }

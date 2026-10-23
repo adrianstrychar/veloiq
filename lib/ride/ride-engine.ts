@@ -92,7 +92,8 @@ export interface RideEnginePlugin {
   /** Głosy pl-PL zainstalowane w telefonie (lepsze: Ustawienia → Dostępność → Treść mówiona → Głosy). */
   getVoices(options?: { language?: string }): Promise<{ voices: VoiceInfo[]; current?: string; rate: number; mode?: VoiceMode; packs?: { id: string; name: string }[] }>;
   /** Wybór głosu i tempa (0.35–0.65, domyślnie 0.5) – zapamiętywane w telefonie. */
-  setVoice(options: { id?: string; rate?: number; mode?: VoiceMode }): Promise<void>;
+  /** name: imię zawodnika – Dyrektor użyje go rzadko, w kluczowych momentach (jeśli ma nagranie). */
+  setVoice(options: { id?: string; rate?: number; mode?: VoiceMode; name?: string }): Promise<void>;
   /** Odczyt zapisu treningu (JSONL jako tekst) – do wysłania do Supabase. */
   readRecording(options: { file: string }): Promise<{ data: string }>;
 

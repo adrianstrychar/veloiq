@@ -15,7 +15,7 @@ export default async function TreningPage() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, ftp_watts')
+    .select('id, ftp_watts, name')
     .eq('user_id', user?.id ?? '')
     .maybeSingle();
 
@@ -37,5 +37,6 @@ export default async function TreningPage() {
   const script = planDayToScript(day, ftp, `plan-${today}`);
   const planLabel = day && script ? [day.type, `${day.dur_min} min`, day.tss ? `TSS ${day.tss}` : null].filter(Boolean).join(' · ') : undefined;
 
-  return <TreningClient plan={script} planLabel={planLabel} ftp={ftp} />;
+  const firstName = String((athlete?.name as string | null) ?? '').trim().split(/\s+/)[0] || undefined;
+  return <TreningClient plan={script} planLabel={planLabel} ftp={ftp} firstName={firstName} />;
 }

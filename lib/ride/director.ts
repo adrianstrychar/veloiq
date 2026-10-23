@@ -1,7 +1,7 @@
 // „Dyrektor Enzo” – lektor z nagranych klipów (offline). Komunikat silnika (klucz + zmienne)
 // → lista klipów: emocjonalne wejście + liczby. Ta sama logika jest w iOS (DirectorVoice.swift).
 
-export interface VoicePack { id: string; name: string; clips: Record<string, { file: string; dur: number }> }
+export interface VoicePack { id: string; name: string; clips: Record<string, { file: string; dur: number; it?: boolean }> }
 
 const r5 = (v: number) => Math.round(v / 5) * 5;
 const num = (v: unknown) => (typeof v === 'number' ? v : parseFloat(String(v ?? '')));
@@ -27,16 +27,29 @@ const SILENT = new Set(['seriesPrev', 'restInfo']);
 
 export class DirectorComposer {
   private last: Record<string, number> = {};
-  constructor(private pack: VoicePack, private rnd: () => number = Math.random) {}
+  private lastIt = -1e9;      // ostatnie włoskie wtrącenie (ms) – nie częściej niż co 3 min
+  private lastName = -1e9;    // ostatnie imię – nie częściej niż co 8 min
+  private nameIds: string[] = [];
+  constructor(private pack: VoicePack, private rnd: () => number = Math.random, private now: () => number = () => Date.now()) {}
+
+  /** Imię zawodnika (bez polskich znaków, małe litery) – jeśli paczka ma jego nagrania. */
+  setName(name?: string) {
+    const slug = (name ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l').toLowerCase().split(/\s+/)[0] ?? '';
+    this.nameIds = slug ? Object.keys(this.pack.clips).filter((k) => k.startsWith(`name.${slug}.`)) : [];
+  }
 
   private has(id: string) { return !!this.pack.clips[id]; }
   private lead(ev: string): string | null {
-    const ids = Object.keys(this.pack.clips).filter((k) => k.startsWith(`lead.${ev}.`));
+    let ids = Object.keys(this.pack.clips).filter((k) => k.startsWith(`lead.${ev}.`));
     if (!ids.length) return null;
+    // włoskie „Forza / Bravissimo / Dai” to przyprawa – świeżo użyte → wybierz polski wariant
+    const plain = ids.filter((k) => !this.pack.clips[k].it);
+    if (this.now() - this.lastIt < 180_000 && plain.length) ids = plain;
     // losowo, ale nigdy ten sam wariant dwa razy z rzędu
     let i = Math.floor(this.rnd() * ids.length);
     if (ids.length > 1 && ids.indexOf(ids[i]) === this.last[ev]) i = (i + 1) % ids.length;
     this.last[ev] = i;
+    if (this.pack.clips[ids[i]].it) this.lastIt = this.now();
     return ids[i];
   }
   private dur(d: unknown): string[] {
@@ -84,6 +97,12 @@ export class DirectorComposer {
       case 'tooLow': { const d = r5(num(vars.delta)); if (this.has(`add.${d}`)) seg.push(`add.${d}`); break; }
       case 'half': seg.push(...this.watts(vars.avg)); break;
       case 'effort': seg.push(...this.dur(vars.dur), ...this.watts(vars.avg)); break;
+    }
+    // imię tylko w kluczowych momentach i rzadko – wtedy działa
+    const peak = ['autoStart', 'intervalStart', 'lastMinute', 'seriesEnd', 'planDone', 'praise', 'effort'].includes(key);
+    if (peak && this.nameIds.length && this.now() - this.lastName > 480_000 && this.rnd() < 0.5) {
+      this.lastName = this.now();
+      seg.unshift(this.nameIds[Math.floor(this.rnd() * this.nameIds.length)]);
     }
     return seg;
   }

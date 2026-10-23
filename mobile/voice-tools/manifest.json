@@ -1,0 +1,6451 @@
+[
+{
+"id": "lead.arm.0",
+"text": "Uwaga! Za minutę zaczynamy.",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.arm.1",
+"text": "Przygotuj się! Za minutę jedziemy.",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.arm.2",
+"text": "Pronto? Za minutę interwał. Łyk wody, ręce luźno.",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.arm.3",
+"text": "Słuchaj mnie. Za minutę zaczyna się robota.",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.go.0",
+"text": "Jedziemy! Forca!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.go.1",
+"text": "Start! Ale, ale, ale!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.go.2",
+"text": "Teraz! Daj, daj, daj!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.go.3",
+"text": "Avanti! Jedziemy!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": true
+},
+{
+"id": "lead.go.4",
+"text": "Start! Pokaż mi, co masz!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.warmup.0",
+"text": "Rozgrzewka. Spokojnie, budujemy nogi.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.warmup.1",
+"text": "Zaczynamy rozgrzewkę. Bez pośpiechu, luźno.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.warmup.2",
+"text": "Rozgrzewka. Oddychaj, rozkręcaj się powoli.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.recovery.0",
+"text": "Przerwa. Kręć luźno. Oddychaj.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.recovery.1",
+"text": "Brawo. Teraz odpoczynek. Pij.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.recovery.2",
+"text": "Luźno. Odpoczywamy. Zaraz znowu.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.cooldown.0",
+"text": "Schłodzenie. Brawissimo, dzisiaj zrobione.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.cooldown.1",
+"text": "Koniec roboty. Luźno do domu.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.cooldown.2",
+"text": "Schłodzenie. Rozkręć nogi, oddychaj.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.steady.0",
+"text": "Teraz tempo. Jedziemy równo.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.steady.1",
+"text": "Teraz tempo. Równo, jak w zegarku.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.ten.0",
+"text": "Dziesięć sekund! Przygotuj się!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.ten.1",
+"text": "Dziesięć sekund! Ręce na kierownicę!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.goNow.0",
+"text": "Możesz startować! Ruszaj, kiedy chcesz!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.goNow.1",
+"text": "Teraz! Ruszaj!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.waiting.0",
+"text": "Czekam na ciebie. Ruszaj, kiedy będziesz gotowy.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.waiting.1",
+"text": "Spokojnie. Ja czekam. Ruszaj, jak będziesz gotowy.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.pause.0",
+"text": "Stoimy. Spokojnie, czekam.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.pause.1",
+"text": "Pauza. Czerwone światło to też odpoczynek.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.resume.0",
+"text": "Jedziemy dalej! Forca!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.resume.1",
+"text": "Wracamy do roboty! Ale!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.early.0",
+"text": "Nie szkodzi. Zapisałem. Następnym razem dowieziesz.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.early.1",
+"text": "Dobrze. Odpoczynek. Głowa do góry.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.seriesEnd.0",
+"text": "Brawissimo! Seria zamknięta!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.seriesEnd.1",
+"text": "Jest! Seria zrobiona! Pięknie!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.seriesEnd.2",
+"text": "Bene, bene! Seria zamknięta!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.seriesEnd.3",
+"text": "Tak się trenuje mistrzów! Seria zamknięta!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.hr.0",
+"text": "Tętno idzie w górę. To normalne. Pij i oddychaj.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.tooHigh.0",
+"text": "Nie, nie, nie! Za mocno!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.tooHigh.1",
+"text": "Spokojnie! Za mocno!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.tooHigh.2",
+"text": "Hamuj! Za mocno!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.tooHigh.3",
+"text": "Głową, nie emocjami! Za mocno!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.tooLow.0",
+"text": "Za słabo! Forca!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.tooLow.1",
+"text": "Więcej! Więcej!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.tooLow.2",
+"text": "Nie odpuszczaj! Za słabo!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.tooLow.3",
+"text": "Daj, daj! Za słabo!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.recTooHigh.0",
+"text": "To jest odpoczynek! Zejdź niżej!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.recTooHigh.1",
+"text": "Spokojnie! Teraz odpoczywamy, nie ścigamy się!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.cadLow.0",
+"text": "Kadencja! Kręć szybciej!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.cadLow.1",
+"text": "Szybciej nogami! Lżej, szybciej!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.cadHigh.0",
+"text": "Za szybko kręcisz! Spokojniej nogami!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.cadHigh.1",
+"text": "Wolniej nogami, mocniej w pedały!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.half.0",
+"text": "Połowa za nami! Tak trzymaj!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.half.1",
+"text": "Pół drogi! Wyglądasz świetnie!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.half.2",
+"text": "Połowa! Teraz głową!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.last.0",
+"text": "Ostatnia minuta! To jest ten moment! Wszystko, co masz!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.last.1",
+"text": "Ostatnia minuta! Daj, daj, daj, daj!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.last.2",
+"text": "Ostatnia minuta! Tu się wygrywa!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.praise.0",
+"text": "Perfetto! Idealnie! Tak trzymaj!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.praise.1",
+"text": "Brawissimo! Dokładnie tak!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.praise.2",
+"text": "Pięknie! Idealnie w zakresie!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.done.0",
+"text": "Plan zrobiony! Brawissimo! Dzisiaj byłeś mocny!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": true
+},
+{
+"id": "lead.done.1",
+"text": "Koniec planu! Jestem z ciebie dumny! Luźno do domu.",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.free.0",
+"text": "Jedziemy! Nagrywam wszystko. Pokaż mi, co masz!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.effort.0",
+"text": "Mocny wysiłek! Zapisałem!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.effort.1",
+"text": "To był atak! Brawissimo!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": true
+},
+{
+"id": "lead.powerLost.0",
+"text": "Nie widzę mocy! Sprawdź czujnik!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.powerBack.0",
+"text": "Moc wróciła. Jedziemy dalej.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.hrLost.0",
+"text": "Nie widzę tętna. Sprawdź pas.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "lead.hrBack.0",
+"text": "Tętno znowu jest. Dobrze.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"it": false
+},
+{
+"id": "add.5",
+"text": "Dodaj pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.5",
+"text": "Odpuść pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.10",
+"text": "Dodaj dziesięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.10",
+"text": "Odpuść dziesięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.15",
+"text": "Dodaj piętnaście watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.15",
+"text": "Odpuść piętnaście watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.20",
+"text": "Dodaj dwadzieścia watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.20",
+"text": "Odpuść dwadzieścia watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.25",
+"text": "Dodaj dwadzieścia pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.25",
+"text": "Odpuść dwadzieścia pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.30",
+"text": "Dodaj trzydzieści watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.30",
+"text": "Odpuść trzydzieści watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.35",
+"text": "Dodaj trzydzieści pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.35",
+"text": "Odpuść trzydzieści pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.40",
+"text": "Dodaj czterdzieści watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.40",
+"text": "Odpuść czterdzieści watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.45",
+"text": "Dodaj czterdzieści pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.45",
+"text": "Odpuść czterdzieści pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.50",
+"text": "Dodaj pięćdziesiąt watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.50",
+"text": "Odpuść pięćdziesiąt watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.55",
+"text": "Dodaj pięćdziesiąt pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.55",
+"text": "Odpuść pięćdziesiąt pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.60",
+"text": "Dodaj sześćdziesiąt watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.60",
+"text": "Odpuść sześćdziesiąt watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.65",
+"text": "Dodaj sześćdziesiąt pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.65",
+"text": "Odpuść sześćdziesiąt pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.70",
+"text": "Dodaj siedemdziesiąt watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.70",
+"text": "Odpuść siedemdziesiąt watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.75",
+"text": "Dodaj siedemdziesiąt pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.75",
+"text": "Odpuść siedemdziesiąt pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.80",
+"text": "Dodaj osiemdziesiąt watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.80",
+"text": "Odpuść osiemdziesiąt watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.85",
+"text": "Dodaj osiemdziesiąt pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.85",
+"text": "Odpuść osiemdziesiąt pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.90",
+"text": "Dodaj dziewięćdziesiąt watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.90",
+"text": "Odpuść dziewięćdziesiąt watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.95",
+"text": "Dodaj dziewięćdziesiąt pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.95",
+"text": "Odpuść dziewięćdziesiąt pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.100",
+"text": "Dodaj sto watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.100",
+"text": "Odpuść sto watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.105",
+"text": "Dodaj sto pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.105",
+"text": "Odpuść sto pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.110",
+"text": "Dodaj sto dziesięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.110",
+"text": "Odpuść sto dziesięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.115",
+"text": "Dodaj sto piętnaście watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.115",
+"text": "Odpuść sto piętnaście watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.120",
+"text": "Dodaj sto dwadzieścia watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.120",
+"text": "Odpuść sto dwadzieścia watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.125",
+"text": "Dodaj sto dwadzieścia pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.125",
+"text": "Odpuść sto dwadzieścia pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.130",
+"text": "Dodaj sto trzydzieści watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.130",
+"text": "Odpuść sto trzydzieści watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.135",
+"text": "Dodaj sto trzydzieści pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.135",
+"text": "Odpuść sto trzydzieści pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.140",
+"text": "Dodaj sto czterdzieści watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.140",
+"text": "Odpuść sto czterdzieści watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.145",
+"text": "Dodaj sto czterdzieści pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.145",
+"text": "Odpuść sto czterdzieści pięć watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "add.150",
+"text": "Dodaj sto pięćdziesiąt watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "sub.150",
+"text": "Odpuść sto pięćdziesiąt watów!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 1
+},
+{
+"id": "w.80",
+"text": "osiemdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.85",
+"text": "osiemdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.90",
+"text": "dziewięćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.95",
+"text": "dziewięćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.100",
+"text": "sto watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.105",
+"text": "sto pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.110",
+"text": "sto dziesięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.115",
+"text": "sto piętnaście watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.120",
+"text": "sto dwadzieścia watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.125",
+"text": "sto dwadzieścia pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.130",
+"text": "sto trzydzieści watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.135",
+"text": "sto trzydzieści pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.140",
+"text": "sto czterdzieści watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.145",
+"text": "sto czterdzieści pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.150",
+"text": "sto pięćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.155",
+"text": "sto pięćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.160",
+"text": "sto sześćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.165",
+"text": "sto sześćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.170",
+"text": "sto siedemdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.175",
+"text": "sto siedemdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.180",
+"text": "sto osiemdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.185",
+"text": "sto osiemdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.190",
+"text": "sto dziewięćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.195",
+"text": "sto dziewięćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.200",
+"text": "dwieście watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.205",
+"text": "dwieście pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.210",
+"text": "dwieście dziesięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.215",
+"text": "dwieście piętnaście watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.220",
+"text": "dwieście dwadzieścia watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.225",
+"text": "dwieście dwadzieścia pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.230",
+"text": "dwieście trzydzieści watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.235",
+"text": "dwieście trzydzieści pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.240",
+"text": "dwieście czterdzieści watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.245",
+"text": "dwieście czterdzieści pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.250",
+"text": "dwieście pięćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.255",
+"text": "dwieście pięćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.260",
+"text": "dwieście sześćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.265",
+"text": "dwieście sześćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.270",
+"text": "dwieście siedemdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.275",
+"text": "dwieście siedemdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.280",
+"text": "dwieście osiemdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.285",
+"text": "dwieście osiemdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.290",
+"text": "dwieście dziewięćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.295",
+"text": "dwieście dziewięćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.300",
+"text": "trzysta watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.305",
+"text": "trzysta pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.310",
+"text": "trzysta dziesięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.315",
+"text": "trzysta piętnaście watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.320",
+"text": "trzysta dwadzieścia watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.325",
+"text": "trzysta dwadzieścia pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.330",
+"text": "trzysta trzydzieści watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.335",
+"text": "trzysta trzydzieści pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.340",
+"text": "trzysta czterdzieści watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.345",
+"text": "trzysta czterdzieści pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.350",
+"text": "trzysta pięćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.355",
+"text": "trzysta pięćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.360",
+"text": "trzysta sześćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.365",
+"text": "trzysta sześćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.370",
+"text": "trzysta siedemdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.375",
+"text": "trzysta siedemdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.380",
+"text": "trzysta osiemdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.385",
+"text": "trzysta osiemdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.390",
+"text": "trzysta dziewięćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.395",
+"text": "trzysta dziewięćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.400",
+"text": "czterysta watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.405",
+"text": "czterysta pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.410",
+"text": "czterysta dziesięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.415",
+"text": "czterysta piętnaście watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.420",
+"text": "czterysta dwadzieścia watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.425",
+"text": "czterysta dwadzieścia pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.430",
+"text": "czterysta trzydzieści watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.435",
+"text": "czterysta trzydzieści pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.440",
+"text": "czterysta czterdzieści watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.445",
+"text": "czterysta czterdzieści pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.450",
+"text": "czterysta pięćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.455",
+"text": "czterysta pięćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.460",
+"text": "czterysta sześćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.465",
+"text": "czterysta sześćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.470",
+"text": "czterysta siedemdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.475",
+"text": "czterysta siedemdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.480",
+"text": "czterysta osiemdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.485",
+"text": "czterysta osiemdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.490",
+"text": "czterysta dziewięćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.495",
+"text": "czterysta dziewięćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.500",
+"text": "pięćset watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.505",
+"text": "pięćset pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.510",
+"text": "pięćset dziesięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.515",
+"text": "pięćset piętnaście watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.520",
+"text": "pięćset dwadzieścia watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.525",
+"text": "pięćset dwadzieścia pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.530",
+"text": "pięćset trzydzieści watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.535",
+"text": "pięćset trzydzieści pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.540",
+"text": "pięćset czterdzieści watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.545",
+"text": "pięćset czterdzieści pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.550",
+"text": "pięćset pięćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.555",
+"text": "pięćset pięćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.560",
+"text": "pięćset sześćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.565",
+"text": "pięćset sześćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.570",
+"text": "pięćset siedemdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.575",
+"text": "pięćset siedemdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.580",
+"text": "pięćset osiemdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.585",
+"text": "pięćset osiemdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.590",
+"text": "pięćset dziewięćdziesiąt watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.595",
+"text": "pięćset dziewięćdziesiąt pięć watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "w.600",
+"text": "sześćset watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.1",
+"text": "jedna minuta.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.2",
+"text": "dwie minuty.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.3",
+"text": "trzy minuty.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.4",
+"text": "cztery minuty.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.5",
+"text": "pięć minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.6",
+"text": "sześć minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.7",
+"text": "siedem minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.8",
+"text": "osiem minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.9",
+"text": "dziewięć minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.10",
+"text": "dziesięć minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.11",
+"text": "jedenaście minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.12",
+"text": "dwanaście minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.13",
+"text": "trzynaście minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.14",
+"text": "czternaście minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.15",
+"text": "piętnaście minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.16",
+"text": "szesnaście minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.17",
+"text": "siedemnaście minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.18",
+"text": "osiemnaście minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.19",
+"text": "dziewiętnaście minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.20",
+"text": "dwadzieścia minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.25",
+"text": "dwadzieścia pięć minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.30",
+"text": "trzydzieści minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.35",
+"text": "trzydzieści pięć minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.40",
+"text": "czterdzieści minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.45",
+"text": "czterdzieści pięć minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.50",
+"text": "pięćdziesiąt minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.60",
+"text": "sześćdziesiąt minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "min.90",
+"text": "dziewięćdziesiąt minut.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "sec.5",
+"text": "pięć sekund.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "sec.10",
+"text": "dziesięć sekund.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "sec.15",
+"text": "piętnaście sekund.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "sec.20",
+"text": "dwadzieścia sekund.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "sec.30",
+"text": "trzydzieści sekund.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "sec.40",
+"text": "czterdzieści sekund.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "sec.45",
+"text": "czterdzieści pięć sekund.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 2
+},
+{
+"id": "int.1.1",
+"text": "Interwał pierwszy z jednego.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.1.2",
+"text": "Interwał pierwszy z dwóch.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.2.2",
+"text": "Interwał drugi z dwóch.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.1.3",
+"text": "Interwał pierwszy z trzech.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.2.3",
+"text": "Interwał drugi z trzech.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.3.3",
+"text": "Interwał trzeci z trzech.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.1.4",
+"text": "Interwał pierwszy z czterech.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.2.4",
+"text": "Interwał drugi z czterech.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.3.4",
+"text": "Interwał trzeci z czterech.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.4.4",
+"text": "Interwał czwarty z czterech.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.1.5",
+"text": "Interwał pierwszy z pięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.2.5",
+"text": "Interwał drugi z pięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.3.5",
+"text": "Interwał trzeci z pięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.4.5",
+"text": "Interwał czwarty z pięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.5.5",
+"text": "Interwał piąty z pięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.1.6",
+"text": "Interwał pierwszy z sześciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.2.6",
+"text": "Interwał drugi z sześciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.3.6",
+"text": "Interwał trzeci z sześciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.4.6",
+"text": "Interwał czwarty z sześciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.5.6",
+"text": "Interwał piąty z sześciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.6.6",
+"text": "Interwał szósty z sześciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.1.7",
+"text": "Interwał pierwszy z siedmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.2.7",
+"text": "Interwał drugi z siedmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.3.7",
+"text": "Interwał trzeci z siedmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.4.7",
+"text": "Interwał czwarty z siedmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.5.7",
+"text": "Interwał piąty z siedmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.6.7",
+"text": "Interwał szósty z siedmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.7.7",
+"text": "Interwał siódmy z siedmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.1.8",
+"text": "Interwał pierwszy z ośmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.2.8",
+"text": "Interwał drugi z ośmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.3.8",
+"text": "Interwał trzeci z ośmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.4.8",
+"text": "Interwał czwarty z ośmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.5.8",
+"text": "Interwał piąty z ośmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.6.8",
+"text": "Interwał szósty z ośmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.7.8",
+"text": "Interwał siódmy z ośmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.8.8",
+"text": "Interwał ósmy z ośmiu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.1.9",
+"text": "Interwał pierwszy z dziewięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.2.9",
+"text": "Interwał drugi z dziewięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.3.9",
+"text": "Interwał trzeci z dziewięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.4.9",
+"text": "Interwał czwarty z dziewięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.5.9",
+"text": "Interwał piąty z dziewięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.6.9",
+"text": "Interwał szósty z dziewięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.7.9",
+"text": "Interwał siódmy z dziewięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.8.9",
+"text": "Interwał ósmy z dziewięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.9.9",
+"text": "Interwał dziewiąty z dziewięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.1.10",
+"text": "Interwał pierwszy z dziesięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.2.10",
+"text": "Interwał drugi z dziesięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.3.10",
+"text": "Interwał trzeci z dziesięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.4.10",
+"text": "Interwał czwarty z dziesięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.5.10",
+"text": "Interwał piąty z dziesięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.6.10",
+"text": "Interwał szósty z dziesięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.7.10",
+"text": "Interwał siódmy z dziesięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.8.10",
+"text": "Interwał ósmy z dziesięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.9.10",
+"text": "Interwał dziewiąty z dziesięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "int.10.10",
+"text": "Interwał dziesiąty z dziesięciu.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 3
+},
+{
+"id": "to.80",
+"text": "do osiemdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.85",
+"text": "do osiemdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.90",
+"text": "do dziewięćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.95",
+"text": "do dziewięćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.100",
+"text": "do stu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.105",
+"text": "do stu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.110",
+"text": "do stu dziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.115",
+"text": "do stu piętnastu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.120",
+"text": "do stu dwudziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.125",
+"text": "do stu dwudziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.130",
+"text": "do stu trzydziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.135",
+"text": "do stu trzydziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.140",
+"text": "do stu czterdziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.145",
+"text": "do stu czterdziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.150",
+"text": "do stu pięćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.155",
+"text": "do stu pięćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.160",
+"text": "do stu sześćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.165",
+"text": "do stu sześćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.170",
+"text": "do stu siedemdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.175",
+"text": "do stu siedemdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.180",
+"text": "do stu osiemdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.185",
+"text": "do stu osiemdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.190",
+"text": "do stu dziewięćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.195",
+"text": "do stu dziewięćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.200",
+"text": "do dwustu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.205",
+"text": "do dwustu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.210",
+"text": "do dwustu dziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.215",
+"text": "do dwustu piętnastu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.220",
+"text": "do dwustu dwudziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.225",
+"text": "do dwustu dwudziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.230",
+"text": "do dwustu trzydziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.235",
+"text": "do dwustu trzydziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.240",
+"text": "do dwustu czterdziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.245",
+"text": "do dwustu czterdziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.250",
+"text": "do dwustu pięćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.255",
+"text": "do dwustu pięćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.260",
+"text": "do dwustu sześćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.265",
+"text": "do dwustu sześćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.270",
+"text": "do dwustu siedemdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.275",
+"text": "do dwustu siedemdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.280",
+"text": "do dwustu osiemdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.285",
+"text": "do dwustu osiemdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.290",
+"text": "do dwustu dziewięćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.295",
+"text": "do dwustu dziewięćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.300",
+"text": "do trzystu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.305",
+"text": "do trzystu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.310",
+"text": "do trzystu dziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.315",
+"text": "do trzystu piętnastu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.320",
+"text": "do trzystu dwudziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.325",
+"text": "do trzystu dwudziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.330",
+"text": "do trzystu trzydziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.335",
+"text": "do trzystu trzydziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.340",
+"text": "do trzystu czterdziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.345",
+"text": "do trzystu czterdziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.350",
+"text": "do trzystu pięćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.355",
+"text": "do trzystu pięćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.360",
+"text": "do trzystu sześćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.365",
+"text": "do trzystu sześćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.370",
+"text": "do trzystu siedemdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.375",
+"text": "do trzystu siedemdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.380",
+"text": "do trzystu osiemdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.385",
+"text": "do trzystu osiemdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.390",
+"text": "do trzystu dziewięćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.395",
+"text": "do trzystu dziewięćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.400",
+"text": "do czterystu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.405",
+"text": "do czterystu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.410",
+"text": "do czterystu dziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.415",
+"text": "do czterystu piętnastu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.420",
+"text": "do czterystu dwudziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.425",
+"text": "do czterystu dwudziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.430",
+"text": "do czterystu trzydziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.435",
+"text": "do czterystu trzydziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.440",
+"text": "do czterystu czterdziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.445",
+"text": "do czterystu czterdziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.450",
+"text": "do czterystu pięćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.455",
+"text": "do czterystu pięćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.460",
+"text": "do czterystu sześćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.465",
+"text": "do czterystu sześćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.470",
+"text": "do czterystu siedemdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.475",
+"text": "do czterystu siedemdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.480",
+"text": "do czterystu osiemdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.485",
+"text": "do czterystu osiemdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.490",
+"text": "do czterystu dziewięćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.495",
+"text": "do czterystu dziewięćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.500",
+"text": "do pięciuset watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.505",
+"text": "do pięciuset pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.510",
+"text": "do pięciuset dziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.515",
+"text": "do pięciuset piętnastu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.520",
+"text": "do pięciuset dwudziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.525",
+"text": "do pięciuset dwudziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.530",
+"text": "do pięciuset trzydziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.535",
+"text": "do pięciuset trzydziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.540",
+"text": "do pięciuset czterdziestu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.545",
+"text": "do pięciuset czterdziestu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.550",
+"text": "do pięciuset pięćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.555",
+"text": "do pięciuset pięćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.560",
+"text": "do pięciuset sześćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.565",
+"text": "do pięciuset sześćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.570",
+"text": "do pięciuset siedemdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.575",
+"text": "do pięciuset siedemdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.580",
+"text": "do pięciuset osiemdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.585",
+"text": "do pięciuset osiemdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.590",
+"text": "do pięciuset dziewięćdziesięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.595",
+"text": "do pięciuset dziewięćdziesięciu pięciu watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "to.600",
+"text": "do sześciuset watów.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 4
+},
+{
+"id": "pct.50",
+"text": "pięćdziesiąt procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.51",
+"text": "pięćdziesiąt jeden procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.52",
+"text": "pięćdziesiąt dwa procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.53",
+"text": "pięćdziesiąt trzy procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.54",
+"text": "pięćdziesiąt cztery procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.55",
+"text": "pięćdziesiąt pięć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.56",
+"text": "pięćdziesiąt sześć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.57",
+"text": "pięćdziesiąt siedem procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.58",
+"text": "pięćdziesiąt osiem procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.59",
+"text": "pięćdziesiąt dziewięć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.60",
+"text": "sześćdziesiąt procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.61",
+"text": "sześćdziesiąt jeden procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.62",
+"text": "sześćdziesiąt dwa procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.63",
+"text": "sześćdziesiąt trzy procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.64",
+"text": "sześćdziesiąt cztery procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.65",
+"text": "sześćdziesiąt pięć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.66",
+"text": "sześćdziesiąt sześć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.67",
+"text": "sześćdziesiąt siedem procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.68",
+"text": "sześćdziesiąt osiem procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.69",
+"text": "sześćdziesiąt dziewięć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.70",
+"text": "siedemdziesiąt procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.71",
+"text": "siedemdziesiąt jeden procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.72",
+"text": "siedemdziesiąt dwa procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.73",
+"text": "siedemdziesiąt trzy procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.74",
+"text": "siedemdziesiąt cztery procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.75",
+"text": "siedemdziesiąt pięć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.76",
+"text": "siedemdziesiąt sześć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.77",
+"text": "siedemdziesiąt siedem procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.78",
+"text": "siedemdziesiąt osiem procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.79",
+"text": "siedemdziesiąt dziewięć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.80",
+"text": "osiemdziesiąt procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.81",
+"text": "osiemdziesiąt jeden procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.82",
+"text": "osiemdziesiąt dwa procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.83",
+"text": "osiemdziesiąt trzy procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.84",
+"text": "osiemdziesiąt cztery procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.85",
+"text": "osiemdziesiąt pięć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.86",
+"text": "osiemdziesiąt sześć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.87",
+"text": "osiemdziesiąt siedem procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.88",
+"text": "osiemdziesiąt osiem procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.89",
+"text": "osiemdziesiąt dziewięć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.90",
+"text": "dziewięćdziesiąt procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.91",
+"text": "dziewięćdziesiąt jeden procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.92",
+"text": "dziewięćdziesiąt dwa procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.93",
+"text": "dziewięćdziesiąt trzy procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.94",
+"text": "dziewięćdziesiąt cztery procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.95",
+"text": "dziewięćdziesiąt pięć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.96",
+"text": "dziewięćdziesiąt sześć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.97",
+"text": "dziewięćdziesiąt siedem procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.98",
+"text": "dziewięćdziesiąt osiem procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.99",
+"text": "dziewięćdziesiąt dziewięć procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "pct.100",
+"text": "sto procent w zakresie.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.3",
+"text": "Tętno o trzy uderzenia wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.4",
+"text": "Tętno o cztery uderzenia wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.5",
+"text": "Tętno o pięć uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.6",
+"text": "Tętno o sześć uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.7",
+"text": "Tętno o siedem uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.8",
+"text": "Tętno o osiem uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.9",
+"text": "Tętno o dziewięć uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.10",
+"text": "Tętno o dziesięć uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.11",
+"text": "Tętno o jedenaście uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.12",
+"text": "Tętno o dwanaście uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.13",
+"text": "Tętno o trzynaście uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.14",
+"text": "Tętno o czternaście uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.15",
+"text": "Tętno o piętnaście uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.16",
+"text": "Tętno o szesnaście uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.17",
+"text": "Tętno o siedemnaście uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.18",
+"text": "Tętno o osiemnaście uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.19",
+"text": "Tętno o dziewiętnaście uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.20",
+"text": "Tętno o dwadzieścia uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.21",
+"text": "Tętno o dwadzieścia jeden uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.22",
+"text": "Tętno o dwadzieścia dwa uderzenia wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.23",
+"text": "Tętno o dwadzieścia trzy uderzenia wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.24",
+"text": "Tętno o dwadzieścia cztery uderzenia wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "hr.25",
+"text": "Tętno o dwadzieścia pięć uderzeń wyżej.",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 5
+},
+{
+"id": "from.80",
+"text": "od osiemdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.85",
+"text": "od osiemdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.90",
+"text": "od dziewięćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.95",
+"text": "od dziewięćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.100",
+"text": "od stu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.105",
+"text": "od stu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.110",
+"text": "od stu dziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.115",
+"text": "od stu piętnastu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.120",
+"text": "od stu dwudziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.125",
+"text": "od stu dwudziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.130",
+"text": "od stu trzydziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.135",
+"text": "od stu trzydziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.140",
+"text": "od stu czterdziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.145",
+"text": "od stu czterdziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.150",
+"text": "od stu pięćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.155",
+"text": "od stu pięćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.160",
+"text": "od stu sześćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.165",
+"text": "od stu sześćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.170",
+"text": "od stu siedemdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.175",
+"text": "od stu siedemdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.180",
+"text": "od stu osiemdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.185",
+"text": "od stu osiemdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.190",
+"text": "od stu dziewięćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.195",
+"text": "od stu dziewięćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.200",
+"text": "od dwustu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.205",
+"text": "od dwustu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.210",
+"text": "od dwustu dziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.215",
+"text": "od dwustu piętnastu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.220",
+"text": "od dwustu dwudziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.225",
+"text": "od dwustu dwudziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.230",
+"text": "od dwustu trzydziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.235",
+"text": "od dwustu trzydziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.240",
+"text": "od dwustu czterdziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.245",
+"text": "od dwustu czterdziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.250",
+"text": "od dwustu pięćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.255",
+"text": "od dwustu pięćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.260",
+"text": "od dwustu sześćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.265",
+"text": "od dwustu sześćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.270",
+"text": "od dwustu siedemdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.275",
+"text": "od dwustu siedemdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.280",
+"text": "od dwustu osiemdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.285",
+"text": "od dwustu osiemdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.290",
+"text": "od dwustu dziewięćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.295",
+"text": "od dwustu dziewięćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.300",
+"text": "od trzystu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.305",
+"text": "od trzystu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.310",
+"text": "od trzystu dziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.315",
+"text": "od trzystu piętnastu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.320",
+"text": "od trzystu dwudziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.325",
+"text": "od trzystu dwudziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.330",
+"text": "od trzystu trzydziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.335",
+"text": "od trzystu trzydziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.340",
+"text": "od trzystu czterdziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.345",
+"text": "od trzystu czterdziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.350",
+"text": "od trzystu pięćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.355",
+"text": "od trzystu pięćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.360",
+"text": "od trzystu sześćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.365",
+"text": "od trzystu sześćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.370",
+"text": "od trzystu siedemdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.375",
+"text": "od trzystu siedemdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.380",
+"text": "od trzystu osiemdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.385",
+"text": "od trzystu osiemdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.390",
+"text": "od trzystu dziewięćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.395",
+"text": "od trzystu dziewięćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.400",
+"text": "od czterystu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.405",
+"text": "od czterystu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.410",
+"text": "od czterystu dziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.415",
+"text": "od czterystu piętnastu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.420",
+"text": "od czterystu dwudziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.425",
+"text": "od czterystu dwudziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.430",
+"text": "od czterystu trzydziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.435",
+"text": "od czterystu trzydziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.440",
+"text": "od czterystu czterdziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.445",
+"text": "od czterystu czterdziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.450",
+"text": "od czterystu pięćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.455",
+"text": "od czterystu pięćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.460",
+"text": "od czterystu sześćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.465",
+"text": "od czterystu sześćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.470",
+"text": "od czterystu siedemdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.475",
+"text": "od czterystu siedemdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.480",
+"text": "od czterystu osiemdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.485",
+"text": "od czterystu osiemdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.490",
+"text": "od czterystu dziewięćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.495",
+"text": "od czterystu dziewięćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.500",
+"text": "od pięciuset",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.505",
+"text": "od pięciuset pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.510",
+"text": "od pięciuset dziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.515",
+"text": "od pięciuset piętnastu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.520",
+"text": "od pięciuset dwudziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.525",
+"text": "od pięciuset dwudziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.530",
+"text": "od pięciuset trzydziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.535",
+"text": "od pięciuset trzydziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.540",
+"text": "od pięciuset czterdziestu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.545",
+"text": "od pięciuset czterdziestu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.550",
+"text": "od pięciuset pięćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.555",
+"text": "od pięciuset pięćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.560",
+"text": "od pięciuset sześćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.565",
+"text": "od pięciuset sześćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.570",
+"text": "od pięciuset siedemdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.575",
+"text": "od pięciuset siedemdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.580",
+"text": "od pięciuset osiemdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.585",
+"text": "od pięciuset osiemdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.590",
+"text": "od pięciuset dziewięćdziesięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.595",
+"text": "od pięciuset dziewięćdziesięciu pięciu",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "from.600",
+"text": "od sześciuset",
+"p": [
+0.8,
+0.4,
+0.8
+],
+"prio": 6
+},
+{
+"id": "lead.arm.4",
+"text": "Za minutę robota. Przygotuj nogi i głowę.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.arm.5",
+"text": "Minuta do startu. Ustaw się wygodnie, złap oddech.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.go.5",
+"text": "Start! Równo od pierwszej sekundy!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.go.6",
+"text": "Jedziemy! Mocno, ale z głową!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": true
+},
+{
+"id": "lead.go.7",
+"text": "Teraz ty! Pokaż, ile masz!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.tooHigh.4",
+"text": "Za mocno! Zostaw siły na koniec!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.tooHigh.5",
+"text": "Zwolnij trochę! To dopiero początek!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.tooLow.4",
+"text": "Za słabo! Jeszcze trochę!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.tooLow.5",
+"text": "Dociśnij! Dasz radę!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.tooLow.6",
+"text": "Podkręć! Jesteś pod celem!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.half.3",
+"text": "Połowa! Druga część należy do ciebie!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.half.4",
+"text": "Pół za nami! Równo, równo!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.last.3",
+"text": "Ostatnia minuta! Nie odpuszczaj teraz!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.last.4",
+"text": "Minuta! Zaciśnij zęby i dowieź to!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.praise.3",
+"text": "Dokładnie tak! Równo jak w zegarku!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.praise.4",
+"text": "Świetnie! Tak się jedzie!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.seriesEnd.4",
+"text": "Seria zrobiona! Dobra robota!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.seriesEnd.5",
+"text": "Jest! Kolejna seria w kieszeni!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.recovery.3",
+"text": "Odpoczynek. Pij i rozluźnij ramiona.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.recovery.4",
+"text": "Przerwa. Kręć lekko, niech tętno spadnie.",
+"p": [
+0.9,
+0.4,
+0.85
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "lead.done.2",
+"text": "Wszystko zrobione! Świetny trening!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true,
+"it": false
+},
+{
+"id": "name.adrian.0",
+"text": "Dawaj, Adrian!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true
+},
+{
+"id": "name.adrian.1",
+"text": "Brawo, Adrian!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true
+},
+{
+"id": "name.adrian.2",
+"text": "Adrian, słuchaj!",
+"p": [
+1.5,
+0.3,
+0.9
+],
+"prio": 0,
+"redo": true
+}
+]
