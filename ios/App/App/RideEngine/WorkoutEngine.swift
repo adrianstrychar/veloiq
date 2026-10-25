@@ -67,6 +67,8 @@ final class WorkoutEngine {
     private var hrHighRun = 0, lastHrAlert = -1_000_000
     private var hrRecStart: Int?
     private var corrRepeat = 0, lastCorrDir = 0
+    private var quietUntil = -1
+    private static let quietAfterStopSec = 20   // cisza po postoju (światła, skrzyżowanie)
 
     // Wyniki
     private(set) var series: [SeriesResult] = []
@@ -109,10 +111,27 @@ final class WorkoutEngine {
     func ingestCadence(_ rpm: Int, at: Date = Date()) { lastCadence = (rpm, at) }
     func ingestHr(_ bpm: Int, at: Date = Date()) { lastHr = (bpm, at) }
 
+    /// Bluetooth potrafi zgubić czujnik na kilka sekund – mówimy dopiero, gdy brak trwa ≥ 60 s,
+    /// a „wróciło” tylko wtedy, gdy wcześniej padło „nie widzę”.
+    private var sensorDownSince: [String: Int] = [:]
+    private var sensorAnnounced = Set<String>()
+    private static let sensorLostAfterSec = 60
+
     func sensorChanged(kind: String, connected: Bool) {
         guard !stopped, lastSecond >= 0 else { return }
-        let key = kind == "power" ? (connected ? "powerBack" : "powerLost") : (connected ? "hrBack" : "hrLost")
-        say(key, [:], .sensor, true)
+        if connected {
+            sensorDownSince[kind] = nil
+            if sensorAnnounced.remove(kind) != nil { say(kind == "power" ? "powerBack" : "hrBack", [:], .sensor, !replaying) }
+        } else if sensorDownSince[kind] == nil {
+            sensorDownSince[kind] = lastSecond
+        }
+    }
+
+    private func checkSensors(_ s: Int, _ speak: Bool) {
+        for (kind, since) in sensorDownSince where !sensorAnnounced.contains(kind) && s - since >= Self.sensorLostAfterSec {
+            sensorAnnounced.insert(kind)
+            say(kind == "power" ? "powerLost" : "hrLost", [:], .sensor, speak)
+        }
     }
 
     func pause(at now: Date = Date()) {
@@ -206,11 +225,14 @@ final class WorkoutEngine {
         if s == 0 {
             if phase == .free { say("freeStart", [:], .info, speak) } else { announceStep(0, speak) }
         }
+        checkSensors(s, speak)
         if phase == .free { freeTick(s, speak); return }
         guard let st = step else { return }
+        if p < R.autoPauseWatts && (cad == nil || cad == 0) { quietUntil = s + Self.quietAfterStopSec }
+        let autoInterval = st.isInterval && isAuto(stepIdx)
 
-        // --- interwał elastyczny: auto-pauza, wznowienie, wcześniejsze przerwanie
-        if st.isInterval && isAuto(stepIdx) {
+        // --- interwał: auto-pauza i wznowienie; elastyczny dodatkowo wcześniejsze przerwanie
+        if st.isInterval && st.durationSec >= 60 {
             let low = Double(st.powerLow)
             if phase == .autoPaused {
                 resumeRun = Double(p) >= low * R.autoStartPct ? resumeRun + 1 : 0
@@ -233,7 +255,7 @@ final class WorkoutEngine {
                 }
                 // średnia z kilku sekund – chwilowe odpuszczenie (ruch, skrzyżowanie) nie kończy interwału
                 let easeAvg = Double(P.suffix(R.earlyStopAvgSec).reduce(0, +)) / Double(max(1, min(R.earlyStopAvgSec, P.count)))
-                let easing = !isStopped && easeAvg < low * R.earlyStopPct
+                let easing = autoInterval && !isStopped && easeAvg < low * R.earlyStopPct
                 easeRun = easing ? easeRun + 1 : 0
                 if easeRun >= R.earlyStopSec && st.durationSec - inStep > 20 {
                     let back = min(R.earlyStopSec - 1, stepSecs.count)
@@ -377,9 +399,9 @@ final class WorkoutEngine {
     private func structuralCues(_ st: WorkoutStep, remaining: Int, nextAuto: Bool, speak: Bool) {
         func once(_ k: String) -> Bool { spoke.insert(k).inserted }
         // długie kroki: raport co 10 min – średnia całego odcinka + tętno (zamiast „połowy”)
-        let reports = st.isWork && st.durationSec >= R.statusMinStepSec
+        let reports = st.isWork && st.durationSec >= R.statusMinStepSec && lastSecond >= quietUntil
         if reports && inStep > 0 && inStep % R.statusEverySec == 0 && remaining > 120 && lastSecond - lastCorrection >= 30 {
-            let avg = avgInt(stepSecs.map { P[$0] })
+            let avg = avgInt(stepSecs.map { P[$0] }.filter { $0 >= R.autoPauseWatts })
             let hr = hrAvg(30)
             var state = ""
             if let h = hr, st.hrHigh != nil || st.hrLow != nil {
@@ -419,6 +441,7 @@ final class WorkoutEngine {
         let D = st.durationSec
         let grace = clampI(Int((Double(D) * 0.1).rounded()), R.corrGraceMinSec, R.corrGraceMaxSec)
         guard inStep > grace, remaining > 3, st.type != "warmup" else { return }
+        if s < quietUntil { outHigh = 0; outLow = 0; inRangeStreak = 0; return }   // postój / ruszanie
         // w pracy liczymy tylko sekundy, w których naprawdę jedziesz – dziura od ruchu nie zaniża średniej
         let from = stepSecs[min(10, stepSecs.count - 1)]
         let minP = Double(st.powerLow) * R.earlyStopPct
@@ -483,7 +506,7 @@ final class WorkoutEngine {
             return
         }
         // tętno ponad zakresem (jazda w strefie, rozgrzewka, schłodzenie – w interwałach decyduje moc)
-        guard !st.isInterval, st.type != "cooldown", let hi = st.hrHigh, inStep > R.hrGraceSec, remaining > 30 else { hrHighRun = 0; return }
+        guard !st.isInterval, st.type != "cooldown", let hi = st.hrHigh, inStep > R.hrGraceSec, remaining > 30, s >= quietUntil else { hrHighRun = 0; return }
         let hr = hrAvg(30)
         hrHighRun = (hr.map { $0 > hi + R.hrMarginBpm } ?? false) ? hrHighRun + 1 : 0
         if hrHighRun >= R.hrAlertSec, s - lastHrAlert >= R.hrCooldownSec, s - lastCorrection >= 60, let h = hr {

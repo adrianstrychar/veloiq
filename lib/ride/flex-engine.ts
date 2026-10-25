@@ -85,6 +85,7 @@ export const FLEX_PHRASES: Record<string, string> = {
   status: 'Średnio {avg} watów.{hrTxt}',
 };
 
+const QUIET_AFTER_STOP_SEC = 20; // cisza po postoju (światła, skrzyżowanie)
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 export function durationPl(sec: number): string {
@@ -182,9 +183,10 @@ export class FlexEngine {
     const st = this.step!;
     const autoInterval = st.type === 'interval' && this.isAuto(this.stepIdx);
     const cad = sample.cad ?? null;
+    if (p < this.rules.autoPauseWatts && (cad === null || cad === 0)) this.quietUntil = s + QUIET_AFTER_STOP_SEC;
 
-    // --- interwał elastyczny: auto-pauza, wznowienie, wcześniejsze przerwanie
-    if (autoInterval) {
+    // --- interwał: auto-pauza i wznowienie; elastyczny dodatkowo wcześniejsze przerwanie
+    if (st.type === 'interval' && st.durationSec >= 60) {
       const low = st.powerLow;
       if (this.phase === 'autoPaused') {
         this.resumeRun = p >= low * this.rules.autoStartPct ? this.resumeRun + 1 : 0;
@@ -206,7 +208,7 @@ export class FlexEngine {
           return;
         }
         const easeAvg = mean(this.P.slice(-this.rules.earlyStopAvgSec));
-        const easing = !stopped && easeAvg < low * this.rules.earlyStopPct;
+        const easing = autoInterval && !stopped && easeAvg < low * this.rules.earlyStopPct;
         this.easeRun = easing ? this.easeRun + 1 : 0;
         if (this.easeRun >= this.rules.earlyStopSec && st.durationSec - this.inStep > 20) {
           const back = this.rules.earlyStopSec - 1;
@@ -340,9 +342,9 @@ export class FlexEngine {
   private structuralCues(st: WorkoutStep, remaining: number, nextAuto: boolean, speak: boolean) {
     const once = (k: string) => (this.spoke.has(k) ? false : (this.spoke.add(k), true));
     const R = this.rules;
-    const reports = (st.type === 'steady' || st.type === 'interval') && st.durationSec >= R.statusMinStepSec;
+    const reports = (st.type === 'steady' || st.type === 'interval') && st.durationSec >= R.statusMinStepSec && this.s >= this.quietUntil;
     if (reports && this.inStep % R.statusEverySec === 0 && remaining > 120 && this.s - this.lastCorrection >= 30) {
-      const avg = Math.round(mean(this.stepSecs.map((i) => this.P[i])));
+      const avg = Math.round(mean(this.stepSecs.map((i) => this.P[i]).filter((w) => w >= R.autoPauseWatts)));
       const hr = this.hrAvg(30);
       const state = hr === null || !(st.hrHigh || st.hrLow) ? ''
         : st.hrHigh && hr > st.hrHigh + R.hrMarginBpm ? 'high' : st.hrLow && hr < st.hrLow - R.hrMarginBpm ? 'low' : 'ok';
@@ -378,6 +380,7 @@ export class FlexEngine {
     // się zgadzać – krótki zryw lub chwilowe odpuszczenie (ruch, skrzyżowanie) nie wywołuje komunikatu
     const grace = clamp(Math.round(D * 0.1), R.corrGraceMinSec, R.corrGraceMaxSec);
     if (this.inStep <= grace || remaining <= 3 || st.type === 'warmup') return;
+    if (s < this.quietUntil) { this.outHigh = 0; this.outLow = 0; this.inRangeStreak = 0; return; } // postój / ruszanie
     const isWork = st.type === 'interval' || st.type === 'steady';
     // w pracy liczymy tylko sekundy, w których naprawdę jedziesz – dziura od ruchu nie zaniża średniej
     const from = this.stepSecs[Math.min(10, this.stepSecs.length - 1)];
@@ -423,6 +426,7 @@ export class FlexEngine {
 
   // ------------------------------------------------------------------ tętno
   private hrHighRun = 0;
+  private quietUntil = -1;
   private corrRepeat = 0;
   private lastCorrDir = 0;
   private lastHrAlert = -1e9;
@@ -449,7 +453,7 @@ export class FlexEngine {
       return;
     }
     // tętno ponad zakresem (jazda w strefie, rozgrzewka, schłodzenie – w interwałach decyduje moc)
-    if (st.type === 'interval' || st.type === 'cooldown' || !st.hrHigh || this.inStep <= R.hrGraceSec || remaining <= 30) { this.hrHighRun = 0; return; }
+    if (st.type === 'interval' || st.type === 'cooldown' || !st.hrHigh || this.inStep <= R.hrGraceSec || remaining <= 30 || s < this.quietUntil) { this.hrHighRun = 0; return; }
     const hr = this.hrAvg(30);
     this.hrHighRun = hr !== null && hr > st.hrHigh + R.hrMarginBpm ? this.hrHighRun + 1 : 0;
     if (this.hrHighRun >= R.hrAlertSec && s - this.lastHrAlert >= R.hrCooldownSec && s - this.lastCorrection >= 60) {
