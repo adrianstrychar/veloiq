@@ -52,6 +52,9 @@ async function matchSessionLabel(
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const stravaActivityId = params.id;
+  if (Number(stravaActivityId) < 0) {
+    return NextResponse.json({ ok: false, reason: 'veloiq_ride', message: 'Ta jazda jest nagrana w VeloIQ – nie ma jej na Stravie.' });
+  }
   const supabase = createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: 'not_authenticated' }, { status: 401 });

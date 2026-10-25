@@ -7,6 +7,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   const stravaActivityId = params.id;
+  if (Number(stravaActivityId) < 0) return NextResponse.json({ ok: true, veloiq: true }); // detal liczony przy imporcie
 
   const supabase = createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();

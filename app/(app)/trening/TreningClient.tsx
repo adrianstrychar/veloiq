@@ -26,6 +26,8 @@ export function TreningClient({ plan, planLabel, ftp, firstName }: { plan: Worko
           summary, samples, script, startedAt, outdoor: settings.outdoor, ftp,
           source: isNativeRide() ? 'veloiq-ios' : 'veloiq-web-sim',
         });
+        // jazda z telefonu → lista aktywności, kalendarz, plan, silnik FTP (nie blokuje „Zapisano”)
+        void fetch('/api/rides/import', { method: 'POST' }).then(() => router.refresh()).catch(() => {});
       }}
       onAskCoach={() => router.push('/chat')}
     />

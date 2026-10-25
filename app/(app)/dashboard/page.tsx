@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { type PmcRow } from '@/components/veloiq/RawMetrics';
 import { EngineCard } from '@/components/veloiq/EngineCard';
+import { importMissingRides } from '@/lib/ride/import-rides';
 import { ReadinessModule } from '@/components/veloiq/ReadinessModule';
 import { DailyInsight } from '@/components/veloiq/DailyInsight';
 import { LastActivityCard, type LastActivityRow } from '@/components/veloiq/LastActivityCard';
@@ -37,6 +38,8 @@ export default async function DashboardPage() {
     .single();
 
   const athleteId = athlete?.id;
+  // jazdy nagrane w VeloIQ, których jeszcze nie ma na liście (np. zapis bez internetu) – szybkie, gdy nic nowego
+  if (user && athleteId) await importMissingRides(supabase, user.id, athleteId as string).catch(() => 0);
   const stravaConnected = !!athlete?.strava_id;
   const todayISO = localTodayISO();
 

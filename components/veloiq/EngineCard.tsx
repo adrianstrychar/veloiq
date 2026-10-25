@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis, Tooltip, ReferenceLine, ReferenceDot } from 'recharts';
-import { TrendingUp, TrendingDown, Wind } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wind, Pencil } from 'lucide-react';
 import { C, F, RADIUS } from '@/lib/theme';
 import { CardLabel } from './CardLabel';
 import { wkgLabel } from '@/lib/level';
@@ -43,6 +43,55 @@ interface EngineCardProps {
   recon: ReconPoint[];         // historia zrekonstruowana (envelope) — linia CIĄGŁA
   forecast: ForecastPoint[];   // prognoza periodyzowana — linia PRZERYWANA
   milestones: Milestone[];
+}
+
+// ── Ręczne FTP ──────────────────────────────────────────────────────────────────
+// Gdy automat zaniża (np. po przerwie bez mocnych jazd). Silnik może potem FTP tylko podnieść,
+// a waty w planie (od dziś) są przeliczane od razu.
+function FtpEditor({ current, onClose }: { current: number | null; onClose: () => void }) {
+  const router = useRouter();
+  const [val, setVal] = useState(current ? String(current) : '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const n = Math.round(Number(val));
+  const ok = Number.isFinite(n) && n >= 80 && n <= 600;
+  async function save() {
+    if (!ok || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch('/api/ftp/manual', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ftp: n }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.message ?? j.error ?? `błąd ${res.status}`);
+      onClose();
+      router.refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Nie udało się zapisać');
+    } finally { setBusy(false); }
+  }
+  return (
+    <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: RADIUS.card, padding: 12, marginBottom: 12 }}>
+      <div style={{ fontSize: 12, color: C.text, fontWeight: 600, marginBottom: 8 }}>Ustaw FTP ręcznie</div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          type="number" inputMode="numeric" min={80} max={600} value={val} autoFocus
+          onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
+          style={{ width: 90, minWidth: 0, background: C.card2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 16, fontFamily: F.display }}
+        />
+        <span style={{ fontSize: 13, color: C.muted }}>W</span>
+        <button onClick={save} disabled={!ok || busy}
+          style={{ marginLeft: 'auto', background: C.cyan, color: C.bg, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 700, opacity: !ok || busy ? 0.5 : 1, cursor: 'pointer' }}>
+          {busy ? 'Zapisuję…' : 'Zapisz'}
+        </button>
+        <button onClick={onClose} disabled={busy}
+          style={{ background: 'transparent', color: C.muted, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 13, cursor: 'pointer' }}>
+          Anuluj
+        </button>
+      </div>
+      <div style={{ fontSize: 11, color: err ? C.red : C.muted, lineHeight: 1.5, marginTop: 8 }}>
+        {err ?? 'Waty w planie od dziś przeliczę na nowe FTP. Automat może je później tylko podnieść – nie obniży, dopóki nie pojedziesz mocno słabiej.'}
+      </div>
+    </div>
+  );
 }
 
 // ── Wykres FTP (fakt/model) ────────────────────────────────────────────────────
@@ -157,6 +206,7 @@ function FtpChart({ recon, forecast, milestones, weightKg }: { recon: ReconPoint
 export function EngineCard({ ftp, vo2Estimate, weightKg, recon, forecast, milestones }: EngineCardProps) {
   const router = useRouter();
   const [accepting, setAccepting] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   async function acceptEstimate() {
     if (accepting) return;
@@ -185,10 +235,11 @@ export function EngineCard({ ftp, vo2Estimate, weightKg, recon, forecast, milest
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: RADIUS.card, padding: 18 }}>
       <CardLabel style={{ marginBottom: 12 }}>Twój silnik</CardLabel>
+      {editing && <FtpEditor current={ftp.value} onClose={() => setEditing(false)} />}
 
       {ftp.empty || ftpNow == null ? (
         <div style={{ background: C.bg, borderRadius: RADIUS.card, border: `1px dashed ${C.border}`, padding: 16, textAlign: 'center' }}>
-          <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 4 }}>Ustaw FTP w profilu</div>
+          <button onClick={() => setEditing(true)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: C.cyan, fontWeight: 600, marginBottom: 4 }}>Ustaw FTP</button>
           <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
             Prognoza rozwoju pojawi się, gdy poznamy Twój punkt startowy — zrób test 20 min albo jeźdź z miernikiem, a silnik oszacuje FTP sam.
           </div>
@@ -209,6 +260,12 @@ export function EngineCard({ ftp, vo2Estimate, weightKg, recon, forecast, milest
                   letterSpacing: '0.04em', textTransform: 'uppercase',
                   background: ftp.tagColor + '22', color: ftp.tagColor,
                 }}>{ftp.tag}</span>
+                {!editing && (
+                  <button onClick={() => setEditing(true)} aria-label="Zmień FTP ręcznie" title="Zmień FTP ręcznie"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, padding: '2px 7px', color: C.muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' }}>
+                    <Pencil size={11} strokeWidth={2} /> zmień
+                  </button>
+                )}
               </div>
             </div>
             {gain !== 0 && (
