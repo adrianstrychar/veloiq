@@ -54,6 +54,7 @@ final class DirectorVoice: NSObject {
         "cadenceLow": "cadLow", "cadenceHigh": "cadHigh", "half": "half", "lastMinute": "last", "praise": "praise",
         "planDone": "done", "freeStart": "free", "effort": "effort",
         "powerLost": "powerLost", "powerBack": "powerBack", "hrLost": "hrLost", "hrBack": "hrBack",
+        "hrHigh": "hrHigh", "hrRecovered": "hrRec", "status": "status",
     ]
     private static let silent: Set<String> = ["seriesPrev", "restInfo"]
 
@@ -93,6 +94,20 @@ final class DirectorVoice: NSObject {
         if has(a) && has(b) { return [a, b] }
         return has("w.\(r5(h))") ? ["w.\(r5(h))"] : []
     }
+    private func bpm(_ v: String?) -> [String] {
+        guard let h = num(v) else { return [] }
+        let id = "hrv.\(Int(h.rounded()))"
+        return has(id) ? [id] : []
+    }
+    /// Losowy wariant z grupy (np. hrs.ok.*), bez powtórzenia pod rząd.
+    private func pick(_ prefix: String) -> [String] {
+        let ids = pack.clips.keys.filter { $0.hasPrefix(prefix + ".") }.sorted()
+        guard !ids.isEmpty else { return [] }
+        var i = Int.random(in: 0..<ids.count)
+        if ids.count > 1 && i == last[prefix] { i = (i + 1) % ids.count }
+        last[prefix] = i
+        return [ids[i]]
+    }
     private func watts(_ v: String?) -> [String] {
         guard let w = num(v) else { return [] }
         return has("w.\(r5(w))") ? ["w.\(r5(w))"] : []
@@ -124,6 +139,17 @@ final class DirectorVoice: NSObject {
             seg += watts(vars["avg"])
         case "effort":
             seg += dur(vars["dur"]) + watts(vars["avg"])
+        case "hrHigh":
+            seg += bpm(vars["hr"])
+        case "hrRecovered":
+            seg = bpm(vars["hr"]) + seg
+        case "status":
+            seg += watts(vars["avg"])
+            let b = bpm(vars["hr"])
+            if !b.isEmpty {
+                seg += b
+                if let st = vars["hrState"], !st.isEmpty { seg += pick("hrs." + st) }
+            }
         default: break
         }
         // imię tylko w kluczowych momentach i rzadko – wtedy działa

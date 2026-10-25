@@ -64,6 +64,11 @@ final class WorkoutEngine {
     private var spoke = Set<String>()
     private var lastRestSec: Int?
     private var spokeHr = false
+    private var hrHighRun = 0, lastHrAlert = -1_000_000
+    private var hrRecStart: Int?
+    private var corrRepeat = 0, lastCorrDir = 0
+    private var quietUntil = -1
+    private static let quietAfterStopSec = 20   // cisza po postoju (światła, skrzyżowanie)
 
     // Wyniki
     private(set) var series: [SeriesResult] = []
@@ -106,10 +111,27 @@ final class WorkoutEngine {
     func ingestCadence(_ rpm: Int, at: Date = Date()) { lastCadence = (rpm, at) }
     func ingestHr(_ bpm: Int, at: Date = Date()) { lastHr = (bpm, at) }
 
+    /// Bluetooth potrafi zgubić czujnik na kilka sekund – mówimy dopiero, gdy brak trwa ≥ 60 s,
+    /// a „wróciło” tylko wtedy, gdy wcześniej padło „nie widzę”.
+    private var sensorDownSince: [String: Int] = [:]
+    private var sensorAnnounced = Set<String>()
+    private static let sensorLostAfterSec = 60
+
     func sensorChanged(kind: String, connected: Bool) {
         guard !stopped, lastSecond >= 0 else { return }
-        let key = kind == "power" ? (connected ? "powerBack" : "powerLost") : (connected ? "hrBack" : "hrLost")
-        say(key, [:], .sensor, true)
+        if connected {
+            sensorDownSince[kind] = nil
+            if sensorAnnounced.remove(kind) != nil { say(kind == "power" ? "powerBack" : "hrBack", [:], .sensor, !replaying) }
+        } else if sensorDownSince[kind] == nil {
+            sensorDownSince[kind] = lastSecond
+        }
+    }
+
+    private func checkSensors(_ s: Int, _ speak: Bool) {
+        for (kind, since) in sensorDownSince where !sensorAnnounced.contains(kind) && s - since >= Self.sensorLostAfterSec {
+            sensorAnnounced.insert(kind)
+            say(kind == "power" ? "powerLost" : "hrLost", [:], .sensor, speak)
+        }
     }
 
     func pause(at now: Date = Date()) {
@@ -203,11 +225,14 @@ final class WorkoutEngine {
         if s == 0 {
             if phase == .free { say("freeStart", [:], .info, speak) } else { announceStep(0, speak) }
         }
+        checkSensors(s, speak)
         if phase == .free { freeTick(s, speak); return }
         guard let st = step else { return }
+        if p < R.autoPauseWatts && (cad == nil || cad == 0) { quietUntil = s + Self.quietAfterStopSec }
+        let autoInterval = st.isInterval && isAuto(stepIdx)
 
-        // --- interwał elastyczny: auto-pauza, wznowienie, wcześniejsze przerwanie
-        if st.isInterval && isAuto(stepIdx) {
+        // --- interwał: auto-pauza i wznowienie; elastyczny dodatkowo wcześniejsze przerwanie
+        if st.isInterval && st.durationSec >= 60 {
             let low = Double(st.powerLow)
             if phase == .autoPaused {
                 resumeRun = Double(p) >= low * R.autoStartPct ? resumeRun + 1 : 0
@@ -228,7 +253,9 @@ final class WorkoutEngine {
                     say("autoPause", ["left": Phrases.duration(st.durationSec - inStep)], .pause, speak)
                     return
                 }
-                let easing = !isStopped && Double(p) < low * R.earlyStopPct
+                // średnia z kilku sekund – chwilowe odpuszczenie (ruch, skrzyżowanie) nie kończy interwału
+                let easeAvg = Double(P.suffix(R.earlyStopAvgSec).reduce(0, +)) / Double(max(1, min(R.earlyStopAvgSec, P.count)))
+                let easing = autoInterval && !isStopped && easeAvg < low * R.earlyStopPct
                 easeRun = easing ? easeRun + 1 : 0
                 if easeRun >= R.earlyStopSec && st.durationSec - inStep > 20 {
                     let back = min(R.earlyStopSec - 1, stepSecs.count)
@@ -251,6 +278,7 @@ final class WorkoutEngine {
 
         structuralCues(st, remaining: remaining, nextAuto: nextAuto, speak: speak)
         if !armed { corrections(st, s: s, cad: cad, remaining: remaining, speak: speak) }
+        hrCoach(st, s: s, remaining: remaining, speak: speak)
 
         // --- czuwanie: wykrycie startu kolejnego interwału
         // (przy krótkiej przerwie nie łapiemy "rozpędu" z poprzedniego interwału jako nowego startu)
@@ -304,6 +332,7 @@ final class WorkoutEngine {
         outHigh = 0; outLow = 0; inRangeStreak = 0; cadLowRun = 0; cadHighRun = 0
         lastCorrection = -1_000_000
         spoke.removeAll()
+        hrHighRun = 0; hrRecStart = nil; corrRepeat = 0; lastCorrDir = 0
         phase = .running
         if !isAuto(idx) { announceStep(idx, speak) }
     }
@@ -329,7 +358,14 @@ final class WorkoutEngine {
         let pw = secs.map { P[$0] }
         let evalEnd = max(R.graceSec, secs.count - 3)
         let evalSecs = secs.count > R.graceSec ? Array(secs[R.graceSec..<evalEnd]) : []
-        let inR = evalSecs.filter { P[$0] >= st.powerLow && P[$0] <= st.powerHigh }.count
+        let tolC = max(R.deadbandW, Double(st.powerLow + st.powerHigh) / 2 * R.deadbandPct)
+        var inR = 0
+        if secs.count > R.graceSec {
+            for k in R.graceSec..<evalEnd {
+                let a = Double(avgInt(secs[max(0, k - 29)...k].map { P[$0] }))
+                if a >= Double(st.powerLow) - tolC && a <= Double(st.powerHigh) + tolC { inR += 1 }
+            }
+        }
         let hrs = secs.compactMap { HR[$0] }.filter { $0 > 0 }
         let res = SeriesResult(
             n: intervalNumbers[stepIdx] ?? series.count + 1, durationSec: secs.count, plannedSec: st.durationSec,
@@ -362,10 +398,25 @@ final class WorkoutEngine {
 
     private func structuralCues(_ st: WorkoutStep, remaining: Int, nextAuto: Bool, speak: Bool) {
         func once(_ k: String) -> Bool { spoke.insert(k).inserted }
-        if st.isInterval && st.durationSec >= 120 && inStep == st.durationSec / 2 && once("half") {
+        // długie kroki: raport co 10 min – średnia całego odcinka + tętno (zamiast „połowy”)
+        let reports = st.isWork && st.durationSec >= R.statusMinStepSec && lastSecond >= quietUntil
+        if reports && inStep > 0 && inStep % R.statusEverySec == 0 && remaining > 120 && lastSecond - lastCorrection >= 30 {
+            let avg = avgInt(stepSecs.map { P[$0] }.filter { $0 >= R.autoPauseWatts })
+            let hr = hrAvg(30)
+            var state = ""
+            if let h = hr, st.hrHigh != nil || st.hrLow != nil {
+                if let hi = st.hrHigh, h > hi + R.hrMarginBpm { state = "high" }
+                else if let lo = st.hrLow, h < lo - R.hrMarginBpm { state = "low" }
+                else { state = "ok" }
+            }
+            let stateTxt = ["ok": ", w normie", "high": ", powyżej strefy", "low": ", poniżej strefy"][state] ?? ""
+            let hrTxt = hr.map { " Tętno \($0)\(stateTxt)." } ?? ""
+            say("status", ["avg": "\(avg)", "hr": hr.map { "\($0)" } ?? "", "hrState": state, "hrTxt": hrTxt], .info, speak)
+        }
+        if st.isInterval && st.durationSec >= 120 && !reports && inStep == st.durationSec / 2 && once("half") {
             say("half", ["avg": "\(avgInt(stepSecs.map { P[$0] }))"], .info, speak)
         }
-        if st.isWork && st.durationSec >= 180 && remaining == 60 && once("lastMin") {
+        if st.isInterval && st.durationSec >= 180 && remaining == 60 && once("lastMin") {
             say("lastMinute", [:], .info, speak)
         }
         let countdown = ["", "Jeden", "Dwa", "Trzy"]
@@ -385,22 +436,39 @@ final class WorkoutEngine {
     }
 
     private func corrections(_ st: WorkoutStep, s: Int, cad: Int?, remaining: Int, speak: Bool) {
-        guard inStep > R.graceSec, remaining > 3 else { return }
-        let win = stepSecs.suffix(min(R.smoothingSec, stepSecs.count))
-        let ps = avgInt(win.map { P[$0] })
-        let inRange = ps >= st.powerLow && ps <= st.powerHigh
-        outHigh = ps > st.powerHigh ? outHigh + 1 : 0
-        outLow = st.isWork && ps < st.powerLow ? outLow + 1 : 0
+        // korekty na ŚREDNIEJ: okno rośnie z długością kroku (20–60 s), a średnia całego kroku też musi być
+        // poza zakresem – krótki zryw lub chwilowe odpuszczenie (ruch, skrzyżowanie) nie wywołuje komunikatu
+        let D = st.durationSec
+        let grace = clampI(Int((Double(D) * 0.1).rounded()), R.corrGraceMinSec, R.corrGraceMaxSec)
+        guard inStep > grace, remaining > 3, st.type != "warmup" else { return }
+        if s < quietUntil { outHigh = 0; outLow = 0; inRangeStreak = 0; return }   // postój / ruszanie
+        // w pracy liczymy tylko sekundy, w których naprawdę jedziesz – dziura od ruchu nie zaniża średniej
+        let from = stepSecs[min(10, stepSecs.count - 1)]
+        let minP = Double(st.powerLow) * R.earlyStopPct
+        let act = st.isWork ? stepSecs.filter { Double(P[$0]) >= minP } : stepSecs
+        let winLen = clampI(Int((Double(D) / 6).rounded()), R.corrWindowMinSec, R.corrWindowMaxSec)
+        if act.count < winLen { outHigh = 0; outLow = 0; return }
+        let roll = avgInt(act.suffix(winLen).map { P[$0] })
+        let cum = avgInt(act.filter { $0 >= from }.map { P[$0] })
+        let tol = Int(max(R.deadbandW, Double(st.powerLow + st.powerHigh) / 2 * R.deadbandPct).rounded())
+        let inRange = roll >= st.powerLow - tol / 2 && roll <= st.powerHigh + tol / 2
+        outHigh = roll > st.powerHigh + tol && cum > st.powerHigh ? outHigh + 1 : 0
+        outLow = st.isWork && roll < st.powerLow - tol && cum < st.powerLow ? outLow + 1 : 0
         inRangeStreak = inRange ? inRangeStreak + 1 : 0
-        let can = s - lastCorrection >= R.cooldownSec
-        if can && outHigh >= R.outOfRangeSec {
-            say(st.isWork ? "tooHigh" : "recoveryTooHigh", ["delta": "\(r5(ps - st.powerHigh))", "high": "\(st.powerHigh)"], .correction, speak)
+        // kolejna uwaga w tę samą stronę coraz rzadziej (1×, 2×, 3× przerwy); schłodzenie – najwyżej jedna
+        let can = s - lastCorrection >= clampI(Int((Double(D) / 4).rounded()), R.cooldownSec, R.cooldownMaxSec) * (1 + corrRepeat)
+            && !(st.type == "cooldown" && corrRepeat > 0)
+        let dHigh = r5(roll - st.powerHigh), dLow = r5(st.powerLow - roll)
+        if can && outHigh >= R.outOfRangeSec && dHigh >= R.minDeltaW {
+            say(st.isWork ? "tooHigh" : "recoveryTooHigh", ["delta": "\(dHigh)", "high": "\(st.powerHigh)"], .correction, speak)
+            corrRepeat = lastCorrDir == 1 ? corrRepeat + 1 : 1; lastCorrDir = 1
             lastCorrection = s; outHigh = 0; return
         }
         // wyraźne odpuszczenie w interwale elastycznym obsługuje "przerwałeś", nie "dodaj 125 W"
         let givingUp = st.isInterval && isAuto(stepIdx) && easeRun >= 3
-        if can && !givingUp && outLow >= R.outOfRangeSec {
-            say("tooLow", ["delta": "\(r5(st.powerLow - ps))", "low": "\(st.powerLow)"], .correction, speak)
+        if can && !givingUp && outLow >= R.outOfRangeSec && dLow >= R.minDeltaW {
+            say("tooLow", ["delta": "\(dLow)", "low": "\(st.powerLow)"], .correction, speak)
+            corrRepeat = lastCorrDir == -1 ? corrRepeat + 1 : 1; lastCorrDir = -1
             lastCorrection = s; outLow = 0; return
         }
         if st.isInterval && inRangeStreak >= R.praiseAfterSec && remaining > 30 && spoke.insert("praise").inserted {
@@ -414,6 +482,36 @@ final class WorkoutEngine {
             } else if can && cadHighRun >= R.cadenceGraceSec, let hi = st.cadenceHigh {
                 say("cadenceHigh", ["cad": "\(c)", "cadHigh": "\(hi)"], .cadence, speak); lastCorrection = s; cadHighRun = 0
             }
+        }
+    }
+
+    // MARK: - Tętno
+
+    /// Średnie tętno z ostatnich n s (nil = brak pasa / za mało odczytów).
+    private func hrAvg(_ n: Int) -> Int? {
+        let a = HR.suffix(n).compactMap { $0 }.filter { $0 > 0 }
+        return a.count >= max(1, n / 2) ? avgInt(a) : nil
+    }
+
+    private func hrCoach(_ st: WorkoutStep, s: Int, remaining: Int, speak: Bool) {
+        // przerwa: potwierdzenie regeneracji, gdy tętno zejdzie poniżej progu (raz na przerwę)
+        if st.type == "recovery" {
+            guard let thr = st.hrHigh, !spoke.contains("hrRec") else { return }
+            if inStep == 15 { hrRecStart = hrAvg(10) }
+            let quiet = (remaining > 12 && abs(remaining - R.armLeadSec) > 8) || remaining < -3  // nie wchodź w zapowiedź/odliczanie
+            if inStep >= 45, let h = hrAvg(10), h <= thr, (hrRecStart ?? 0) > thr + 5, quiet {
+                spoke.insert("hrRec")
+                say("hrRecovered", ["hr": "\(h)"], .info, speak)
+            }
+            return
+        }
+        // tętno ponad zakresem (jazda w strefie, rozgrzewka, schłodzenie – w interwałach decyduje moc)
+        guard !st.isInterval, st.type != "cooldown", let hi = st.hrHigh, inStep > R.hrGraceSec, remaining > 30, s >= quietUntil else { hrHighRun = 0; return }
+        let hr = hrAvg(30)
+        hrHighRun = (hr.map { $0 > hi + R.hrMarginBpm } ?? false) ? hrHighRun + 1 : 0
+        if hrHighRun >= R.hrAlertSec, s - lastHrAlert >= R.hrCooldownSec, s - lastCorrection >= 60, let h = hr {
+            say("hrHigh", ["hr": "\(h)", "high": "\(hi)"], .correction, speak)
+            lastHrAlert = s; lastCorrection = s; hrHighRun = 0
         }
     }
 
@@ -498,6 +596,7 @@ final class WorkoutEngine {
     }
 
     private func avgInt(_ a: [Int]) -> Int { a.isEmpty ? 0 : Int((Double(a.reduce(0, +)) / Double(a.count)).rounded()) }
+    private func clampI(_ v: Int, _ lo: Int, _ hi: Int) -> Int { min(hi, max(lo, v)) }
     private func r5(_ v: Int) -> Int { max(5, Int((Double(v) / 5).rounded()) * 5) }
 
     private func normalizedPower() -> Int {

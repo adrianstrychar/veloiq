@@ -16,6 +16,9 @@ export interface WorkoutStep {
   /** 'auto' = interwał startuje, gdy zawodnik ruszy (wykrywanie po mocy); 'time' = z zegarem.
    *  Domyślnie: interwały ≥ 60 s (poza pierwszym krokiem) → 'auto'. */
   start?: 'auto' | 'time';
+  /** Zakres tętna kroku (bpm). recovery: hrHigh = próg „zregenerowany”. Brak = bez komunikatów o tętnie. */
+  hrLow?: number;
+  hrHigh?: number;
 }
 
 export interface WorkoutRules {
@@ -38,6 +41,23 @@ export interface WorkoutRules {
   effortStartPct?: number;   // jazda swobodna: start wysiłku, ułamek FTP (0.9)
   effortEndPct?: number;     // koniec wysiłku (0.75)
   effortMinSec?: number;     // minimalny wysiłek do zapisania (60)
+  // korekty mocy liczone na średniej (nie na chwilowych skokach)
+  corrWindowMinSec?: number; // okno średniej: długość kroku / 6, min (20)
+  corrWindowMaxSec?: number; // … max (60)
+  corrGraceMinSec?: number;  // bez korekt na starcie kroku: 10% kroku, min (20)
+  corrGraceMaxSec?: number;  // … max (60)
+  cooldownMaxSec?: number;   // przerwa między korektami: długość kroku / 4, max (180)
+  deadbandW?: number;        // tolerancja poza zakresem, W (10)
+  deadbandPct?: number;      // … albo % środka zakresu, co większe (0.03)
+  minDeltaW?: number;        // mniejszych poprawek nie mówimy (10)
+  earlyStopAvgSec?: number;  // przerwanie oceniane na średniej z N s (10)
+  // tętno
+  hrMarginBpm?: number;      // margines ponad zakres (3)
+  hrAlertSec?: number;       // ile sekund ponad zakresem = komunikat (60)
+  hrGraceSec?: number;       // bez uwag o tętnie na starcie kroku – tętno się dopiero ustala (240)
+  hrCooldownSec?: number;    // przerwa między uwagami o tętnie (300)
+  statusEverySec?: number;   // raport „średnia + tętno” w długich krokach co N s (600)
+  statusMinStepSec?: number; // od jakiej długości kroku raporty (1200)
 }
 
 /** Szablony komunikatów. Placeholdery: {n} {total} {name} {dur} {low} {high} {avg} {pct} {delta} {cad} {cadLow} {cadHigh} */
@@ -47,7 +67,8 @@ export type PhraseKey =
   | 'half' | 'lastMinute' | 'praise' | 'intervalEnd' | 'hrDrift'
   | 'powerLost' | 'powerBack' | 'hrLost' | 'hrBack'
   | 'armNext' | 'tenSec' | 'goNow' | 'waiting' | 'autoStart' | 'restInfo' | 'autoPause' | 'autoResume'
-  | 'earlyStop' | 'seriesEnd' | 'seriesPrev' | 'hrUp' | 'planDone' | 'freeStart' | 'effort';
+  | 'earlyStop' | 'seriesEnd' | 'seriesPrev' | 'hrUp' | 'planDone' | 'freeStart' | 'effort'
+  | 'hrHigh' | 'hrRecovered' | 'status';
 
 export interface WorkoutScript {
   version: 1;

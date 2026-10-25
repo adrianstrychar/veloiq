@@ -23,6 +23,8 @@ struct WorkoutStep: Codable {
     let cadenceHigh: Int?
     let cueStart: String?
     let start: String? // "auto" | "time" – domyślnie interwały ≥ 60 s → auto
+    let hrLow: Int?    // zakres tętna kroku; recovery: hrHigh = próg „zregenerowany”
+    let hrHigh: Int?
 
     var isInterval: Bool { type == "interval" }
     var isWork: Bool { type == "interval" || type == "steady" }
@@ -49,6 +51,22 @@ struct WorkoutRules: Codable {
     var effortStartPct: Double?
     var effortEndPct: Double?
     var effortMinSec: Double?
+    // korekty na średniej + tętno
+    var corrWindowMinSec: Double?
+    var corrWindowMaxSec: Double?
+    var corrGraceMinSec: Double?
+    var corrGraceMaxSec: Double?
+    var cooldownMaxSec: Double?
+    var deadbandW: Double?
+    var deadbandPct: Double?
+    var minDeltaW: Double?
+    var earlyStopAvgSec: Double?
+    var hrMarginBpm: Double?
+    var hrAlertSec: Double?
+    var hrGraceSec: Double?
+    var hrCooldownSec: Double?
+    var statusEverySec: Double?
+    var statusMinStepSec: Double?
 }
 
 /// Reguły z domyślnymi wartościami – identyczne jak DEFAULT_FLEX_RULES w web/flex-engine.ts
@@ -60,28 +78,46 @@ struct ResolvedRules {
     let autoPauseWatts: Int, autoPauseSec: Int, resumeSec: Int
     let earlyStopPct: Double, earlyStopSec: Int
     let effortStartPct: Double, effortEndPct: Double, effortMinSec: Int
+    let corrWindowMinSec: Int, corrWindowMaxSec: Int, corrGraceMinSec: Int, corrGraceMaxSec: Int, cooldownMaxSec: Int
+    let deadbandW: Double, deadbandPct: Double, minDeltaW: Int, earlyStopAvgSec: Int
+    let hrMarginBpm: Int, hrAlertSec: Int, hrGraceSec: Int, hrCooldownSec: Int, statusEverySec: Int, statusMinStepSec: Int
 
     init(_ r: WorkoutRules?) {
         func i(_ v: Double?, _ d: Int) -> Int { v.map { Int($0.rounded()) } ?? d }
         smoothingSec = max(1, i(r?.smoothingSec, 10))
-        outOfRangeSec = i(r?.outOfRangeSec, 8)
-        cooldownSec = i(r?.cooldownSec, 30)
+        outOfRangeSec = i(r?.outOfRangeSec, 15)
+        cooldownSec = i(r?.cooldownSec, 60)
         graceSec = i(r?.graceSec, 10)
         praiseAfterSec = i(r?.praiseAfterSec, 90)
-        cadenceGraceSec = i(r?.cadenceGraceSec, 15)
+        cadenceGraceSec = i(r?.cadenceGraceSec, 20)
         hrDriftBpm = i(r?.hrDriftBpm, 5)
         armLeadSec = i(r?.armLeadSec, 60)
         autoStartPct = r?.autoStartPct ?? 0.85
-        autoStartSec = max(1, i(r?.autoStartSec, 4))
+        autoStartSec = max(1, i(r?.autoStartSec, 6))
         waitRemindSec = max(1, i(r?.waitRemindSec, 120))   // dzielnik w % – nie może być 0
         autoPauseWatts = i(r?.autoPauseWatts, 30)
         autoPauseSec = max(1, i(r?.autoPauseSec, 5))
         resumeSec = 2
         earlyStopPct = r?.earlyStopPct ?? 0.6
-        earlyStopSec = max(1, i(r?.earlyStopSec, 15))
+        earlyStopSec = max(1, i(r?.earlyStopSec, 40))
         effortStartPct = r?.effortStartPct ?? 0.9
         effortEndPct = r?.effortEndPct ?? 0.75
         effortMinSec = i(r?.effortMinSec, 60)
+        corrWindowMinSec = max(1, i(r?.corrWindowMinSec, 20))
+        corrWindowMaxSec = max(1, i(r?.corrWindowMaxSec, 60))
+        corrGraceMinSec = i(r?.corrGraceMinSec, 20)
+        corrGraceMaxSec = i(r?.corrGraceMaxSec, 60)
+        cooldownMaxSec = i(r?.cooldownMaxSec, 180)
+        deadbandW = r?.deadbandW ?? 10
+        deadbandPct = r?.deadbandPct ?? 0.03
+        minDeltaW = i(r?.minDeltaW, 10)
+        earlyStopAvgSec = max(1, i(r?.earlyStopAvgSec, 10))
+        hrMarginBpm = i(r?.hrMarginBpm, 3)
+        hrAlertSec = max(1, i(r?.hrAlertSec, 60))
+        hrGraceSec = i(r?.hrGraceSec, 240)
+        hrCooldownSec = i(r?.hrCooldownSec, 300)
+        statusEverySec = max(60, i(r?.statusEverySec, 600))   // dzielnik w % – nie może być 0
+        statusMinStepSec = i(r?.statusMinStepSec, 1200)
     }
 }
 
@@ -121,6 +157,9 @@ enum Phrases {
         "powerBack": "Moc znowu jest.",
         "hrLost": "Brak sygnału tętna.",
         "hrBack": "Tętno wróciło.",
+        "hrHigh": "Tętno {hr}, powyżej zakresu. Zwolnij trochę.",
+        "hrRecovered": "Tętno spadło do {hr}. Jesteś gotowy.",
+        "status": "Średnio {avg} watów.{hrTxt}",
     ]
 
     static func render(_ template: String, _ vars: [String: String]) -> String {

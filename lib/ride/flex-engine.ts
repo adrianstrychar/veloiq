@@ -35,13 +35,20 @@ export interface FlexRules {
   // reguły korekt (jak w trybie sztywnym)
   smoothingSec: number; outOfRangeSec: number; cooldownSec: number; graceSec: number;
   praiseAfterSec: number; cadenceGraceSec: number; hrDriftBpm: number;
+  corrWindowMinSec: number; corrWindowMaxSec: number; corrGraceMinSec: number; corrGraceMaxSec: number;
+  cooldownMaxSec: number; deadbandW: number; deadbandPct: number; minDeltaW: number; earlyStopAvgSec: number;
+  hrMarginBpm: number; hrAlertSec: number; hrGraceSec: number; hrCooldownSec: number;
+  statusEverySec: number; statusMinStepSec: number;
 }
 
 export const DEFAULT_FLEX_RULES: FlexRules = {
-  armLeadSec: 60, autoStartPct: 0.85, autoStartSec: 4, waitRemindSec: 120,
-  autoPauseWatts: 30, autoPauseSec: 5, resumeSec: 2, earlyStopPct: 0.6, earlyStopSec: 15,
+  armLeadSec: 60, autoStartPct: 0.85, autoStartSec: 6, waitRemindSec: 120,
+  autoPauseWatts: 30, autoPauseSec: 5, resumeSec: 2, earlyStopPct: 0.6, earlyStopSec: 40, earlyStopAvgSec: 10,
   effortStartPct: 0.9, effortEndPct: 0.75, effortMinSec: 60,
-  smoothingSec: 10, outOfRangeSec: 8, cooldownSec: 30, graceSec: 10, praiseAfterSec: 90, cadenceGraceSec: 15, hrDriftBpm: 5,
+  smoothingSec: 10, outOfRangeSec: 15, cooldownSec: 60, graceSec: 10, praiseAfterSec: 90, cadenceGraceSec: 20, hrDriftBpm: 5,
+  corrWindowMinSec: 20, corrWindowMaxSec: 60, corrGraceMinSec: 20, corrGraceMaxSec: 60, cooldownMaxSec: 180,
+  deadbandW: 10, deadbandPct: 0.03, minDeltaW: 10,
+  hrMarginBpm: 3, hrAlertSec: 60, hrGraceSec: 240, hrCooldownSec: 300, statusEverySec: 600, statusMinStepSec: 1200,
 };
 
 export const FLEX_PHRASES: Record<string, string> = {
@@ -73,7 +80,13 @@ export const FLEX_PHRASES: Record<string, string> = {
   planDone: 'Plan zrobiony. Serie: {list} watów. Nagrywam dalej – zakończ w aplikacji.',
   freeStart: 'Nagrywanie rozpoczęte. Jazda swobodna, wysiłki zapiszę automatycznie.',
   effort: 'Wysiłek {dur}, średnio {avg} watów.',
+  hrHigh: 'Tętno {hr}, powyżej zakresu. Zwolnij trochę.',
+  hrRecovered: 'Tętno spadło do {hr}. Jesteś gotowy.',
+  status: 'Średnio {avg} watów.{hrTxt}',
 };
+
+const QUIET_AFTER_STOP_SEC = 20; // cisza po postoju (światła, skrzyżowanie)
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 export function durationPl(sec: number): string {
   sec = Math.max(0, Math.round(sec));
@@ -170,9 +183,10 @@ export class FlexEngine {
     const st = this.step!;
     const autoInterval = st.type === 'interval' && this.isAuto(this.stepIdx);
     const cad = sample.cad ?? null;
+    if (p < this.rules.autoPauseWatts && (cad === null || cad === 0)) this.quietUntil = s + QUIET_AFTER_STOP_SEC;
 
-    // --- interwał elastyczny: auto-pauza, wznowienie, wcześniejsze przerwanie
-    if (autoInterval) {
+    // --- interwał: auto-pauza i wznowienie; elastyczny dodatkowo wcześniejsze przerwanie
+    if (st.type === 'interval' && st.durationSec >= 60) {
       const low = st.powerLow;
       if (this.phase === 'autoPaused') {
         this.resumeRun = p >= low * this.rules.autoStartPct ? this.resumeRun + 1 : 0;
@@ -193,7 +207,8 @@ export class FlexEngine {
           this.say('autoPause', { left: durationPl(st.durationSec - this.inStep) }, 'pause', speak);
           return;
         }
-        const easing = !stopped && p < low * this.rules.earlyStopPct;
+        const easeAvg = mean(this.P.slice(-this.rules.earlyStopAvgSec));
+        const easing = autoInterval && !stopped && easeAvg < low * this.rules.earlyStopPct;
         this.easeRun = easing ? this.easeRun + 1 : 0;
         if (this.easeRun >= this.rules.earlyStopSec && st.durationSec - this.inStep > 20) {
           const back = this.rules.earlyStopSec - 1;
@@ -216,6 +231,7 @@ export class FlexEngine {
 
     this.structuralCues(st, remaining, nextAuto, speak);
     if (!armed) this.corrections(st, s, p, cad, remaining, speak);
+    this.hrCoach(st, s, remaining, speak);
 
     // --- czuwanie: wykrycie startu kolejnego interwału
     // (przy krótkiej przerwie nie łapiemy "rozpędu" z poprzedniego interwału jako nowego startu)
@@ -266,7 +282,8 @@ export class FlexEngine {
     this.stepSecs = []; for (let k = 0; k < pre; k++) this.stepSecs.push(startSec + k);
     this.startRun = 0; this.startDips = 0; this.lowRun = 0; this.easeRun = 0; this.resumeRun = 0;
     this.outHigh = 0; this.outLow = 0; this.inRangeStreak = 0; this.cadLowRun = 0; this.cadHighRun = 0;
-    this.lastCorrection = -1e9; this.spoke.clear();
+    this.lastCorrection = -1e9; this.spoke.clear(); this.hrHighRun = 0; this.hrRecStart = null;
+    this.corrRepeat = 0; this.lastCorrDir = 0;
     this.phase = 'running';
     if (!this.isAuto(idx)) this.announceStep(idx, speak);
   }
@@ -284,8 +301,14 @@ export class FlexEngine {
     const st = this.step!;
     const secs = this.stepSecs;
     const pw = secs.map((i) => this.P[i]);
-    const evalSecs = secs.slice(this.rules.graceSec, Math.max(this.rules.graceSec, secs.length - 3));
-    const inR = evalSecs.filter((i) => this.P[i] >= st.powerLow && this.P[i] <= st.powerHigh).length;
+    const g = this.rules.graceSec, e = Math.max(g, secs.length - 3);
+    const tolC = Math.max(this.rules.deadbandW, ((st.powerLow + st.powerHigh) / 2) * this.rules.deadbandPct);
+    let inR = 0;
+    for (let k = g; k < e; k++) {
+      const a = mean(secs.slice(Math.max(0, k - 29), k + 1).map((i) => this.P[i]));
+      if (a >= st.powerLow - tolC && a <= st.powerHigh + tolC) inR++;
+    }
+    const evalSecs = { length: e - g };
     const hrs = secs.map((i) => this.HR[i]).filter((h): h is number => h !== null && h > 0);
     const res: SeriesResult = {
       n: this.intervalNumbers[this.stepIdx] ?? this.series.length + 1, durationSec: secs.length, plannedSec: st.durationSec,
@@ -318,10 +341,20 @@ export class FlexEngine {
   // ------------------------------------------------------------------ komunikaty
   private structuralCues(st: WorkoutStep, remaining: number, nextAuto: boolean, speak: boolean) {
     const once = (k: string) => (this.spoke.has(k) ? false : (this.spoke.add(k), true));
-    if (st.type === 'interval' && st.durationSec >= 120 && this.inStep === Math.floor(st.durationSec / 2) && once('half')) {
+    const R = this.rules;
+    const reports = (st.type === 'steady' || st.type === 'interval') && st.durationSec >= R.statusMinStepSec && this.s >= this.quietUntil;
+    if (reports && this.inStep % R.statusEverySec === 0 && remaining > 120 && this.s - this.lastCorrection >= 30) {
+      const avg = Math.round(mean(this.stepSecs.map((i) => this.P[i]).filter((w) => w >= R.autoPauseWatts)));
+      const hr = this.hrAvg(30);
+      const state = hr === null || !(st.hrHigh || st.hrLow) ? ''
+        : st.hrHigh && hr > st.hrHigh + R.hrMarginBpm ? 'high' : st.hrLow && hr < st.hrLow - R.hrMarginBpm ? 'low' : 'ok';
+      const hrTxt = hr === null ? '' : ` Tętno ${hr}${{ ok: ', w normie', high: ', powyżej strefy', low: ', poniżej strefy', '': '' }[state]}.`;
+      this.say('status', { avg, hr: hr ?? '', hrState: state, hrTxt }, 'info', speak);
+    }
+    if (st.type === 'interval' && st.durationSec >= 120 && !reports && this.inStep === Math.floor(st.durationSec / 2) && once('half')) {
       this.say('half', { avg: Math.round(mean(this.stepSecs.map((i) => this.P[i]))) }, 'info', speak);
     }
-    if ((st.type === 'interval' || st.type === 'steady') && st.durationSec >= 180 && remaining === 60 && once('lastMin')) {
+    if (st.type === 'interval' && st.durationSec >= 180 && remaining === 60 && once('lastMin')) {
       this.say('lastMinute', {}, 'info', speak);
     }
     if (nextAuto) {
@@ -342,23 +375,39 @@ export class FlexEngine {
 
   private corrections(st: WorkoutStep, s: number, p: number, cad: number | null, remaining: number, speak: boolean) {
     const R = this.rules;
-    if (this.inStep <= R.graceSec || remaining <= 3) return;
-    const win = this.stepSecs.slice(-Math.min(R.smoothingSec, this.stepSecs.length));
-    const ps = Math.round(mean(win.map((i) => this.P[i])));
+    const D = st.durationSec;
+    // korekty oceniamy na ŚREDNIEJ: okno rośnie z długością kroku (20–60 s), a średnia całego kroku musi
+    // się zgadzać – krótki zryw lub chwilowe odpuszczenie (ruch, skrzyżowanie) nie wywołuje komunikatu
+    const grace = clamp(Math.round(D * 0.1), R.corrGraceMinSec, R.corrGraceMaxSec);
+    if (this.inStep <= grace || remaining <= 3 || st.type === 'warmup') return;
+    if (s < this.quietUntil) { this.outHigh = 0; this.outLow = 0; this.inRangeStreak = 0; return; } // postój / ruszanie
     const isWork = st.type === 'interval' || st.type === 'steady';
-    const inRange = ps >= st.powerLow && ps <= st.powerHigh;
-    this.outHigh = ps > st.powerHigh ? this.outHigh + 1 : 0;
-    this.outLow = isWork && ps < st.powerLow ? this.outLow + 1 : 0;
+    // w pracy liczymy tylko sekundy, w których naprawdę jedziesz – dziura od ruchu nie zaniża średniej
+    const from = this.stepSecs[Math.min(10, this.stepSecs.length - 1)];
+    const act = isWork ? this.stepSecs.filter((i) => this.P[i] >= st.powerLow * R.earlyStopPct) : this.stepSecs;
+    const winLen = clamp(Math.round(D / 6), R.corrWindowMinSec, R.corrWindowMaxSec);
+    if (act.length < winLen) { this.outHigh = 0; this.outLow = 0; return; }
+    const roll = Math.round(mean(act.slice(-winLen).map((i) => this.P[i])));
+    const cum = Math.round(mean(act.filter((i) => i >= from).map((i) => this.P[i])));
+    const tol = Math.max(R.deadbandW, ((st.powerLow + st.powerHigh) / 2) * R.deadbandPct);
+    const inRange = roll >= st.powerLow - tol / 2 && roll <= st.powerHigh + tol / 2;
+    this.outHigh = roll > st.powerHigh + tol && cum > st.powerHigh ? this.outHigh + 1 : 0;
+    this.outLow = isWork && roll < st.powerLow - tol && cum < st.powerLow ? this.outLow + 1 : 0;
     this.inRangeStreak = inRange ? this.inRangeStreak + 1 : 0;
-    const can = s - this.lastCorrection >= R.cooldownSec;
-    if (can && this.outHigh >= R.outOfRangeSec) {
-      this.say(isWork ? 'tooHigh' : 'recoveryTooHigh', { delta: r5(ps - st.powerHigh), high: st.powerHigh }, 'correction', speak);
+    // kolejna uwaga w tę samą stronę coraz rzadziej (1×, 2×, 3× przerwy); schłodzenie – najwyżej jedna
+    const can = s - this.lastCorrection >= clamp(Math.round(D / 4), R.cooldownSec, R.cooldownMaxSec) * (1 + this.corrRepeat)
+      && !(st.type === 'cooldown' && this.corrRepeat > 0);
+    const dHigh = r5(roll - st.powerHigh), dLow = r5(st.powerLow - roll);
+    if (can && this.outHigh >= R.outOfRangeSec && dHigh >= R.minDeltaW) {
+      this.say(isWork ? 'tooHigh' : 'recoveryTooHigh', { delta: dHigh, high: st.powerHigh, prog: +(this.inStep / D).toFixed(2) }, 'correction', speak);
+      this.corrRepeat = this.lastCorrDir === 1 ? this.corrRepeat + 1 : 1; this.lastCorrDir = 1;
       this.lastCorrection = s; this.outHigh = 0; return;
     }
     // wyraźne odpuszczenie w interwale elastycznym obsługuje "przerwałeś", nie "dodaj 125 W"
     const givingUp = st.type === 'interval' && this.isAuto(this.stepIdx) && this.easeRun >= 3;
-    if (can && !givingUp && this.outLow >= R.outOfRangeSec) {
-      this.say('tooLow', { delta: r5(st.powerLow - ps), low: st.powerLow }, 'correction', speak);
+    if (can && !givingUp && this.outLow >= R.outOfRangeSec && dLow >= R.minDeltaW) {
+      this.say('tooLow', { delta: dLow, low: st.powerLow }, 'correction', speak);
+      this.corrRepeat = this.lastCorrDir === -1 ? this.corrRepeat + 1 : 1; this.lastCorrDir = -1;
       this.lastCorrection = s; this.outLow = 0; return;
     }
     if (st.type === 'interval' && this.inRangeStreak >= R.praiseAfterSec && remaining > 30 && !this.spoke.has('praise')) {
@@ -372,6 +421,44 @@ export class FlexEngine {
       } else if (can && this.cadHighRun >= R.cadenceGraceSec) {
         this.say('cadenceHigh', { cad, cadHigh: st.cadenceHigh! }, 'cadence', speak); this.lastCorrection = s; this.cadHighRun = 0;
       }
+    }
+  }
+
+  // ------------------------------------------------------------------ tętno
+  private hrHighRun = 0;
+  private quietUntil = -1;
+  private corrRepeat = 0;
+  private lastCorrDir = 0;
+  private lastHrAlert = -1e9;
+  private hrRecStart: number | null = null;
+
+  /** Średnie tętno z ostatnich n s (null = brak pasa / za mało odczytów). */
+  private hrAvg(n: number): number | null {
+    const a = this.HR.slice(-n).filter((h): h is number => h !== null && h > 0);
+    return a.length >= Math.max(1, n / 2) ? Math.round(mean(a)) : null;
+  }
+
+  private hrCoach(st: WorkoutStep, s: number, remaining: number, speak: boolean) {
+    const R = this.rules;
+    // przerwa: potwierdzenie regeneracji, gdy tętno zejdzie poniżej progu (raz na przerwę)
+    if (st.type === 'recovery') {
+      if (!st.hrHigh || this.spoke.has('hrRec')) return;
+      if (this.inStep === 15) this.hrRecStart = this.hrAvg(10);
+      const hr = this.hrAvg(10);
+      const quiet = (remaining > 12 && Math.abs(remaining - R.armLeadSec) > 8) || remaining < -3; // nie wchodź w zapowiedź/odliczanie
+      if (this.inStep >= 45 && hr !== null && hr <= st.hrHigh && (this.hrRecStart ?? 0) > st.hrHigh + 5 && quiet) {
+        this.spoke.add('hrRec');
+        this.say('hrRecovered', { hr }, 'info', speak);
+      }
+      return;
+    }
+    // tętno ponad zakresem (jazda w strefie, rozgrzewka, schłodzenie – w interwałach decyduje moc)
+    if (st.type === 'interval' || st.type === 'cooldown' || !st.hrHigh || this.inStep <= R.hrGraceSec || remaining <= 30 || s < this.quietUntil) { this.hrHighRun = 0; return; }
+    const hr = this.hrAvg(30);
+    this.hrHighRun = hr !== null && hr > st.hrHigh + R.hrMarginBpm ? this.hrHighRun + 1 : 0;
+    if (this.hrHighRun >= R.hrAlertSec && s - this.lastHrAlert >= R.hrCooldownSec && s - this.lastCorrection >= 60) {
+      this.say('hrHigh', { hr: hr!, high: st.hrHigh }, 'correction', speak);
+      this.lastHrAlert = s; this.lastCorrection = s; this.hrHighRun = 0;
     }
   }
 
