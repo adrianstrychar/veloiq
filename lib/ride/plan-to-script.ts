@@ -17,7 +17,32 @@ function step(name: string, type: StepType, min: number, lo: number, hi: number,
 const around = (w: number) => [w * (1 - TOL), w * (1 + TOL)] as const;
 
 /** null = dzień bez treningu (OFF / brak planu) → aplikacja proponuje jazdę swobodną. */
-export function planDayToScript(day: PlanDayRow | null | undefined, ftp: number, id: string): WorkoutScript | null {
+/** Zakres tętna kroku jako ułamek HRmax: [dół, góra]. Interwały – bez (tam decyduje moc, tętno się spóźnia). */
+function hrShare(st: WorkoutStep, ftp: number): [number | undefined, number] | null {
+  if (st.type === 'warmup') return [undefined, 0.75];
+  if (st.type === 'cooldown') return [undefined, 0.72];
+  if (st.type === 'recovery') return [undefined, 0.7]; // próg „zregenerowany”
+  if (st.type !== 'steady') return null;
+  const pct = (st.powerLow + st.powerHigh) / 2 / ftp;
+  return pct < 0.56 ? [undefined, 0.68] : pct < 0.76 ? [0.68, 0.79] : pct < 0.88 ? [0.79, 0.87] : pct < 0.95 ? [0.84, 0.91] : null;
+}
+
+/** Tętno do kroków: z HRmax zawodnika, a bez niego – z zakresu dnia w planie (tylko jazda w strefie). */
+function addHr(steps: WorkoutStep[], ftp: number, hrmax?: number | null, dayHr?: string) {
+  const m = /(\d{2,3})\s*[–-]\s*(\d{2,3})/.exec(dayHr ?? '');
+  for (const st of steps) {
+    const sh = hrShare(st, ftp);
+    if (!sh) continue;
+    if (hrmax && hrmax > 120) {
+      if (sh[0]) st.hrLow = Math.round(hrmax * sh[0]);
+      st.hrHigh = Math.round(hrmax * sh[1]);
+    } else if (m && st.type === 'steady' && (st.powerLow + st.powerHigh) / 2 / ftp < 0.76) {
+      st.hrLow = +m[1]; st.hrHigh = +m[2];
+    }
+  }
+}
+
+export function planDayToScript(day: PlanDayRow | null | undefined, ftp: number, id: string, hrmax?: number | null): WorkoutScript | null {
   if (!day || day.type === 'OFF' || !(day.dur_min > 0)) return null;
   const pct = (p: number) => (ftp * p) / 100;
   const ss = sessionStructure(day.type);
@@ -75,5 +100,6 @@ export function planDayToScript(day: PlanDayRow | null | undefined, ftp: number,
     }
   }
 
+  addHr(steps, ftp, hrmax, day.hr);
   return { version: 1, id, name: day.label || TYPE_NAMES[day.type] || day.type, ftp, lang: 'pl-PL', steps };
 }

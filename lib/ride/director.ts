@@ -21,6 +21,7 @@ const LEAD_FOR: Record<string, string> = {
   cadenceLow: 'cadLow', cadenceHigh: 'cadHigh', half: 'half', lastMinute: 'last', praise: 'praise',
   planDone: 'done', freeStart: 'free', effort: 'effort',
   powerLost: 'powerLost', powerBack: 'powerBack', hrLost: 'hrLost', hrBack: 'hrBack',
+  hrHigh: 'hrHigh', hrRecovered: 'hrRec', status: 'status',
 };
 /** Komunikaty, których dyrektor nie mówi (są tylko na ekranie). */
 const SILENT = new Set(['seriesPrev', 'restInfo']);
@@ -68,6 +69,16 @@ export class DirectorComposer {
     return this.has(`from.${l}`) && this.has(`to.${h}`) ? [`from.${l}`, `to.${h}`] : this.has(`w.${h}`) ? [`w.${h}`] : [];
   }
   private watts(v: unknown): string[] { const w = r5(num(v)); return this.has(`w.${w}`) ? [`w.${w}`] : []; }
+  private bpm(v: unknown): string[] { const h = Math.round(num(v)); return this.has(`hrv.${h}`) ? [`hrv.${h}`] : []; }
+  /** Losowy wariant z grupy (np. hrs.ok.*), bez powtórzenia pod rząd. */
+  private pick(prefix: string): string[] {
+    const ids = Object.keys(this.pack.clips).filter((k) => k.startsWith(`${prefix}.`));
+    if (!ids.length) return [];
+    let i = Math.floor(this.rnd() * ids.length);
+    if (ids.length > 1 && i === this.last[prefix]) i = (i + 1) % ids.length;
+    this.last[prefix] = i;
+    return [ids[i]];
+  }
 
   /** null = nie mów nic; [] = brak nagrania → użyj głosu systemowego. */
   compose(key: string, vars: Record<string, string | number>): string[] | null {
@@ -97,6 +108,14 @@ export class DirectorComposer {
       case 'tooLow': { const d = r5(num(vars.delta)); if (this.has(`add.${d}`)) seg.push(`add.${d}`); break; }
       case 'half': seg.push(...this.watts(vars.avg)); break;
       case 'effort': seg.push(...this.dur(vars.dur), ...this.watts(vars.avg)); break;
+      case 'hrHigh': seg.push(...this.bpm(vars.hr)); break;
+      case 'hrRecovered': { const b = this.bpm(vars.hr); if (b.length) seg.unshift(...b); break; }
+      case 'status': {
+        seg.push(...this.watts(vars.avg));
+        const b = this.bpm(vars.hr);
+        if (b.length) { seg.push(...b); if (vars.hrState) seg.push(...this.pick(`hrs.${vars.hrState}`)); }
+        break;
+      }
     }
     // imię tylko w kluczowych momentach i rzadko – wtedy działa
     const peak = ['autoStart', 'intervalStart', 'lastMinute', 'seriesEnd', 'planDone', 'praise', 'effort'].includes(key);
