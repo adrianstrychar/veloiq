@@ -239,9 +239,15 @@ export async function recalculateFtpEstimate(
           `brak twardej jazdy w oknie 28 dni (max IF ${maxIF.toFixed(2)} < ${FTP_HARD_IF}). Estymata zapisana, wyświetlane FTP bez zmian.`
         );
       }
-      if (decision.update) {
+      // Ręcznie ustawione FTP (np. po przerwie silnik zaniżał): automat może je tylko PODNIEŚĆ.
+      const manualHold = ath.ftp_source === 'manual' && decision.update && decision.value < Number(ath.ftp_watts);
+      if (manualHold) {
+        console.info(`[ftp] athlete ${athleteId}: estymata ${est.ftp}W < ręczne ${ath.ftp_watts}W — ręczne FTP zostaje.`);
+      }
+      if (decision.update && !manualHold) {
         // decision.value, NIE est.ftp — przy spadku wartość jest ograniczona tempem zejścia.
         updates.ftp_watts = decision.value;
+        if (ath.ftp_source === 'manual') updates.ftp_source = 'engine'; // silnik przebił ręczne → znowu automat
         updates.ftp_updated_at = nowIso;
         await supabase.from('ftp_history').insert({
           athlete_id: athleteId,
@@ -327,6 +333,7 @@ export async function syncStravaActivities(
       .from('strava_activities')
       .select('activity_date, synced_at')
       .eq('athlete_id', athlete.id)
+      .gt('strava_activity_id', 0)
       .order('synced_at', { ascending: false })
       .limit(1)
       .maybeSingle();
