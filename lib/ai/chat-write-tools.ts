@@ -14,6 +14,7 @@ import { userTodayISO } from '@/lib/timezone';
 import type { PlanDay } from '@/lib/ai/plan-generate';
 import type { ToolCtx } from '@/lib/ai/chat-tools';
 import { addRace, editRace, deleteRace, getRace, type RaceRow } from '@/lib/races';
+import { setManualFtp, validFtp, FTP_MIN, FTP_MAX } from '@/lib/ftp-manual';
 
 const PRIORITIES = ['A', 'B', 'C'] as const;
 const RACE_SERIES = ['GWS', 'GFWS', 'MTB', 'other'] as const;
@@ -75,6 +76,17 @@ export const WRITE_TOOL_DEFS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'propose_ftp_change',
+    description:
+      "Propose setting the athlete's FTP manually (e.g. 'ustaw moje FTP na 295', 'moje FTP jest zaniżone, mam ok. 300'). Use ONLY when the athlete explicitly asks to change/set their FTP to a value they give. Does NOT save — returns a Polish summary (old→new, plan watts from today will be rescaled, the automatic engine can afterwards only raise it) and a change_id. After the athlete explicitly confirms, call commit_change.",
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: { ftp: { type: 'integer', minimum: 80, maximum: 600, description: 'New FTP in watts, as given by the athlete.' } },
+      required: ['ftp'],
+    },
+  },
+  {
     name: 'cancel_change',
     description:
       'Discard a previously proposed change (plan or race) when the athlete declines or backs out ("nie", "zostaw", "jednak nie"). Removes the pending proposal so it can no longer be committed. Then confirm the cancellation in one sentence.',
@@ -88,7 +100,7 @@ export const WRITE_TOOL_DEFS: Anthropic.Tool[] = [
 ];
 
 export function isWriteTool(name: string): boolean {
-  return name === 'propose_plan_change' || name === 'propose_race_change' || name === 'commit_change' || name === 'cancel_change';
+  return name === 'propose_plan_change' || name === 'propose_race_change' || name === 'propose_ftp_change' || name === 'commit_change' || name === 'cancel_change';
 }
 
 // Diff porównuje TRENING (typ, czas, TSS) ORAZ rozpiskę (structure). Wcześniej tylko typ/czas/TSS —
@@ -271,6 +283,31 @@ async function proposeRaceChange({ supabase, athleteId }: ToolCtx, input: Record
   return { ok: false, error: 'Nieznana operacja (add/edit/delete).' };
 }
 
+// Ręczne FTP przez czat. pending_changes ma kind ∈ {plan, race} (constraint z 010) — zmiana FTP
+// przelicza waty planu, więc jedzie jako kind 'plan' z payload.op = 'set_ftp' (commit rozpoznaje op).
+async function proposeFtpChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
+  const ftp = validFtp(input.ftp);
+  if (ftp == null) return { ok: false, error: `FTP musi być między ${FTP_MIN} a ${FTP_MAX} W.` };
+  const { data: ath } = await supabase.from('athletes').select('ftp_watts').eq('id', athleteId).single();
+  const prev = ath?.ftp_watts != null ? Number(ath.ftp_watts) : null;
+  if (prev === ftp) return { ok: false, error: `FTP już wynosi ${ftp} W.` };
+  const { data: pend, error } = await insertPending(supabase, athleteId, {
+    kind: 'plan', week_start: mondayOfISO(userTodayISO()), base_hash: sha256(`ftp:${prev ?? 'null'}`),
+    payload_json: { op: 'set_ftp', ftp, prev },
+  });
+  if (error || !pend) return { ok: false, error: 'Nie udało się przygotować zmiany.' };
+  const pct = prev ? Math.round((ftp / prev - 1) * 100) : null;
+  return {
+    ok: true, change_id: pend.id,
+    diff: [
+      `Proponowana zmiana FTP: ${prev ?? '—'} W → ${ftp} W${pct != null ? ` (${pct > 0 ? '+' : ''}${pct}%)` : ''}.`,
+      prev ? 'Waty w planie od dziś (bieżący i przyszłe tygodnie) przeliczę na nowe FTP.' : '',
+      'Automat może później FTP tylko podnieść — nie obniży go, dopóki nie pojedziesz mocno słabiej.',
+      'Napisz „tak", żeby zapisać.',
+    ].filter(Boolean).join('\n'),
+  };
+}
+
 export async function cancelChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
   const changeId = str(input.change_id);
   if (!changeId) return { ok: false, error: 'Brak change_id.' };
@@ -292,6 +329,18 @@ export async function commitChange({ supabase, athleteId }: ToolCtx, input: Reco
   if (Date.now() - new Date(pend.created_at as string).getTime() > ttlMs) {
     await supabase.from('pending_changes').delete().eq('id', pend.id);
     return { ok: false, error: isOverload ? 'Propozycja korekty wygasła. Otwórz jazdę ponownie, jeśli chcesz nową.' : 'Propozycja wygasła (ponad 15 minut). Przygotuję nową, jeśli chcesz.' };
+  }
+
+  const ftpOp = pend.payload_json as { op?: string; ftp?: number; prev?: number | null } | null;
+  if (pend.kind === 'plan' && ftpOp?.op === 'set_ftp' && ftpOp.ftp) {
+    await supabase.from('pending_changes').delete().eq('id', pend.id);
+    const { data: ath } = await supabase.from('athletes').select('ftp_watts').eq('id', athleteId).single();
+    const cur = ath?.ftp_watts != null ? Number(ath.ftp_watts) : null;
+    if (sha256(`ftp:${cur ?? 'null'}`) !== pend.base_hash) {
+      return { ok: false, error: `FTP zmieniło się w międzyczasie (teraz ${cur} W). Przygotuję nową propozycję, jeśli chcesz.` };
+    }
+    const res = await setManualFtp(supabase, athleteId, ftpOp.ftp);
+    return { ok: true, applied: true, kind: 'ftp', message: `Zapisane — FTP ${res.ftp} W.${res.weeksRescaled ? ' Waty w planie przeliczone.' : ''}` };
   }
 
   if (pend.kind === 'plan') {
@@ -347,6 +396,7 @@ export async function dispatchWrite(name: string, input: Record<string, unknown>
   switch (name) {
     case 'propose_plan_change': return proposePlanChange(ctx, input);
     case 'propose_race_change': return proposeRaceChange(ctx, input);
+    case 'propose_ftp_change': return proposeFtpChange(ctx, input);
     case 'commit_change': return commitChange(ctx, input);
     case 'cancel_change': return cancelChange(ctx, input);
     default: throw new Error(`unknown write tool: ${name}`);

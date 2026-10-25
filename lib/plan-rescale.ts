@@ -5,7 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { mondayOfISO } from '@/lib/plan';
 import { userTodayISO } from '@/lib/timezone';
-import { isOU, structureWatt, type DayStructure } from '@/lib/structure';
+import { isBlocks, isOU, structureWatt, type DayStructure } from '@/lib/structure';
 
 const r5 = (w: number) => Math.round(w / 5) * 5;
 
@@ -15,9 +15,11 @@ export function rescaleDay(d: Day, ratio: number): Day {
   const out: Day = { ...d };
   const sc = (n: number) => r5(n * ratio);
   if (d.structure) {
-    const s = { ...d.structure } as DayStructure;
-    if (isOU(s)) { s.under_w = sc(s.under_w); s.over_w = sc(s.over_w); }
-    else s.work_w = sc(s.work_w);
+    let s: DayStructure;
+    const src = d.structure;
+    if (isBlocks(src)) s = { ...src, blocks: src.blocks.map((b) => ({ ...b, steps: b.steps.map((st) => ({ ...st, w: sc(st.w) })) })) };
+    else if (isOU(src)) s = { ...src, under_w: sc(src.under_w), over_w: sc(src.over_w) };
+    else s = { ...src, work_w: sc(src.work_w) };
     out.structure = s;
     out.watt = structureWatt(s);
   } else if (typeof d.watt === 'string' && /\d/.test(d.watt)) {

@@ -1,4 +1,9 @@
+'use client';
+
+import { useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { C, F, RADIUS } from '@/lib/theme';
+import { FtpEditor } from './FtpEditor';
 import type { FtpDisplay } from '@/lib/ftp';
 
 // Pasek FTP (ETAP 3.5 v2) — pierwszy element dashboardu, pełna szerokość (span2). Szybki rzut oka na
@@ -7,12 +12,21 @@ import type { FtpDisplay } from '@/lib/ftp';
 // zostaje niezmieniona. Zielony/żółty akcent niesie informację o źródle (zmierzone vs szacunek).
 
 export function FtpBar({ ftp }: { ftp: FtpDisplay }) {
+  const [editing, setEditing] = useState(false);
+  if (editing) return <FtpEditor current={ftp.value} onClose={() => setEditing(false)} />;
+  const editBtn = (
+    <button onClick={() => setEditing(true)} aria-label="Zmień FTP ręcznie"
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, padding: '3px 8px', color: C.muted, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+      <Pencil size={11} strokeWidth={2} /> zmień
+    </button>
+  );
   // Brak FTP → kompaktowa zachęta zamiast pustego paska (pełny prompt jest w EngineCard).
   if (ftp.empty || ftp.value == null) {
     return (
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: RADIUS.card, padding: '0.9rem 1.15rem', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontFamily: F.mono, fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.muted, fontWeight: 700 }}>FTP</span>
-        <span style={{ fontSize: 12.5, color: C.muted }}>Ustaw FTP w profilu — zrób test 20 min albo jeźdź z miernikiem.</span>
+        <span style={{ fontSize: 12.5, color: C.muted }}>Wpisz FTP albo zrób test 20 min / jeźdź z miernikiem.</span>
+        {editBtn}
       </div>
     );
   }
@@ -40,6 +54,7 @@ export function FtpBar({ ftp }: { ftp: FtpDisplay }) {
           fontSize: 10.5, fontWeight: 700, letterSpacing: '0.02em', color,
           background: color + '1A', border: `1px solid ${color}33`, borderRadius: RADIUS.pill, padding: '3px 10px',
         }}>{ftp.badge}</span>
+        {editBtn}
       </div>
     </div>
   );
