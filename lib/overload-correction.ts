@@ -16,7 +16,7 @@ import { scaleWeek } from '@/lib/plan';
 import { sessionStructure } from '@/lib/workout';
 import { taperProtector, lockTaperDays, taperViolations, restoreProtectedDays, type RaceRef } from '@/lib/taper-guard';
 import { buildPlanDiff } from '@/lib/ai/chat-write-tools';
-import { isOU, buildLabel, structureMainMin, type DayStructure } from '@/lib/structure';
+import { isOU, isBlocks, buildLabel, structureMainMin, type DayStructure } from '@/lib/structure';
 import type { PlanDay } from '@/lib/ai/plan-generate';
 import type { PlanModificationResult } from '@/lib/ai/plan-modify';
 
@@ -141,9 +141,19 @@ export function buildIntensityCorrection(
     // Klucz → redukcja reps o ~1/3, struktura i strefa zachowane.
     const s = candidate.structure;
     if (!s) return { ok: false, notice: 'Wykryto intensywność ponad plan, ale następny trening to kluczowa sesja bez struktury do redukcji — oceń sam, czy ją zmniejszyć.' };
-    const newReps = Math.max(1, Math.round((s.reps * 2) / 3));
-    if (newReps >= s.reps) return { ok: false, notice: 'Wykryto intensywność ponad plan, ale następny trening to pojedynczy kluczowy interwał — oceń sam, czy go zmniejszyć.' };
-    const newStruct: DayStructure = { ...s, reps: newReps };
+    let newStruct: DayStructure;
+    if (isBlocks(s)) {
+      // Bloki: redukcja powtórzeń najdłużej powtarzanego bloku o ~1/3 (reszta bez zmian).
+      const idx = s.blocks.reduce((best, b, i) => (b.repeat > s.blocks[best].repeat ? i : best), 0);
+      const rep = s.blocks[idx].repeat;
+      const newRep = Math.max(1, Math.round((rep * 2) / 3));
+      if (newRep >= rep) return { ok: false, notice: 'Wykryto intensywność ponad plan, ale następny trening nie ma powtarzanej serii do skrócenia — oceń sam, czy go zmniejszyć.' };
+      newStruct = { blocks: s.blocks.map((b, i) => (i === idx ? { ...b, repeat: newRep } : b)) };
+    } else {
+      const newReps = Math.max(1, Math.round((s.reps * 2) / 3));
+      if (newReps >= s.reps) return { ok: false, notice: 'Wykryto intensywność ponad plan, ale następny trening to pojedynczy kluczowy interwał — oceń sam, czy go zmniejszyć.' };
+      newStruct = { ...s, reps: newReps };
+    }
     const ss = sessionStructure(candidate.type);
     // warmup/cooldown to opcjonalne pola widoku (suwak) — w plan_json bywają, w typie PlanDay nie.
     const wc = candidate as PlanDay & { warmup?: number; cooldown?: number };

@@ -6,6 +6,7 @@ import {
   buildLabel,
   structureWatt,
   isStructuredType,
+  maxSessionMin,
   type DayStructure,
 } from '@/lib/structure';
 import { sessionStructure } from '@/lib/workout';
@@ -258,13 +259,24 @@ export function buildModifyPrompt(
     'Domyślnie celuj w 2 nieprzylegające OFF, ale JAWNA prośba użytkownika MA PRIORYTET — jeśli prosi o konkretne wolne dni (np. wolny weekend = So+Nd), ustaw je OFF NAWET gdy przylegają; nie redukuj do jednego, nie dorzucaj trzeciego. Sesje jakościowe (THR/OU/VO2) nie obok siebie.',
     'MINIMALNY czas sesji 45 min (dur_min >= 45) — krótszej nie planuj, daj OFF.',
     'Rozgrzewka min 20 min przed Z2/SST, 25 min przed THR/OU/VO2. zones to % czasu w Z1–Z5, suma ~100.',
-    'STRUKTURA: dni SST/THR/OU/VO2 mają pole "structure" z parametrami interwałów — SST/THR/VO2: {"reps","work_min","work_w","rest_min"}; OU: {"reps","cycles","under_min","under_w","over_min","over_w","rest_min"} (blok = cycles×(under_min+over_min) min, rest_min = przerwa Z1 między blokami).',
-    'Dni NIEZMIENIANE: przepisz structure BEZ ZMIAN. Dni zmieniane na SST/THR/OU/VO2: podaj nowe structure (parametry interwałów) — dur_min policzy serwer z segmentów. Dni OFF/Z1/Z2/LONG: structure null.',
-    'Label: dla dni ze structure zostanie wygenerowany przez serwer (możesz pominąć). Dla pozostałych: krótka nazwa, MAX ~3 słowa, bez zdań.',
+    // ── STRUKTURA (fix/plan-modify-structure) ── Powód: model rozumiał prośbę, ale kontrakt
+    // znał tylko "N równych interwałów", a Z1/Z2/LONG miały structure:null — więc zmieniał
+    // WYŁĄCZNIE label, a rozpiska zostawała stara. Teraz: bloki dla wszystkiego + label z serwera.
+    'STRUKTURA (pole "structure") = DOKŁADNA rozpiska części głównej sesji. To z niej powstaje rozpiska w aplikacji, profil i komendy głosowe podczas jazdy. Trzy dozwolone kształty:',
+    `(1) SST/THR/VO2 gdy to N RÓWNYCH interwałów z RÓWNYMI przerwami: {"reps","work_min","work_w","rest_min"}.`,
+    `(2) OU w klasycznym układzie: {"reps","cycles","under_min","under_w","over_min","over_w","rest_min"} (blok = cycles×(under_min+over_min) min, rest_min = przerwa Z1 między blokami).`,
+    `(3) BLOKI — dla WSZYSTKIEGO innego i dla KAŻDEGO typu poza OFF (także Z1/Z2/LONG): {"blocks":[{"repeat":N,"name":"opcjonalnie","steps":[{"sec":sekundy,"w":waty,"name":"opcjonalnie","cad":[min,max] opcjonalnie}]}]}. Blok = repeat × kolejne kroki; przerwy to zwykłe kroki o niskiej mocy (np. {"sec":300,"w":${Math.round(ctx.ftp * 0.5)}}). Czas w SEKUNDACH, waty absolutne (FTP ${ctx.ftp}W). Bloki opisują CAŁĄ część główną od końca rozgrzewki do początku schłodzenia — także jazdę spokojną między akcentami.`,
+    `Przykłady bloków: Z2 90 min z 6 sprintami 15 s co 10 min → rozgrzewka (serwer) + {"blocks":[{"repeat":6,"name":"Sprinty","steps":[{"sec":15,"w":${Math.round(ctx.ftp * 2.4)},"name":"Sprint"},{"sec":585,"w":${Math.round(ctx.ftp * 0.65)}}]},{"repeat":1,"steps":[{"sec":300,"w":${Math.round(ctx.ftp * 0.65)}}]}]}. Piramida → jeden blok z krokami o rosnącej/malejącej mocy. 40/20 × 10 → {"repeat":10,"steps":[{"sec":40,"w":…},{"sec":20,"w":…}]}. Kadencja (np. siłowe 60–70 rpm) → pole "cad" w kroku.`,
+    `Rozgrzewkę i schłodzenie dolicza SERWER (minuty: Z1 0/0, Z2 15/10, SST 20/10, THR/OU/VO2 25/10, LONG 20/10) — NIE umieszczaj ich w structure. dur_min dni ze structure SERWER liczy jako rozgrzewka + suma bloków + schłodzenie; tss oszacuj spójnie z tą rozpiską.`,
+    'TWARDA REGUŁA TREŚCI: jeśli prośba dotyczy ZAWARTOŚCI sesji (interwały, ich liczba/długość/moc, przerwy, sprinty, tempo, kadencja, kolejność bloków) — MUSISZ odwzorować ją w structure tego dnia, w razie potrzeby kształtem BLOKI. Zmiana samej nazwy NIC nie zmienia w treningu i jest BŁĘDEM.',
+    'Dni NIEZMIENIANE: przepisz structure BEZ ZMIAN (ten sam kształt i liczby). Dni zmieniane na SST/THR/OU/VO2: structure OBOWIĄZKOWE. Dni Z1/Z2/LONG bez akcentów: structure null; z akcentami: BLOKI.',
+    'Label: NIE wymyślaj — dla dni ze structure serwer generuje go z rozpiski. Dla dni bez structure: krótka nazwa typu, MAX ~3 słowa, bez opisu treści.',
+    'unsupported: lista KRÓTKICH opisów tych elementów prośby, których NIE DA SIĘ zapisać w structure (np. teren, jazda na stojąco poza kadencją, konkretna trasa). Pusta lista, gdy wszystko odwzorowane. Nigdy nie udawaj, że coś zapisałeś, jeśli tego nie ma w structure.',
     'insight: 1–2 zdania PO POLSKU opisujące AKTUALNY tydzień PO zmianie — co to za tydzień i na co zwrócić uwagę (jak przy generacji planu, opis STANU). NIE pisz "zmieniłem/skróciłem" — to opis planu, nie edycji. MUSI zgadzać się z nowym planem.',
     'change: 1–2 zdania PO POLSKU co KONKRETNIE zmieniłeś i dlaczego (np. "Skróciłem wtorkowe interwały, bo brakowało regeneracji po weekendzie."). To idzie do rozmowy z zawodnikiem, NIE na kartę planu.',
     'userSpecifiedDays: WYŁĄCZNIE dni (dow), które user JAWNIE wymienił w prośbie (np. "wtorek Z2, środa wolna" → [2,3]). NIE dokładaj tu dni, które tylko przebudowałeś dla równowagi TSS — te idą do changedDays. Serwer blokuje (lock) TYLKO dni, które user jawnie zażądał jako WOLNE (OFF) — samo wymienienie treningu (np. "wtorek Z2") dnia NIE blokuje.',
-    'Zwróć WYŁĄCZNIE JSON (bez markdown): {"days":[...7 dni dow 1..7...],"insight":"...","change":"...","changedDays":[dow przebudowane w planie],"userSpecifiedDays":[dow jawnie wymienione przez usera],"unlock":[dow do odblokowania],"off":[dow jawnie wskazane jako wolne]}.',
+    'change MUSI opisywać WYŁĄCZNIE to, co faktycznie jest w zwróconym JSON (te same liczby co w structure).',
+    'Zwróć WYŁĄCZNIE JSON (bez markdown): {"days":[...7 dni dow 1..7...],"insight":"...","change":"...","changedDays":[dow przebudowane w planie],"userSpecifiedDays":[dow jawnie wymienione przez usera],"unlock":[dow do odblokowania],"off":[dow jawnie wskazane jako wolne],"unsupported":["..."]}.',
   ].join(' ');
 
   const user = [
@@ -272,7 +284,7 @@ export function buildModifyPrompt(
     '',
     `Prośba zawodnika: "${message}"`,
     '',
-    'Zwróć zmodyfikowany plan jako JSON {days, insight, change}. Nie dodawaj pola date.',
+    'Zwróć zmodyfikowany plan jako JSON {days, insight, change, changedDays, userSpecifiedDays, unlock, off, unsupported}. Nie dodawaj pola date.',
   ].join('\n');
 
   return { system, user };
@@ -389,16 +401,21 @@ export function validateWeek(
       // dur_min NIE jest osobną daną — liczymy go z segmentów (rozgrzewka + główna + schłodzenie),
       // nadpisując to, co podał model (był częstym źródłem 502 przy rozjeździe). Label i watt dnia
       // DERYWOWANE ze structure (jedna prawda) — to co pisze AI jest ignorowane.
-      if (isStructuredType(type)) {
+      // Z1/Z2/LONG: structure OPCJONALNA i tylko w kształcie bloków (Z2 ze sprintami, LONG z tempem).
+      const rawStruct = d.structure as Record<string, unknown> | null | undefined;
+      const uniformWithBlocks = !isStructuredType(type) && rawStruct != null && typeof rawStruct === 'object' && 'blocks' in rawStruct;
+      if (isStructuredType(type) || uniformWithBlocks) {
         if (d.structure != null) {
           const p = parseDayStructure(d.structure, type);
           if (!p.ok) return { ok: false, error: `dzień ${dow} (${type}): structure — ${p.error}` };
           const ss = sessionStructure(type);
-          const rec = reconcileStructureDuration(p.structure, ss.warmupDefault, ss.cooldownDefault);
+          const rec = reconcileStructureDuration(p.structure, ss.warmupDefault, ss.cooldownDefault, maxSessionMin(type));
           if (rec.error) return { ok: false, error: `dzień ${dow} (${type}): ${rec.error}` };
           durMin = rec.durMin; // reconcile: dur_min = suma segmentów, nie wartość modelu
           structure = p.structure;
-          watt = structureWatt(structure);
+          // Typ jednolity z blokami: waty dnia = strefa bazowa od modelu (np. Z2 "175–210W"), nie
+          // moc sprintu — karta planu ma mówić o charakterze jazdy; szczegóły są w rozpisce.
+          if (isStructuredType(type)) watt = structureWatt(structure);
         } else if (opts.requireStructure) {
           return { ok: false, error: `dzień ${dow} (${type}): brak wymaganego pola structure` };
         }

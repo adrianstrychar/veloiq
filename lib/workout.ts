@@ -1,5 +1,5 @@
 import { C } from '@/lib/theme';
-import { type DayStructure, isOU, ouBlockMin } from '@/lib/structure';
+import { type DayStructure, type BlocksStructure, type StructureBlock, isOU, isWork, isBlocks, ouBlockMin, fmtSec } from '@/lib/structure';
 
 // Deterministyczny generator rozpiski treningu (ETAP 5.4) — port buildWorkout z mockupu.
 // Dni ze `structure` (nowy kontrakt): rozpiska i profil budowane Z PARAMETRÓW (buildFromStructure)
@@ -64,9 +64,25 @@ function buildFromStructure(d: WorkoutInput, s: DayStructure, ftp: number): Expa
   const cUsed = d.cooldown ?? ss.cooldownDefault;
   const pct = (watts: number) => Math.round((watts / ftp) * 100);
   const segs: ExpandedSeg[] = [];
-  segs.push({ kind: 'warmup', min: wUsed, pctFtp: 58, color: PC.gray });
+  if (wUsed > 0) segs.push({ kind: 'warmup', min: wUsed, pctFtp: 58, color: PC.gray });
 
-  if (isOU(s)) {
+  if (isBlocks(s)) {
+    for (const b of s.blocks) {
+      const maxW = Math.max(...b.steps.map((st) => st.w));
+      // Długa seria (np. 30×40/20) → jeden zgrupowany słupek, jak dotąd przy >8 powtórzeniach.
+      if (b.repeat > REPS_GROUP_THRESHOLD && b.steps.length > 0) {
+        const kind = blockStepKind(pct(maxW));
+        segs.push({ kind, min: blockMin(b), pctFtp: pct(maxW), watts: maxW, color: pctColor(pct(maxW), d.type), label: `${b.repeat}×${b.steps.map((st) => fmtSec(st.sec)).join('/')}` });
+        continue;
+      }
+      for (let r = 0; r < b.repeat; r++) {
+        for (const st of b.steps) {
+          const p = pct(st.w);
+          segs.push({ kind: blockStepKind(p), min: st.sec / 60, pctFtp: p, watts: st.w, color: pctColor(p, d.type) });
+        }
+      }
+    }
+  } else if (isOU(s)) {
     for (let b = 0; b < s.reps; b++) {
       if (s.cycles > REPS_GROUP_THRESHOLD) {
         segs.push({ kind: 'over', min: ouBlockMin(s), pctFtp: pct(s.over_w), watts: s.over_w, color: PC.over, label: `${s.cycles}×${s.under_min}/${s.over_min}` });
@@ -91,8 +107,50 @@ function buildFromStructure(d: WorkoutInput, s: DayStructure, ftp: number): Expa
     }
   }
 
-  segs.push({ kind: 'cooldown', min: cUsed, pctFtp: 50, color: PC.gray });
+  if (cUsed > 0) segs.push({ kind: 'cooldown', min: cUsed, pctFtp: 50, color: PC.gray });
   return segs;
+}
+
+// ── Bloki: klasyfikacja kroków po %FTP (jedna definicja dla profilu, listy i skryptu jazdy) ──
+// <=60% przerwa, <=80% jazda ciągła (Z2/Z3), >80% praca.
+export function blockStepKind(pctFtp: number): 'rest' | 'steady' | 'work' {
+  return pctFtp <= 60 ? 'rest' : pctFtp <= 80 ? 'steady' : 'work';
+}
+function pctColor(p: number, type: string): string {
+  if (p <= 60) return PC.gray;
+  if (p <= 80) return PC.z2;
+  if (p <= 105) return PC.yellow;
+  return type === 'OU' ? PC.over : PC.vo2;
+}
+function blockMin(b: StructureBlock): number {
+  return (b.repeat * b.steps.reduce((a, st) => a + st.sec, 0)) / 60;
+}
+function hrForPct(p: number): string {
+  return p <= 60 ? '<125' : p <= 76 ? '128–145' : p <= 90 ? '145–160' : p <= 105 ? '160–174' : '175+';
+}
+function textColorForPct(p: number): string {
+  return p <= 60 ? C.muted : p <= 80 ? C.cyan : p <= 105 ? C.yellow : C.red;
+}
+
+// Lista tekstowa części głównej z bloków — jeden wiersz na blok, waty 1:1 z planu.
+function blockSegments(s: BlocksStructure, ftp: number): WorkoutSegment[] {
+  const pct = (w: number) => Math.round((w / ftp) * 100);
+  return s.blocks.map((b, i) => {
+    const inner = b.steps.map((st) => fmtSec(st.sec)).join(' + ');
+    const t = b.repeat > 1 ? (b.steps.length > 1 ? `${b.repeat}× (${inner})` : `${b.repeat}×${inner}`) : inner;
+    const w = b.steps.map((st) => `${st.w}`).join('/') + 'W';
+    const maxP = pct(Math.max(...b.steps.map((st) => st.w)));
+    const notes = b.steps
+      .map((st) => [st.name, st.cad ? `kadencja ${st.cad[0]}–${st.cad[1]}` : null].filter(Boolean).join(' · '))
+      .filter(Boolean);
+    const firstName = b.steps.length === 1 ? b.steps[0].name : undefined;
+    return {
+      k: b.name ?? firstName ?? (s.blocks.length > 1 ? `Blok ${i + 1}` : 'Część główna'),
+      t, w, hr: hrForPct(maxP), c: textColorForPct(maxP),
+      ...(notes.length ? { note: notes.join(' / ') } : {}),
+      ...(b.repeat > 1 ? { reps: true } : {}),
+    };
+  });
 }
 
 // Buduje atomową listę segmentów profilu per typ.
@@ -225,9 +283,14 @@ export function buildWorkout(d: WorkoutInput, ftp: number): Workout {
   const cUsed = d.cooldown ?? ss.cooldownDefault; // schłodzenie
   // Substruktura: parametry z plan_json (jedno źródło prawdy) albo fallback z labela/defaultów.
   const sOU = d.structure && isOU(d.structure) ? d.structure : null;
-  const sWork = d.structure && !isOU(d.structure) ? d.structure : null;
-  const struct = d.structure
-    ? { reps: d.structure.reps, minutes: sOU ? ouBlockMin(sOU) : sWork!.work_min }
+  const sWork = d.structure && isWork(d.structure) ? d.structure : null;
+  const sBlocks = d.structure && isBlocks(d.structure) ? d.structure : null;
+  const struct = sOU
+    ? { reps: sOU.reps, minutes: ouBlockMin(sOU) }
+    : sWork
+    ? { reps: sWork.reps, minutes: sWork.work_min }
+    : sBlocks
+    ? null // bloki mają własną listę (blockSegments) — synteza N×M nie dotyczy
     : parseStructure(d.label) ?? DEFAULT_STRUCT[T] ?? null;
   const ivT = struct ? `${struct.reps}×${struct.minutes} min` : '';
 
@@ -286,6 +349,16 @@ export function buildWorkout(d: WorkoutInput, ftp: number): Workout {
     segs.push({ k: 'Schłodzenie', t: `${cUsed} min`, w: wr(45, 55), hr: '<125', c: C.muted });
     goal = 'Wytrzymałość i ekonomia tłuszczowa. Długo i równo, kontrolowane tempo.';
     tips = ['Ostatnia godzina ma być tak samo mocna jak pierwsza.', 'Nie zaczynaj za szybko — rozłóż siły na cały dystans.'];
+  }
+
+  // Bloki: lista = rozgrzewka + DOKŁADNIE to, co w planie + schłodzenie (cel/wskazówki zostają per typ).
+  if (sBlocks) {
+    const out: WorkoutSegment[] = [];
+    if (wUsed > 0) out.push({ k: 'Rozgrzewka', t: `${wUsed} min`, w: wr(50, 65), hr: '120–140', c: C.green, note: 'narastająco' });
+    out.push(...blockSegments(sBlocks, ftp));
+    if (cUsed > 0) out.push({ k: 'Schłodzenie', t: `${cUsed} min`, w: wr(45, 55), hr: '<125', c: C.muted });
+    segs.length = 0;
+    segs.push(...out);
   }
 
   // ── Odżywianie: picie + jedzenie wg czasu i intensywności ──

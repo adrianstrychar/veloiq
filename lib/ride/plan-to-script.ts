@@ -3,8 +3,8 @@
 // co w rozpisce/profilu planu), stare dni bez structure — z profilu buildWorkout().expanded.
 
 import type { PlanDayRow } from '@/lib/planned-day';
-import { buildWorkout, sessionStructure } from '@/lib/workout';
-import { isOU } from '@/lib/structure';
+import { buildWorkout, sessionStructure, blockStepKind } from '@/lib/workout';
+import { isOU, isBlocks, type BlockStep } from '@/lib/structure';
 import type { StepType, WorkoutScript, WorkoutStep } from './workout-script';
 
 const TOL = 0.03; // ±3% wokół wata z planu = zakres, w którym silnik nie koryguje
@@ -31,7 +31,40 @@ export function planDayToScript(day: PlanDayRow | null | undefined, ftp: number,
   const s = day.structure;
   if (s) {
     warm();
-    if (isOU(s)) {
+    if (isBlocks(s)) {
+      // Bloki: każdy krok 1:1 (sekundy, waty, kadencja). Rodzaj kroku z %FTP — ta sama klasyfikacja
+      // co w profilu planu (blockStepKind), więc głos mówi o tym, co zawodnik widzi w rozpisce.
+      let n = 0;
+      let prevWork = false;
+      for (const b of s.blocks) {
+        const total = b.repeat;
+        for (let r = 0; r < b.repeat; r++) {
+          b.steps.forEach((st: BlockStep, j) => {
+            const kind = blockStepKind((st.w / ftp) * 100);
+            const suffix = total > 1 ? ` ${r + 1}/${total}` : '';
+            const cad = st.cad ? { cadenceLow: st.cad[0], cadenceHigh: st.cad[1] } : {};
+            if (kind === 'rest') {
+              steps.push({ ...step(st.name ?? 'Przerwa', 'recovery', st.sec / 60, pct(40), Math.max(pct(60), st.w * 1.05)), ...cad });
+              prevWork = false;
+            } else if (kind === 'steady') {
+              steps.push({ ...step(st.name ?? TYPE_NAMES[day.type] ?? 'Jazda', 'steady', st.sec / 60, st.w * 0.93, st.w * 1.06, 'time'), ...cad });
+              prevWork = false;
+            } else {
+              n++;
+              // Sprint (<30 s) = wysiłek maksymalny: brak górnej granicy w praktyce, żeby głos nie
+              // krzyczał "za mocno" przy 900 W, gdy plan mówi 700 W.
+              const short = st.sec < 30;
+              const lo = short ? st.w * 0.85 : st.w * (1 - TOL);
+              const hi = short ? st.w * 1.6 : st.w * (1 + TOL);
+              const name = `${st.name ?? b.name ?? 'Interwał'}${st.name || b.name ? suffix : ` ${n}`}`;
+              // praca tuż po pracy (piramida, 40/20 bez przerwy) idzie z zegarem, nie czeka na start
+              steps.push({ ...step(name, 'interval', st.sec / 60, lo, hi, prevWork || j > 0 ? 'time' : undefined), ...cad });
+              prevWork = true;
+            }
+          });
+        }
+      }
+    } else if (isOU(s)) {
       for (let b = 0; b < s.reps; b++) {
         for (let c = 0; c < s.cycles; c++) {
           const [ulo, uhi] = around(s.under_w);
@@ -43,6 +76,7 @@ export function planDayToScript(day: PlanDayRow | null | undefined, ftp: number,
         if (b < s.reps - 1) rest(s.rest_min);
       }
     } else {
+      // WorkStructure (N równych interwałów)
       const [lo, hi] = around(s.work_w);
       for (let i = 0; i < s.reps; i++) {
         steps.push(step(`Interwał ${i + 1}`, 'interval', s.work_min, lo, hi));

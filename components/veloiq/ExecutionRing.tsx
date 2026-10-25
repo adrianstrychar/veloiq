@@ -4,7 +4,7 @@
 // ring.available (parent sprawdza) — tu dostaje policzone pct + zaplanowany dzień (do nazwy).
 import { useId } from 'react';
 import { C } from '@/lib/theme';
-import { isOU, ouBlockMin } from '@/lib/structure';
+import { isOU, isBlocks, ouBlockMin, buildLabel } from '@/lib/structure';
 import { ringHeadline } from '@/lib/execution-ring';
 import type { PlannedWorkout } from '@/lib/ai/insight';
 
@@ -30,6 +30,7 @@ function subStatus(pct: number): string {
 function planName(p: PlannedWorkout): string {
   const s = p.structure;
   if (s) {
+    if (isBlocks(s)) return buildLabel(p.type, s);
     if (isOU(s)) return `OU ${s.reps}×${ouBlockMin(s)}`;
     return `${p.type} ${s.reps}×${s.work_min}`;
   }

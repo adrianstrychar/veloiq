@@ -7,7 +7,7 @@
 // równoległego matchingu.
 import { ringHeadline } from '@/lib/execution-ring';
 import { sessionStructure } from '@/lib/workout';
-import { isOU } from '@/lib/structure';
+import { isOU, isBlocks, blocksMaxW } from '@/lib/structure';
 import { decodePolyline } from '@/lib/share/decodePolyline';
 import type { PlannedWorkout } from '@/lib/ai/insight';
 
@@ -78,7 +78,19 @@ export function buildProfileSegments(p: PlannedWorkout): ProfileSeg[] {
   const segs: ProfileSeg[] = [];
   if (wUsed > 0) segs.push({ min: wUsed, rel: NONWORK_REL, work: false });
 
-  if (isOU(s)) {
+  if (isBlocks(s)) {
+    // Bloki: każdy krok jako słupek, wysokość ∝ moc / najmocniejszy krok; przerwy w dolnym pasie.
+    const max = blocksMaxW(s);
+    for (const b of s.blocks) {
+      for (let r = 0; r < b.repeat; r++) {
+        for (const st of b.steps) {
+          const rel = st.w / max;
+          const work = rel >= 0.8;
+          segs.push({ min: st.sec / 60, rel: work ? rel : Math.max(NONWORK_REL * 0.8, Math.min(rel, NONWORK_REL)), work });
+        }
+      }
+    }
+  } else if (isOU(s)) {
     // OU: blok = cycles × (under + over); wysokość ∝ moc/over_w.
     for (let r = 0; r < s.reps; r++) {
       for (let cyc = 0; cyc < s.cycles; cyc++) {

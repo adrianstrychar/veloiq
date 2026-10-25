@@ -1,6 +1,6 @@
 import { buildSessionStructure, type LapInput, type SessionElement } from '@/lib/laps';
 import { parseStructure, sessionStructure } from '@/lib/workout';
-import { isOU, ouBlockMin, type DayStructure } from '@/lib/structure';
+import { isOU, isBlocks, ouBlockMin, describeStructure as describeDayStructure, type DayStructure } from '@/lib/structure';
 import type { FormSignals } from '@/lib/ai/insight-context';
 import type { RaceDay } from '@/lib/race-day';
 
@@ -38,6 +38,9 @@ export interface PlannedWorkout {
 function describePlannedStructure(type: string, s: DayStructure): string {
   const ss = sessionStructure(type);
   const frame = `rozgrzewka ~${ss.warmupDefault} min, schłodzenie ~${ss.cooldownDefault} min`;
+  if (isBlocks(s)) {
+    return `część główna: ${describeDayStructure(s)} (kroki o niskiej mocy to PLANOWE przerwy/wypełnienie — nie krytykuj ich), ${frame}`;
+  }
   if (isOU(s)) {
     return `${s.reps} bloki × ${s.cycles} cykle (${s.under_min}min @${s.under_w}W under + ${s.over_min}min @${s.over_w}W over) = ${s.reps}×${ouBlockMin(s)}min, przerwy między blokami ${s.rest_min} min Z1 (PLANOWE — nie krytykuj ich), ${frame}`;
   }

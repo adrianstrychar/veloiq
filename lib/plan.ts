@@ -107,6 +107,7 @@ export interface ScalableDay {
   cooldown?: number;
   removed?: boolean;
   locked?: boolean; // ręczna blokada usera — suwak NIE skaluje/usuwa/konwertuje tego dnia
+  structure?: unknown; // Z2/LONG z blokami (sprinty, tempo) mają stały rdzeń — suwak go nie wydłuża
 }
 
 // Kolejność usuwania zależy od budżetu (LONG nie ma sensu przy bardzo krótkim tygodniu).
@@ -143,7 +144,7 @@ export function maxAchievableMin<T extends ScalableDay>(days: T[], isDone: (date
     base += d.dur_min;
     headroom += (ss.cooldownMax - ss.cooldownDefault) + (ss.warmupMax - ss.warmupDefault);
     // NOWA dźwignia: rdzeń steady (Z2/LONG) do +60% — poza tygodniem startowym.
-    if (!hasRace && STEADY_EXTENDABLE.has(d.type)) steadyHeadroom += Math.round(STEADY_CORE_FACTOR * d.dur_min);
+    if (!hasRace && STEADY_EXTENDABLE.has(d.type) && !d.structure) steadyHeadroom += Math.round(STEADY_CORE_FACTOR * d.dur_min);
   }
   // Przeszłe dni OFF nie konwertują się na Z1 — suwak nie dokłada jazdy na miniony dzień.
   const convOff = days.filter((d) => d.type === 'OFF' && !isDone(d.date) && !isPast(d.date) && !d.locked).length;
@@ -169,7 +170,8 @@ export function scaleWeek<T extends ScalableDay>(
     if (d.type === 'OFF' || d.type === 'RACE' || isDone(d.date) || isPast(d.date) || d.locked) return null; // przeszłe/done/locked nietykalne
     const ss = sessionStructure(d.type);
     const core = Math.max(0, d.dur_min - ss.warmupDefault - ss.cooldownDefault);
-    const coreMax = !hasRace && STEADY_EXTENDABLE.has(d.type) ? core + Math.round(STEADY_CORE_FACTOR * d.dur_min) : core;
+    // Z2/LONG z blokami: rdzeń = dokładna rozpiska (bloki) → wydłużanie rozjechałoby czas z profilem.
+    const coreMax = !hasRace && STEADY_EXTENDABLE.has(d.type) && !d.structure ? core + Math.round(STEADY_CORE_FACTOR * d.dur_min) : core;
     return { idx, type: d.type, core, coreMax, w: ss.warmupDefault, c: ss.cooldownDefault, origDur: d.dur_min, origTss: d.tss, removed: false };
   });
 

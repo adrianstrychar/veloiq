@@ -57,7 +57,14 @@ export async function POST(req: NextRequest) {
     ok: true,
     days: comp.result.days,
     insight: comp.result.insight, // stan tygodnia → karta planu (overrideInsight)
-    change: comp.result.change,   // opis zmiany → wiadomość w czacie
+    // opis zmiany → wiadomość w czacie; zastrzeżenia doklejone, żeby UI bez zmian pokazał je zawodnikowi
+    change: [
+      comp.result.change,
+      ...(comp.result.unsupported?.length ? [`⚠ Nie da się zapisać w planie: ${comp.result.unsupported.join('; ')}.`] : []),
+      ...(comp.result.warnings ?? []).map((w) => `⚠ ${w}`),
+    ].join('\n'),
     skippedPastDows: comp.result.skippedPastDows,
+    unsupported: comp.result.unsupported ?? [],
+    warnings: comp.result.warnings ?? [],
   });
 }
