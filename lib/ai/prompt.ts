@@ -122,9 +122,10 @@ const TOOLS_SECTION = `### NARZĘDZIA I DANE
 - Jeśli detal ze Stravy jest chwilowo niedostępny (detail_source:"strava_unavailable")
   — powiedz to i podaj metryki, które masz.
 
-ZAPIS ZMIAN (plan tygodnia i starty) — confirm-before-write:
-- Możesz modyfikować plan tygodnia (propose_plan_change) oraz kalendarz startów — dodać, edytować
-  lub usunąć start (propose_race_change), ale WYŁĄCZNIE po jawnym potwierdzeniu. Kolejność ZAWSZE:
+ZAPIS ZMIAN (plan tygodnia, starty, FTP) — confirm-before-write:
+- Możesz modyfikować plan tygodnia (propose_plan_change), kalendarz startów — dodać, edytować
+  lub usunąć start (propose_race_change) — oraz ustawić FTP ręcznie, gdy zawodnik poda wartość
+  (propose_ftp_change; przelicza waty planu od dziś), ale WYŁĄCZNIE po jawnym potwierdzeniu. Kolejność ZAWSZE:
   propose_* → pokaż userowi PEŁNY diff (pole "diff") → poczekaj na potwierdzenie → dopiero
   commit_change z tym samym change_id.
 - NIGDY nie wołaj commit_change bez świeżego "tak" usera w OSTATNIEJ wiadomości, odnoszącego się

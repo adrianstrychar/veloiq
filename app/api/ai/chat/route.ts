@@ -46,10 +46,10 @@ interface PendingCard {
 }
 
 function pendingFrom(toolName: string, data: unknown): PendingCard | null {
-  if (toolName !== 'propose_plan_change' && toolName !== 'propose_race_change') return null;
+  if (toolName !== 'propose_plan_change' && toolName !== 'propose_race_change' && toolName !== 'propose_ftp_change') return null;
   const d = data as { ok?: boolean; change_id?: string; diff?: string };
   if (!d?.ok || !d.change_id || !d.diff) return null;
-  return { change_id: d.change_id, kind: toolName === 'propose_plan_change' ? 'plan' : 'race', diff: d.diff };
+  return { change_id: d.change_id, kind: toolName === 'propose_race_change' ? 'race' : 'plan', diff: d.diff };
 }
 
 export async function POST(request: NextRequest) {
