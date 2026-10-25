@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check:plan-modify": "ANTHROPIC_API_KEY=offline npx -y tsx --tsconfig tsconfig.json scripts/check-plan-modify.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",

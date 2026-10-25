@@ -5,7 +5,8 @@
 // usuwa pending przy odmowie. Reużywa applyPlanModification (#54) i lib/races.ts (zapis startów).
 import type Anthropic from '@anthropic-ai/sdk';
 import { createHash } from 'node:crypto';
-import { computePlanModification, applyPlanModification, type PlanModificationResult } from '@/lib/ai/plan-modify';
+import { computePlanModification, applyPlanModification, sameTraining, type PlanModificationResult } from '@/lib/ai/plan-modify';
+import { describeStructure } from '@/lib/structure';
 import { mondayOfISO } from '@/lib/plan';
 // Past-day guard w chacie liczony w strefie UŻYTKOWNIKA (spójnie z KONTEKST CZASOWY). Uwaga: Plan-page
 // modify (app/api/plan/modify) używa serwerowego localTodayISO — osobny, latentny temat przy północy.
@@ -24,7 +25,8 @@ const PENDING_TTL_MS = 15 * 60 * 1000; // 15 min — propozycje z rozmowy (chat)
 const OVERLOAD_TTL_MS = 12 * 60 * 60 * 1000; // 12 h
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 const DOWF = ['', 'Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
-const fmtDay = (d: PlanDay) => (d.type === 'OFF' ? 'OFF (wolne)' : `${d.type} ${d.dur_min} min, TSS ${d.tss}`);
+const fmtDay = (d: PlanDay) => (d.type === 'OFF' ? 'OFF (wolne)' : `${d.type} „${d.label}" ${d.dur_min} min, TSS ${d.tss}`);
+const fmtStruct = (d: PlanDay) => (d.structure ? describeStructure(d.structure) : 'bez szczegółowej rozpiski');
 
 export const WRITE_TOOL_DEFS: Anthropic.Tool[] = [
   {
@@ -36,7 +38,7 @@ export const WRITE_TOOL_DEFS: Anthropic.Tool[] = [
       additionalProperties: false,
       properties: {
         week_start: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Monday of the target week (local YYYY-MM-DD). Omit for the current week.' },
-        instruction: { type: 'string', description: "The requested change in natural language, in the athlete's own phrasing." },
+        instruction: { type: 'string', description: "The requested change in natural language, in the athlete's own phrasing, COMPLETE — every session detail they gave (number/length/power of intervals, rests, sprints, tempo blocks, cadence, order). The plan editor sees ONLY this text, so never summarize or drop details." },
       },
       required: ['instruction'],
     },
@@ -89,13 +91,20 @@ export function isWriteTool(name: string): boolean {
   return name === 'propose_plan_change' || name === 'propose_race_change' || name === 'commit_change' || name === 'cancel_change';
 }
 
+// Diff porównuje TRENING (typ, czas, TSS) ORAZ rozpiskę (structure). Wcześniej tylko typ/czas/TSS —
+// zmiana samych interwałów dawała "(żaden dzień się nie zmienia)", a zawodnik nie widział, co pojedzie.
 export function buildPlanDiff(current: PlanDay[], result: PlanModificationResult, weekStart: string): string {
   const changes: string[] = [];
   for (const d of result.days) {
     const o = current.find((x) => x.dow === d.dow);
     if (!o) continue;
-    if (o.type !== d.type || o.dur_min !== d.dur_min || o.tss !== d.tss) {
+    const structChanged = JSON.stringify(o.structure ?? null) !== JSON.stringify(d.structure ?? null);
+    if (!sameTraining(o, d) || structChanged) {
       changes.push(`  • ${DOWF[d.dow]}: ${fmtDay(o)} → ${fmtDay(d)}`);
+      if (structChanged && d.type !== 'OFF') {
+        changes.push(`      rozpiska: ${o.type === 'OFF' ? '—' : fmtStruct(o)}`);
+        changes.push(`             → ${fmtStruct(d)}`);
+      }
     }
   }
   const oldTss = current.reduce((s, x) => s + x.tss, 0);
@@ -106,6 +115,8 @@ export function buildPlanDiff(current: PlanDay[], result: PlanModificationResult
   parts.push(`TSS tygodnia: ${oldTss} → ${result.tssTarget}.`);
   parts.push(`Zablokowane (nietknięte): ${locked.length ? locked.join(', ') : '—'}.`);
   if (skipped.length) parts.push(`Dni minione: pominięte (${skipped.join(', ')}).`);
+  if (result.unsupported?.length) parts.push(`⚠ Nie da się zapisać w planie: ${result.unsupported.join('; ')}.`);
+  for (const w of result.warnings ?? []) parts.push(`⚠ ${w}`);
   parts.push('Napisz „tak", żeby zapisać, albo powiedz, co poprawić.');
   return parts.join('\n');
 }
@@ -148,12 +159,17 @@ async function proposePlanChange({ supabase, athleteId }: ToolCtx, input: Record
     .single();
   if (error || !pend) return { ok: false, error: `Nie udało się zapisać propozycji: ${error?.message ?? 'nieznany błąd'}` };
 
+  const caveats = [...(comp.result.unsupported ?? []).map((u) => `niewyrażalne: ${u}`), ...(comp.result.warnings ?? [])];
   return {
     ok: true,
     change_id: pend.id,
     diff: buildPlanDiff(currentDays, comp.result, weekStart),
+    change: comp.result.change,
+    ...(caveats.length ? { caveats } : {}),
     requires_confirmation: true,
-    note: 'Pokaż userowi diff i poproś o potwierdzenie ("tak"). Zapis dopiero po jawnym potwierdzeniu — commit_change z tym change_id.',
+    note: caveats.length
+      ? 'Pokaż userowi diff. UWAGA: część prośby NIE trafiła do planu (pole caveats) — powiedz to wprost jednym zdaniem, nie twierdź, że zmiana jest pełna. Zapis dopiero po jawnym „tak" — commit_change z tym change_id.'
+      : 'Pokaż userowi diff i poproś o potwierdzenie ("tak"). Opisuj zmianę WYŁĄCZNIE na podstawie diffa (rozpiska = to, co zawodnik pojedzie). Zapis dopiero po jawnym potwierdzeniu — commit_change z tym change_id.',
   };
 }
 

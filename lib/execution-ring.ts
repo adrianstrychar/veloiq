@@ -3,7 +3,7 @@
 // Okno mocy liczone po ELAPSED (streams indeksują i×dt = elapsed) — nigdy moving_time.
 import { hasWatts, zoneDistribution } from '@/lib/streams-view';
 import { sessionStructure } from '@/lib/workout';
-import { isStructuredType, isOU } from '@/lib/structure';
+import { isStructuredType, isOU, isBlocks, blocksWorkSteps } from '@/lib/structure';
 import type { StreamsJson } from '@/lib/strava/streams';
 import type { PlannedWorkout } from '@/lib/ai/insight';
 
@@ -72,7 +72,15 @@ export function computeExecutionRing(
 
     let centerW: number;
     let targetMin: number;
-    if (isOU(s)) {
+    if (isBlocks(s)) {
+      // Bloki: kroki robocze (>= 80% najmocniejszego). Okno wokół średniej ważonej czasem —
+      // przy piramidzie/mieszanych watach to przybliżenie (jedno okno mocy), świadomie.
+      const work = blocksWorkSteps(s);
+      const sec = work.reduce((a, x) => a + x.repeat * x.step.sec, 0);
+      if (sec <= 0) return { available: false, reason: 'bad_target' };
+      centerW = Math.round(work.reduce((a, x) => a + x.repeat * x.step.sec * x.step.w, 0) / sec);
+      targetMin = sec / 60;
+    } else if (isOU(s)) {
       centerW = s.over_w;                       // okno wokół OVER (nie under) — twardy bodziec bloku
       targetMin = s.reps * s.cycles * s.over_min;
     } else {
