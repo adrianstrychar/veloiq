@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { getRideEngine, isNativeRide, setWebSimSpeed } from '@/lib/ride/ride-client';
-import type { LiveSample, SensorData, SensorFound, SensorStatus, WorkoutSummary, VoiceLevel, VoiceInfo, VoiceMode } from '@/lib/ride/ride-engine';
+import type { CoachEvent, LiveSample, SensorData, SensorFound, SensorStatus, WorkoutSummary, VoiceLevel, VoiceInfo, VoiceMode } from '@/lib/ride/ride-engine';
 import type { WorkoutScript } from '@/lib/ride/workout-script';
 
 export interface CueItem { id: number; at: number; text: string; kind: string }
@@ -15,10 +15,11 @@ export interface RideSettings {
   announceArm: boolean;  // „Za minutę interwał…”
   autoPause: boolean;    // auto-pauza na postojach
   voiceLevel: VoiceLevel;
+  talkTap: boolean;      // dotknięcie słuchawki/okularów = pytanie do Enzo (zatrzymuje muzykę z innych aplikacji)
 }
 
 export const DEFAULT_SETTINGS: RideSettings = {
-  outdoor: false, autoStart: true, announceArm: true, autoPause: true, voiceLevel: 'full',
+  outdoor: false, autoStart: true, announceArm: true, autoPause: true, voiceLevel: 'full', talkTap: true,
 };
 
 /** Ustawienia użytkownika → skrypt dla silnika. */
@@ -51,6 +52,7 @@ export function useRide() {
   const [recoverable, setRecoverable] = useState<{ name?: string; elapsed?: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [voice, setVoiceState] = useState<{ voices: VoiceInfo[]; current?: string; rate: number; mode?: VoiceMode; packs?: { id: string; name: string }[] }>({ voices: [], rate: 0.5 });
+  const [coach, setCoach] = useState<{ state: CoachEvent['state']; question?: string; answer?: string; at: number } | null>(null);
   const cueId = useRef(0);
   const lastElapsed = useRef(0);
 
@@ -65,6 +67,15 @@ export function useRide() {
       engine.addListener('sensor', (d) => setSensors((s) => ({ ...s, [d.kind]: d }))),
       engine.addListener('planFinished', (d) => setPlanDone(d)),
       engine.addListener('paused', () => { setActive(true); setPaused(true); }),
+      engine.addListener('resumed', () => setPaused(false)),
+      engine.addListener('coach', (d) => setCoach((c) => {
+        const at = Date.now();
+        if (d.state === 'listening') return { state: d.state, at };
+        if (d.state === 'question') return { state: d.state, question: d.text, at };
+        if (d.state === 'answer') return { ...c, state: d.state, answer: d.text, at };
+        if (d.state === 'error') return { ...c, state: d.state, answer: d.text, at };
+        return c ? { ...c, state: d.state, at } : null;
+      })),
     ];
     engine.getRecoverable().then((r) => { if (r.available) setRecoverable({ name: r.name, elapsed: r.elapsed }); }).catch(() => {});
     engine.getSavedSensors().then((s) => { if (s.hrId || s.powerId) engine.connect(s); }).catch(() => {});
@@ -93,7 +104,15 @@ export function useRide() {
       await engine.startWorkout({ script: applySettings(script, s), outdoor: s.outdoor, simulate,
         voiceLevel: s.voiceLevel, announceArm: s.announceArm });
       setActive(true); setPaused(false);
+      // rozmowa z Enzo: krótki token dla natywnego pluginu (działa też przy zgaszonym ekranie)
+      if (native) {
+        fetch('/api/ride/token').then((r) => (r.ok ? r.json() : null)).then((j) => {
+          if (j?.token) return engine.setCoach({ token: j.token, baseUrl: window.location.origin, tapMode: s.talkTap });
+        }).catch(() => {});
+      }
     }),
+    coach,
+    talk: () => run(() => engine.talk()),
     pause: () => run(async () => { await engine.pause(); setPaused(true); }),
     resume: () => run(async () => { await engine.resume(); setPaused(false); }),
     skip: () => run(() => engine.skipStep()),

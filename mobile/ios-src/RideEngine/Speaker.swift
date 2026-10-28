@@ -20,8 +20,10 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
         let d = UserDefaults.standard
         if d.object(forKey: Self.rateKey) != nil { rate = d.float(forKey: Self.rateKey) }
         voice = Self.resolveVoice(id: d.string(forKey: Self.voiceKey), language: language)
-        try? session.setCategory(.playback, mode: .voicePrompt,
-                                 options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+        if !AudioGate.hold {
+            try? session.setCategory(.playback, mode: .voicePrompt,
+                                     options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+        }
     }
 
     /// Wybrany głos, jeśli pasuje do języka; inaczej najlepszy (Premium > Enhanced > domyślny).
@@ -80,7 +82,7 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
 
     private func releaseIfIdle() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self = self, !self.synth.isSpeaking else { return }
+            guard let self = self, !self.synth.isSpeaking, !AudioGate.hold else { return }
             try? self.session.setActive(false, options: .notifyOthersOnDeactivation)
         }
     }

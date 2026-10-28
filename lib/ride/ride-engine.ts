@@ -58,6 +58,8 @@ export interface WorkoutSummary {
   efforts: EffortResult[]; // wysiłki wykryte w jeździe swobodnej
 }
 
+export interface CoachEvent { state: 'listening' | 'question' | 'answer' | 'error' | 'idle'; text?: string }
+
 export interface RideEnginePlugin {
   scan(options: { kinds?: SensorKind[] }): Promise<void>;
   stopScan(): Promise<void>;
@@ -106,6 +108,12 @@ export interface RideEnginePlugin {
   addListener(event: 'paused', cb: (d: { elapsed: number; recovered?: boolean }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'planFinished', cb: (d: WorkoutSummary) => void): Promise<PluginListenerHandle>;
   addListener(event: 'finished', cb: (d: WorkoutSummary) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'coach', cb: (d: CoachEvent) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'resumed', cb: (d: { elapsed: number }) => void): Promise<PluginListenerHandle>;
+  /** Rozmowa z Enzo: token do /api/ride/ask, adres serwera, dotknięcie słuchawki = pytanie. */
+  setCoach(options: { token: string; baseUrl: string; tapMode: boolean }): Promise<void>;
+  /** Przycisk „Zapytaj Enzo”. */
+  talk(): Promise<void>;
   removeAllListeners(): Promise<void>;
 }
 

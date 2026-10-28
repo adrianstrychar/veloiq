@@ -48,6 +48,8 @@ pbg()  { $PB -c "Print :UIBackgroundModes" "$PL" >/dev/null 2>&1 || $PB -c "Add 
 pbg bluetooth-central; pbg audio; pbg location
 pset NSBluetoothAlwaysUsageDescription string "VeloIQ łączy się z Twoim pomiarem mocy i pasem tętna, żeby prowadzić trening na żywo."
 pset NSLocationWhenInUseUsageDescription string "VeloIQ zapisuje trasę treningu na zewnątrz."
+pset NSMicrophoneUsageDescription string "Zadaj pytanie trenerowi Enzo głosem – przez mikrofon słuchawek lub okularów."
+pset NSSpeechRecognitionUsageDescription string "VeloIQ zamienia Twoje pytanie do trenera Enzo na tekst."
 pset NSLocalNetworkUsageDescription string "VeloIQ w trybie deweloperskim ładuje aplikację z komputera w tej samej sieci."
 $PB -c "Print :NSAppTransportSecurity" "$PL" >/dev/null 2>&1 || $PB -c "Add :NSAppTransportSecurity dict" "$PL"
 $PB -c "Print :NSAppTransportSecurity:NSAllowsLocalNetworking" "$PL" >/dev/null 2>&1 || $PB -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PL"

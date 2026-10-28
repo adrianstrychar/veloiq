@@ -22,7 +22,7 @@ const LEAD_FOR: Record<string, string> = {
   planDone: 'done', freeStart: 'free', effort: 'effort',
   powerLost: 'powerLost', powerBack: 'powerBack', hrLost: 'hrLost', hrBack: 'hrBack',
   hrHigh: 'hrHigh', hrRecovered: 'hrRec', status: 'status',
-  listen: 'listen', repeat: 'repeat', think: 'think', offline: 'offline', doneCmd: 'doneCmd',
+  listen: 'listen', repeat: 'repeat', think: 'think', offline: 'offline', doneCmd: 'doneCmd', left: 'left', power: 'power',
 };
 /** Komunikaty, których dyrektor nie mówi (są tylko na ekranie). */
 const SILENT = new Set(['seriesPrev', 'restInfo']);

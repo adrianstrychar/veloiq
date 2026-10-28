@@ -26,6 +26,8 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getVoices", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setVoice", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readRecording", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setCoach", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "talk", returnType: CAPPluginReturnPromise),
     ]
 
     private let engineQueue = DispatchQueue(label: "veloiq.engine")
@@ -38,6 +40,8 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         d?.name = UserDefaults.standard.string(forKey: "veloiq.voice.name")
         return d
     }()
+    /// Rozmowa z Enzo (dotknięcie słuchawki / przycisk na ekranie). Główny wątek.
+    private lazy var coach: CoachTalk = makeCoach()
     private static let modeKey = "veloiq.voice.mode"
     private var voiceMode: String {
         get { UserDefaults.standard.string(forKey: Self.modeKey) ?? "enzo" }
@@ -294,6 +298,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func stopInternal(speakSummary: Bool) {
+        DispatchQueue.main.async { self.coach.setTapMode(false) }
         ticker?.cancel(); ticker = nil
         simulator?.stop(); simulator = nil
         recorder?.close(); recorder = nil
@@ -399,6 +404,138 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             } else { self.speaker.speak(text) }
         }
         call.resolve()
+    }
+
+    // MARK: - Rozmowa z Enzo
+
+    /// JS po starcie treningu: token do /api/ride/ask, adres serwera, czy dotknięcie słuchawki = pytanie.
+    @objc func setCoach(_ call: CAPPluginCall) {
+        let token = call.getString("token"), base = call.getString("baseUrl").flatMap { URL(string: $0) }
+        let tap = call.getBool("tapMode") ?? true
+        DispatchQueue.main.async {
+            CoachTalk.requestPermissions()
+            self.coach.token = token
+            self.coach.baseURL = base
+            self.coach.setTapMode(tap && self.engine != nil)
+            call.resolve()
+        }
+    }
+
+    /// Przycisk „Zapytaj Enzo” na ekranie.
+    @objc func talk(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { self.coach.start(); call.resolve() }
+    }
+
+    private func makeCoach() -> CoachTalk {
+        let c = CoachTalk()
+        c.onEvent = { [weak self] kind, data in
+            var d = data; d["state"] = kind
+            self?.notifyListeners("coach", data: d)
+        }
+        c.playLead = { [weak self] ev, done in
+            guard let self = self else { return }
+            if self.voiceMode == "enzo", let d = self.director, let seg = d.compose(ev, [:]), !seg.isEmpty {
+                // poczekaj na zaległe komunikaty Enzo, potem klip
+                let wait = d.pendingDuration
+                d.play(seg)
+                if let done = done { DispatchQueue.main.asyncAfter(deadline: .now() + wait + d.duration(seg) + 0.15, execute: done) }
+            } else {
+                let t = ["listen": "Słucham.", "repeat": "Nie zrozumiałem, powtórz.", "think": "Chwileczkę.",
+                         "offline": "Nie mam zasięgu.", "doneCmd": "Zrobione."][ev] ?? ""
+                if !t.isEmpty { self.speaker.speak(t) }
+                if let done = done { DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: done) }
+            }
+        }
+        c.speakAnswer = { [weak self] text in self?.speaker.speak(text) }
+        c.stateProvider = { [weak self] in
+            guard let self = self else { return [:] }
+            return self.engineQueue.sync { self.engine?.coachState() ?? [:] }
+        }
+        c.runAction = { [weak self] a in self?.coachAction(a) }
+        c.localAnswer = { [weak self] q in self?.localAnswer(q) ?? false }
+        return c
+    }
+
+    /// Polecenia sterujące jazdą (z mowy albo z odpowiedzi trenera AI).
+    private func coachAction(_ a: String) {
+        engineQueue.async {
+            guard let eng = self.engine else { return }
+            switch a {
+            case "next":
+                eng.advance(); self.recorder?.appendEvent(second: eng.lastSecond, "skip"); eng.skipStep()
+            case "pause":
+                eng.pause(); self.saveRecoveryState()
+                self.notifyListeners("paused", data: ["elapsed": eng.lastSecond])
+            case "resume":
+                eng.resume(); self.saveRecoveryState()
+                self.notifyListeners("resumed", data: ["elapsed": eng.lastSecond])
+            default: break
+            }
+        }
+    }
+
+    /// Proste pytania i polecenia bez internetu, głosem Enzo. Główny wątek.
+    private func localAnswer(_ q: String) -> Bool {
+        let t = q.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "pl_PL"))
+            .replacingOccurrences(of: "ł", with: "l")
+        func has(_ ws: String...) -> Bool { ws.contains { t.contains($0) } }
+        let st: [String: Any] = engineQueue.sync { self.engine?.coachState() ?? [:] }
+        let step = st["step"] as? [String: Any]
+        let enzo = voiceMode == "enzo" ? director : nil
+        func play(_ ids: [String], _ text: String) {
+            notifyListeners("coach", data: ["state": "answer", "text": text])
+            if let d = enzo, !ids.isEmpty { d.play(ids) } else { speaker.speak(text) }
+        }
+        func lead(_ ev: String) -> [String] { enzo?.compose(ev, [:]) ?? [] }
+
+        if has("nastepn", "pomin", "kolejny krok") {
+            coachAction("next"); play(lead("doneCmd"), "Następny krok."); return true
+        }
+        if has("pauza", "zatrzymaj", "stop") && !has("ile") {
+            coachAction("pause"); return true            // silnik sam mówi „Pauza”
+        }
+        if has("wznow", "jedziemy dalej", "rusz") {
+            coachAction("resume"); return true
+        }
+        if has("ile zostal", "ile jeszcze", "do konca", "ile minut") {
+            let sec = (step?["remainingSec"] as? Int) ?? (st["planRemainingSec"] as? Int) ?? 0
+            let m = sec / 60, s = sec % 60
+            var ids = lead("left")
+            if let d = enzo {
+                if m > 0, let c = d.compose("warmupStart", ["dur": "\(m) minut"]), c.count > 1 { ids += Array(c.dropFirst()) }
+                if m == 0 || m < 3, s > 0, let c = d.compose("warmupStart", ["dur": "\(s) sekund"]), c.count > 1 { ids += Array(c.dropFirst()) }
+            }
+            play(ids, "Zostało \(Phrases.duration(sec)).")
+            return true
+        }
+        if has("tetno", "puls") {
+            guard let hr = st["hr"] as? Int else { play(lead("hrLost"), "Nie widzę tętna."); return true }
+            var ids: [String] = []
+            var state = ""
+            if let lo = step?["hrLow"] as? Int, hr < lo - 3 { state = "low" }
+            else if let hi = step?["hrHigh"] as? Int, hr > hi + 3 { state = "high" }
+            else if step?["hrHigh"] != nil { state = "ok" }
+            if let d = enzo, let c = d.compose("status", ["avg": "0", "hr": "\(hr)", "hrState": state]) {
+                ids = c.filter { $0.hasPrefix("hrv.") || $0.hasPrefix("hrs.") }
+            }
+            play(ids, "Tętno \(hr)\(["ok": ", w normie", "high": ", powyżej strefy", "low": ", poniżej strefy"][state] ?? "").")
+            return true
+        }
+        if has("sredni", "jak idzie", "jak mi idzie", "raport") {
+            let avg = (step?["avgPower"] as? Int) ?? (st["avgPowerRide"] as? Int) ?? 0
+            var v: [String: String] = ["avg": "\(avg)", "hr": "", "hrState": ""]
+            if let hr = st["hr"] as? Int { v["hr"] = "\(hr)" }
+            play(enzo?.compose("status", v) ?? [], "Średnio \(avg) watów.")
+            return true
+        }
+        if has("jaka moc", "ile watow", "moc teraz") {
+            let p = (st["power30s"] as? Int) ?? 0
+            var ids = lead("power")
+            if let d = enzo, let c = d.compose("half", ["avg": "\(p)"]), c.count > 1 { ids += Array(c.dropFirst()) }
+            play(ids, "Moc \(p) watów.")
+            return true
+        }
+        return false
     }
 
     @objc func readRecording(_ call: CAPPluginCall) {

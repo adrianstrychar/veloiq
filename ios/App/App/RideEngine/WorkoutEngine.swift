@@ -489,6 +489,43 @@ final class WorkoutEngine {
         }
     }
 
+    // MARK: - Stan dla rozmowy z trenerem
+
+    /// Migawka jazdy dla pytań „jak mi idzie?” (lokalnie i na serwer). Tylko wartości nie-nil (JSON).
+    func coachState() -> [String: Any] {
+        var d: [String: Any] = ["elapsedSec": max(0, lastSecond), "phase": isPaused ? "paused" : phase.rawValue,
+                                "ftp": script.ftp, "workout": script.name]
+        d["power3s"] = avgInt(Array(P.suffix(3)))
+        d["power30s"] = avgInt(Array(P.suffix(30)))
+        d["avgPowerRide"] = avgInt(P.filter { $0 >= R.autoPauseWatts })
+        if let h = hrAvg(10) { d["hr"] = h }
+        if phase != .free, let st = step {
+            var sd: [String: Any] = ["name": st.name, "type": st.type, "elapsedSec": inStep,
+                                     "remainingSec": max(0, st.durationSec - inStep), "durationSec": st.durationSec,
+                                     "targetLow": st.powerLow, "targetHigh": st.powerHigh,
+                                     "avgPower": avgInt(stepSecs.map { P[$0] }.filter { $0 >= R.autoPauseWatts })]
+            if let v = st.hrLow { sd["hrLow"] = v }
+            if let v = st.hrHigh { sd["hrHigh"] = v }
+            if let n = intervalNumbers[stepIdx] { sd["intervalNo"] = n; sd["intervalCount"] = intervalCount }
+            d["step"] = sd
+            let rest = script.steps.dropFirst(stepIdx + 1)
+            d["planRemainingSec"] = rest.reduce(0) { $0 + $1.durationSec } + max(0, st.durationSec - inStep)
+            if let n = rest.first {
+                d["nextStep"] = ["name": n.name, "type": n.type, "durationSec": n.durationSec, "targetLow": n.powerLow, "targetHigh": n.powerHigh]
+            }
+        }
+        d["series"] = series.map { x -> [String: Any] in
+            var o: [String: Any] = ["n": x.n, "durationSec": x.durationSec, "avgPower": x.avgPower, "compliancePct": x.compliancePct]
+            if let h = x.avgHr { o["avgHr"] = h }
+            return o
+        }
+        if let b = script.briefing {
+            if let r = b.readiness { d["readiness"] = Int(r.rounded()) }
+            if let s = b.readyState { d["readyState"] = s }
+        }
+        return d
+    }
+
     // MARK: - Odprawa na rozgrzewce
 
     private static let briefReadySec = 150, briefCondFrom = 360, briefCondSec = 600

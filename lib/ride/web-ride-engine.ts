@@ -122,6 +122,8 @@ export class WebRideEngine implements RideEnginePlugin {
   }
   async pause() { this.paused = true; this.emit('cue', { text: 'Pauza.', kind: 'info' }); this.say('manualPause', {}, 'Pauza.'); this.emitLive(); }
   async resume() { this.paused = false; this.emit('cue', { text: 'Wznawiamy.', kind: 'info' }); this.say('manualResume', {}, 'Wznawiamy.'); }
+  async setCoach() { /* rozmowa tylko w aplikacji na iPhonie */ }
+  async talk() { this.emit('coach', { state: 'error', text: 'Rozmowa z Enzo działa w aplikacji na iPhonie.' }); }
   async skipStep() { this.engine?.skipStep(true); this.emitLive(); }
   async stopWorkout(): Promise<WorkoutSummary> {
     this.stopTimer();

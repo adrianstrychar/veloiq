@@ -56,6 +56,7 @@ final class DirectorVoice: NSObject {
         "powerLost": "powerLost", "powerBack": "powerBack", "hrLost": "hrLost", "hrBack": "hrBack",
         "hrHigh": "hrHigh", "hrRecovered": "hrRec", "status": "status",
         "listen": "listen", "repeat": "repeat", "think": "think", "offline": "offline", "doneCmd": "doneCmd",
+        "left": "left", "power": "power",
     ]
     private static let silent: Set<String> = ["seriesPrev", "restInfo"]
 
@@ -192,8 +193,10 @@ final class DirectorVoice: NSObject {
             return AVPlayerItem(url: dir.appendingPathComponent(c.file))
         }
         guard !items.isEmpty else { return }
-        try? session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
-        try? session.setActive(true)
+        if !AudioGate.hold {   // tryb rozmowy trzyma własną sesję (przyciski słuchawek)
+            try? session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+            try? session.setActive(true)
+        }
         if interrupt { player.removeAllItems() }
         for it in items { player.insert(it, after: nil) }
         player.play()
@@ -201,9 +204,21 @@ final class DirectorVoice: NSObject {
 
     func stop() { player.removeAllItems(); releaseIfIdle() }
 
+    /// Łączny czas klipów (z piknięciem) – do „Słucham!” → dopiero potem mikrofon.
+    func duration(_ ids: [String]) -> Double {
+        (["fx.beep"] + ids).compactMap { pack.clips[$0]?.dur }.reduce(0, +)
+    }
+    /// Kolejka zaległych komunikatów (np. podsumowanie serii) – rozmowa czeka, aż Enzo skończy.
+    var pendingDuration: Double {
+        guard let cur = player.currentItem else { return 0 }
+        let left = max(0, cur.duration.seconds.isFinite ? cur.duration.seconds - cur.currentTime().seconds : 0)
+        let rest = player.items().dropFirst().map { $0.asset.duration.seconds }.filter { $0.isFinite }.reduce(0, +)
+        return left + rest
+    }
+
     private func releaseIfIdle() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            guard let self = self, self.player.items().isEmpty || self.player.currentItem == nil else { return }
+            guard let self = self, !AudioGate.hold, self.player.items().isEmpty || self.player.currentItem == nil else { return }
             try? self.session.setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
