@@ -86,9 +86,12 @@ export const FLEX_PHRASES: Record<string, string> = {
   readiness: 'Gotowość dziś {pct} procent. {state}.',
   condition: 'Kondycja dziś {sign}{n}.',
   count: '{word}',
+  drink: 'Pij! Kilka łyków.',
+  eat: 'Czas na jedzenie – żel albo baton, popij.',
 };
 
 const QUIET_AFTER_STOP_SEC = 20;
+const FUEL_DRINK_SEC = 1200;   // picie co 20 min
 const BRIEF_READY_SEC = 150;   // gotowość: 2,5 min po starcie
 const BRIEF_COND_FROM = 360;   // kondycja: okno 6.–10. minuty (tętno już się ustaliło)
 const BRIEF_COND_SEC = 600; // cisza po postoju (światła, skrzyżowanie)
@@ -185,6 +188,7 @@ export class FlexEngine {
       else this.announceStep(0, speak);
     }
     this.briefingTick(s, speak);
+    this.fuelTick(s, speak);
     if (this.phase === 'free') return this.freeTick(s, p, speak);
 
     const st = this.step!;
@@ -436,6 +440,37 @@ export class FlexEngine {
 
   private countdown(n: number, speak: boolean) {
     this.say('count', { n, word: ['', 'Jeden', 'Dwa', 'Trzy'][n] }, 'countdown', speak);
+  }
+
+  // ------------------------------------------------------------------ jedzenie i picie
+  private lastDrink = 0;
+  private lastEat = 0;
+  /** „Zjadłem” / „wypiłem” (głosem) – przesuwa przypomnienia. */
+  fueled(kind: 'eat' | 'drink') {
+    if (kind === 'eat') this.lastEat = Math.max(0, this.s);
+    this.lastDrink = Math.max(0, this.s);
+  }
+  /** Przypomnienia na dłuższych jazdach: pić co 20 min, jeść co 40 min (co 30 przy mocnym planie).
+   *  Nie w trakcie interwału – poczekamy na przerwę (najdłużej 10 min). */
+  private fuelTick(s: number, speak: boolean) {
+    if (this.phase === 'autoPaused' || s <= 0) return;
+    const steps = this.script.steps;
+    const total = steps.reduce((a, x) => a + x.durationSec, 0);
+    const free = !steps.length;
+    const drinkOn = free ? s >= FUEL_DRINK_SEC : total >= 2700;
+    const eatOn = free ? s >= 3600 : total >= 4500;
+    const hard = steps.some((x) => x.type === 'interval' && this.script.ftp > 0 && x.powerLow >= this.script.ftp * 0.88);
+    const eatEvery = hard ? 1800 : 2400;
+    const st = this.phase === 'free' ? undefined : this.step;
+    const working = st?.type === 'interval' && st.durationSec - this.inStep > 45;
+    const due = (last: number, every: number) => s - last >= every && (!working || s - last >= every + 600);
+    if (eatOn && due(this.lastEat, eatEvery)) {
+      this.lastEat = s; this.lastDrink = s;
+      this.say('eat', {}, 'info', speak);
+    } else if (drinkOn && due(this.lastDrink, FUEL_DRINK_SEC)) {
+      this.lastDrink = s;
+      this.say('drink', {}, 'info', speak);
+    }
   }
 
   // ------------------------------------------------------------------ odprawa (rozgrzewka)

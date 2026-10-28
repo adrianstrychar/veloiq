@@ -68,7 +68,7 @@ export type PhraseKey =
   | 'powerLost' | 'powerBack' | 'hrLost' | 'hrBack'
   | 'armNext' | 'tenSec' | 'goNow' | 'waiting' | 'autoStart' | 'restInfo' | 'autoPause' | 'autoResume'
   | 'earlyStop' | 'seriesEnd' | 'seriesPrev' | 'hrUp' | 'planDone' | 'freeStart' | 'effort'
-  | 'hrHigh' | 'hrRecovered' | 'status' | 'readiness' | 'condition' | 'count';
+  | 'hrHigh' | 'hrRecovered' | 'status' | 'readiness' | 'condition' | 'count' | 'drink' | 'eat';
 
 export interface WorkoutScript {
   version: 1;

@@ -47,6 +47,8 @@ export async function POST(req: NextRequest) {
     st.planRemainingSec != null ? `Do końca planu: ${mmss(st.planRemainingSec)}.` : '',
     Array.isArray(st.series) && st.series.length ? `Zrobione serie: ${JSON.stringify(st.series)}.` : '',
     st.readiness != null ? `Gotowość dziś: ${st.readiness}% (${st.readyState ?? ''}).` : '',
+    `Kadencja ${st.cadence ?? 'brak'}, praca ${st.kJ ?? '?'} kJ (≈ tyle samo kcal)${st.distanceKm != null ? `, dystans ${st.distanceKm} km, prędkość ${st.speedKmh} km/h` : ''}.`,
+    st.sinceEatSec != null ? `Ostatnie jedzenie ${mmss(st.sinceEatSec)} temu, picie ${mmss(st.sinceDrinkSec)} temu.` : '',
   ].filter(Boolean).join('\n');
 
   try {

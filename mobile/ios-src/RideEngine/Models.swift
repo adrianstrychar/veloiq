@@ -174,6 +174,8 @@ enum Phrases {
         "readiness": "Gotowość dziś {pct} procent. {state}.",
         "condition": "Kondycja dziś {sign}{n}.",
         "count": "{word}",
+        "drink": "Pij! Kilka łyków.",
+        "eat": "Czas na jedzenie – żel albo baton, popij.",
     ]
 
     static func render(_ template: String, _ vars: [String: String]) -> String {

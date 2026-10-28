@@ -67,6 +67,8 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     private var outdoor = false
     private var scriptJSON: Data?
     private var lastLat: Double?, lastLon: Double?
+    /// Dystans i prędkość z GPS (do pytań „ile km?”) – liczone na engineQueue.
+    private var distKm = 0.0, speedKmh = 0.0, prevFix: (lat: Double, lon: Double, s: Int)?
     /// "full" – wszystko | "struct" – bez korekt/pochwał | "off" – bez głosu (tekst nadal idzie do UI)
     private var voiceLevel = "full"
     // podgląd czujników poza treningiem
@@ -201,6 +203,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         let eng = WorkoutEngine(script: script, startDate: startDate, pausedTotal: pausedTotal, pausedAt: pausedAt)
         if let f = resumeFileName { eng.seed(Recorder.readSamples(fileName: f)) }
         lastLat = nil; lastLon = nil
+        distKm = 0; speedKmh = 0; prevFix = nil
         let lang = script.lang ?? "pl-PL"
         DispatchQueue.main.async {
             if self.speakerLanguage != lang { self.speaker = Speaker(language: lang); self.speakerLanguage = lang }
@@ -217,6 +220,17 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         // seed() ustawił lastSecond, więc sekundy już zapisane w pliku nie zostaną dopisane ponownie
         eng.onSecond = { [weak self] s, p, hr, cad, bal in
             guard let self = self else { return }
+            if self.outdoor, let la = self.lastLat, let lo = self.lastLon {
+                if let f = self.prevFix, s > f.s {
+                    let r = 6371.0, k = Double.pi / 180
+                    let dLa = (la - f.lat) * k, dLo = (lo - f.lon) * k
+                    let a = sin(dLa / 2) * sin(dLa / 2) + cos(f.lat * k) * cos(la * k) * sin(dLo / 2) * sin(dLo / 2)
+                    let d = 2 * r * asin(min(1, sqrt(a)))
+                    let v = d / (Double(s - f.s) / 3600)
+                    if v < 120 { self.distKm += d; self.speedKmh = self.speedKmh * 0.8 + v * 0.2 }
+                }
+                self.prevFix = (la, lo, s)
+            }
             self.recorder?.append(second: s, power: p, hr: hr, cadence: cad, balance: bal,
                                   lat: self.outdoor ? self.lastLat : nil, lon: self.outdoor ? self.lastLon : nil)
         }
@@ -449,7 +463,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         c.speakAnswer = { [weak self] text in self?.speaker.speak(text) }
         c.stateProvider = { [weak self] in
             guard let self = self else { return [:] }
-            return self.engineQueue.sync { self.engine?.coachState() ?? [:] }
+            return self.engineQueue.sync { self.stateForCoach() }
         }
         c.runAction = { [weak self] a in self?.coachAction(a) }
         c.localAnswer = { [weak self] q in self?.localAnswer(q) ?? false }
@@ -474,12 +488,19 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Stan jazdy + dystans (na engineQueue).
+    private func stateForCoach() -> [String: Any] {
+        var d = engine?.coachState() ?? [:]
+        if outdoor { d["distanceKm"] = (distKm * 10).rounded() / 10; d["speedKmh"] = Int(speedKmh.rounded()) }
+        return d
+    }
+
     /// Proste pytania i polecenia bez internetu, głosem Enzo. Główny wątek.
     private func localAnswer(_ q: String) -> Bool {
         let t = q.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "pl_PL"))
             .replacingOccurrences(of: "ł", with: "l")
         func has(_ ws: String...) -> Bool { ws.contains { t.contains($0) } }
-        let st: [String: Any] = engineQueue.sync { self.engine?.coachState() ?? [:] }
+        let st: [String: Any] = engineQueue.sync { self.stateForCoach() }
         let step = st["step"] as? [String: Any]
         let enzo = voiceMode == "enzo" ? director : nil
         func play(_ ids: [String], _ text: String) {
@@ -487,25 +508,105 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             if let d = enzo, !ids.isEmpty { d.play(ids) } else { speaker.speak(text) }
         }
         func lead(_ ev: String) -> [String] { enzo?.compose(ev, [:]) ?? [] }
+        /// klipy samego czasu („piętnaście minut. trzydzieści sekund.”) – sekundy tylko poniżej 3 min
+        func durIds(_ sec: Int) -> [String] {
+            guard let d = enzo else { return [] }
+            let m = sec / 60, s = sec % 60
+            var v = m > 0 ? "\(m) minut" : ""
+            if m < 3 && s > 0 { v += " \(s) sekund" }
+            return Array((d.compose("warmupStart", ["dur": v]) ?? []).dropFirst())
+        }
+        let typeName = ["warmup": "Rozgrzewka", "interval": "Interwał", "recovery": "Przerwa", "steady": "Równe tempo", "cooldown": "Schłodzenie"]
 
-        if has("nastepn", "pomin", "kolejny krok") {
+        // --- jedzenie i picie
+        if has("zjadlem", "zjadlam", "zjadl ", "zjedzone", "mam zel", "zjadlem zel") {
+            engineQueue.async { self.engine?.fueled("eat") }
+            play(lead("ateOk"), "Zapisane – zjedzone."); return true
+        }
+        if has("wypilem", "wypilam", "pilem", "pije ") {
+            engineQueue.async { self.engine?.fueled("drink") }
+            play(lead("drankOk"), "Zapisane – wypite."); return true
+        }
+        if has("co jesc", "kiedy jesc", "ile jesc", "co zjesc", "jedzen", "co pic", "ile pic", "picie", "wegl", "zel ", "glodn") {
+            let since = (st["sinceEatSec"] as? Int) ?? 0
+            let now = since >= 1500
+            var ids = has("kiedy", "teraz", "czy mam") ? [] : lead("fuelAdvice")
+            ids += lead(now ? "eatNow" : "eatLater")
+            play(ids, now ? "Teraz dobry moment – zjedz coś i popij." : "Jadłeś niedawno – teraz tylko pij.")
+            return true
+        }
+        // --- motywacja
+        if has("zmotywuj", "motywuj", "motywac", "nie mam sily", "ciezko mi", "nie dam rady", "dodaj mi", "pomoz mi") {
+            play(lead("motivate"), "Dasz radę! Forca!"); return true
+        }
+        // --- co dalej (informacja) – przed poleceniem „następny krok”
+        if has("co dalej", "co teraz", "co mnie czeka", "jaki nastepny", "jaki jest nastepny", "co bedzie", "co po tym", "co potem") {
+            guard let n = st["nextStep"] as? [String: Any], let ty = n["type"] as? String else {
+                play(lead("planEnd"), "Potem koniec planu."); return true
+            }
+            var ids = lead("nextInfo")
+            if let d = enzo {
+                if d.hasClip("st.\(ty)") { ids.append("st.\(ty)") }
+                if ty == "interval", let no = n["intervalNo"] as? Int, let tot = n["intervalCount"] as? Int,
+                   let c = d.compose("armNext", ["n": "\(no)", "total": "\(tot)"]), c.count > 1 {
+                    ids += c.dropFirst().filter { $0.hasPrefix("int.") }
+                }
+                ids += durIds((n["durationSec"] as? Int) ?? 0)
+                if ty == "interval" || ty == "steady",
+                   let c = d.compose("steadyStart", ["dur": "", "low": "\(n["targetLow"] ?? 0)", "high": "\(n["targetHigh"] ?? 0)"]) {
+                    ids += c.dropFirst().filter { $0.hasPrefix("from.") || $0.hasPrefix("to.") || $0.hasPrefix("w.") }
+                }
+            }
+            let dur = Phrases.duration((n["durationSec"] as? Int) ?? 0)
+            play(ids, "Następnie: \(typeName[ty] ?? ty), \(dur), \(n["targetLow"] ?? 0)–\(n["targetHigh"] ?? 0) W.")
+            return true
+        }
+        // --- polecenia
+        if has("nastepny krok", "pomin", "przejdz dalej", "kolejny krok", "nastepny etap") {
             coachAction("next"); play(lead("doneCmd"), "Następny krok."); return true
         }
-        if has("pauza", "zatrzymaj", "stop") && !has("ile") {
+        if has("pauza", "zatrzymaj") && !has("ile") {
             coachAction("pause"); return true            // silnik sam mówi „Pauza”
         }
-        if has("wznow", "jedziemy dalej", "rusz") {
+        if has("wznow", "jedziemy dalej", "ruszam") {
             coachAction("resume"); return true
+        }
+        // --- interwały
+        if has("ile interwal", "ile serii", "ile powtorz", "ile jeszcze interwal", "ktory interwal", "ile zostalo interwal") {
+            let left = (st["intervalsLeft"] as? Int) ?? 0
+            let inIv = (st["inInterval"] as? Bool) ?? false
+            if left == 0 {
+                play(lead(inIv ? "lastIvl" : "ivlDone"), inIv ? "To ostatni interwał!" : "Interwały zrobione.")
+            } else {
+                play(lead("ivlLeft") + ((enzo?.hasClip("n.\(left)") ?? false) ? ["n.\(left)"] : []),
+                     "Zostało interwałów: \(left).")
+            }
+            return true
+        }
+        if has("poprzedni", "ostatnia seria", "ostatni interwal", "jak poszl", "jak mi poszl", "poprzednia seria") {
+            guard let last = (st["series"] as? [[String: Any]])?.last else { play(lead("noSeries"), "Jeszcze nie było serii."); return true }
+            let avg = (last["avgPower"] as? Int) ?? 0, pct = (last["compliancePct"] as? Int) ?? 0
+            var ids = lead("prevSeries")
+            if let d = enzo, let c = d.compose("seriesEnd", ["avg": "\(avg)", "pct": "\(pct)"]) { ids += c.dropFirst() }
+            play(ids, "Poprzednia seria: średnio \(avg) watów, \(pct)% w zakresie.")
+            return true
+        }
+        // --- czas
+        if (has("ile") && has("trening", "planu", "calego", "calosc", "jazdy")) || has("do konca treningu", "do konca planu") {
+            let sec = (st["planRemainingSec"] as? Int) ?? 0
+            play(lead("planLeft") + durIds(sec), "Do końca treningu: \(Phrases.duration(sec)).")
+            return true
         }
         if has("ile zostal", "ile jeszcze", "do konca", "ile minut") {
             let sec = (step?["remainingSec"] as? Int) ?? (st["planRemainingSec"] as? Int) ?? 0
-            let m = sec / 60, s = sec % 60
-            var ids = lead("left")
-            if let d = enzo {
-                if m > 0, let c = d.compose("warmupStart", ["dur": "\(m) minut"]), c.count > 1 { ids += Array(c.dropFirst()) }
-                if m == 0 || m < 3, s > 0, let c = d.compose("warmupStart", ["dur": "\(s) sekund"]), c.count > 1 { ids += Array(c.dropFirst()) }
-            }
-            play(ids, "Zostało \(Phrases.duration(sec)).")
+            play(lead("left") + durIds(sec), "Zostało \(Phrases.duration(sec)).")
+            return true
+        }
+        // --- odczyty
+        if has("kadencj", "obroty", "obrotow") {
+            guard let c = st["cadence"] as? Int else { play([], "Nie widzę kadencji."); return true }
+            let r = min(120, max(50, Int((Double(c) / 5).rounded()) * 5))
+            play((enzo?.hasClip("cad.\(r)") ?? false) ? ["cad.\(r)"] : [], "Kadencja \(c).")
             return true
         }
         if has("tetno", "puls") {
@@ -528,14 +629,14 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             play(enzo?.compose("status", v) ?? [], "Średnio \(avg) watów.")
             return true
         }
-        if has("jaka moc", "ile watow", "moc teraz") {
+        if has("jaka moc", "ile watow", "moc teraz", "jaka mam moc") {
             let p = (st["power30s"] as? Int) ?? 0
             var ids = lead("power")
             if let d = enzo, let c = d.compose("half", ["avg": "\(p)"]), c.count > 1 { ids += Array(c.dropFirst()) }
             play(ids, "Moc \(p) watów.")
             return true
         }
-        return false
+        return false   // reszta (km, prędkość, kalorie, technika, zdrowie…) → trener AI
     }
 
     @objc func readRecording(_ call: CAPPluginCall) {

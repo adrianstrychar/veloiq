@@ -23,6 +23,7 @@ const LEAD_FOR: Record<string, string> = {
   powerLost: 'powerLost', powerBack: 'powerBack', hrLost: 'hrLost', hrBack: 'hrBack',
   hrHigh: 'hrHigh', hrRecovered: 'hrRec', status: 'status',
   listen: 'listen', repeat: 'repeat', think: 'think', offline: 'offline', doneCmd: 'doneCmd', left: 'left', power: 'power',
+  nextInfo: 'nextInfo', planEnd: 'planEnd', ivlLeft: 'ivlLeft', lastIvl: 'lastIvl', ivlDone: 'ivlDone', prevSeries: 'prevSeries', noSeries: 'noSeries', planLeft: 'planLeft', fuelAdvice: 'fuelAdvice', eatNow: 'eatNow', eatLater: 'eatLater', ateOk: 'ateOk', drankOk: 'drankOk', motivate: 'motivate', drink: 'drink', eat: 'eat',
 };
 /** Komunikaty, których dyrektor nie mówi (są tylko na ekranie). */
 const SILENT = new Set(['seriesPrev', 'restInfo']);

@@ -57,10 +57,12 @@ final class DirectorVoice: NSObject {
         "hrHigh": "hrHigh", "hrRecovered": "hrRec", "status": "status",
         "listen": "listen", "repeat": "repeat", "think": "think", "offline": "offline", "doneCmd": "doneCmd",
         "left": "left", "power": "power",
+        "nextInfo": "nextInfo", "planEnd": "planEnd", "ivlLeft": "ivlLeft", "lastIvl": "lastIvl", "ivlDone": "ivlDone", "prevSeries": "prevSeries", "noSeries": "noSeries", "planLeft": "planLeft", "fuelAdvice": "fuelAdvice", "eatNow": "eatNow", "eatLater": "eatLater", "ateOk": "ateOk", "drankOk": "drankOk", "motivate": "motivate", "drink": "drink", "eat": "eat",
     ]
     private static let silent: Set<String> = ["seriesPrev", "restInfo"]
 
     private func has(_ id: String) -> Bool { pack.clips[id] != nil }
+    func hasClip(_ id: String) -> Bool { pack.clips[id] != nil }
     private func r5(_ v: Double) -> Int { Int((v / 5).rounded()) * 5 }
     private func num(_ s: String?) -> Double? { s.flatMap { Double($0.replacingOccurrences(of: ",", with: ".")) } }
 

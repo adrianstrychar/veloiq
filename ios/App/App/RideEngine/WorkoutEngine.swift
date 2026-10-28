@@ -67,6 +67,8 @@ final class WorkoutEngine {
     private var hrHighRun = 0, lastHrAlert = -1_000_000
     private var hrRecStart: Int?
     private var corrRepeat = 0, lastCorrDir = 0
+    private var CADS: [Int] = []
+    private var lastDrink = 0, lastEat = 0
     private var quietUntil = -1
     private static let quietAfterStopSec = 20   // cisza po postoju (światła, skrzyżowanie)
 
@@ -219,6 +221,7 @@ final class WorkoutEngine {
         let p = max(0, pIn ?? 0)
         P.append(p)
         HR.append(hr)
+        CADS.append(cad ?? 0)
         if !replaying { onSecond?(s, pIn, hr, cad, bal) }
         defer { if speak && !replaying { emitLive(s, pIn, hr, cad, bal) } }
 
@@ -227,6 +230,7 @@ final class WorkoutEngine {
         }
         checkSensors(s, speak)
         briefingTick(s, speak)
+        fuelTick(s, speak)
         if phase == .free { freeTick(s, speak); return }
         guard let st = step else { return }
         if p < R.autoPauseWatts && (cad == nil || cad == 0) { quietUntil = s + Self.quietAfterStopSec }
@@ -499,6 +503,14 @@ final class WorkoutEngine {
         d["power30s"] = avgInt(Array(P.suffix(30)))
         d["avgPowerRide"] = avgInt(P.filter { $0 >= R.autoPauseWatts })
         if let h = hrAvg(10) { d["hr"] = h }
+        let cads = CADS.suffix(10).filter { $0 > 0 }
+        if !cads.isEmpty { d["cadence"] = avgInt(Array(cads)) }
+        d["kJ"] = P.reduce(0, +) / 1000
+        d["sinceEatSec"] = max(0, lastSecond - lastEat)
+        d["sinceDrinkSec"] = max(0, lastSecond - lastDrink)
+        let ivNos = intervalNumbers.enumerated().compactMap { i, n in n == nil ? nil : i }
+        d["intervalsLeft"] = ivNos.filter { $0 > stepIdx }.count
+        d["inInterval"] = phase != .free && step?.isInterval == true
         if phase != .free, let st = step {
             var sd: [String: Any] = ["name": st.name, "type": st.type, "elapsedSec": inStep,
                                      "remainingSec": max(0, st.durationSec - inStep), "durationSec": st.durationSec,
@@ -511,7 +523,9 @@ final class WorkoutEngine {
             let rest = script.steps.dropFirst(stepIdx + 1)
             d["planRemainingSec"] = rest.reduce(0) { $0 + $1.durationSec } + max(0, st.durationSec - inStep)
             if let n = rest.first {
-                d["nextStep"] = ["name": n.name, "type": n.type, "durationSec": n.durationSec, "targetLow": n.powerLow, "targetHigh": n.powerHigh]
+                var nd: [String: Any] = ["name": n.name, "type": n.type, "durationSec": n.durationSec, "targetLow": n.powerLow, "targetHigh": n.powerHigh]
+                if let no = intervalNumbers[stepIdx + 1] { nd["intervalNo"] = no; nd["intervalCount"] = intervalCount }
+                d["nextStep"] = nd
             }
         }
         d["series"] = series.map { x -> [String: Any] in
@@ -524,6 +538,36 @@ final class WorkoutEngine {
             if let s = b.readyState { d["readyState"] = s }
         }
         return d
+    }
+
+    // MARK: - Jedzenie i picie
+
+    /// „Zjadłem” / „wypiłem” (głosem) – przesuwa przypomnienia.
+    func fueled(_ kind: String) {
+        if kind == "eat" { lastEat = max(0, lastSecond) }
+        lastDrink = max(0, lastSecond)
+    }
+
+    /// Przypomnienia na dłuższych jazdach: pić co 20 min, jeść co 40 min (co 30 przy mocnym planie).
+    /// Nie w trakcie interwału – poczekamy na przerwę (najdłużej 10 min). Tak samo jak flex-engine.ts.
+    private func fuelTick(_ s: Int, _ speak: Bool) {
+        guard phase != .autoPaused, s > 0 else { return }
+        let total = script.steps.reduce(0) { $0 + $1.durationSec }
+        let free = script.steps.isEmpty
+        let drinkOn = free ? s >= 1200 : total >= 2700
+        let eatOn = free ? s >= 3600 : total >= 4500
+        let hard = script.steps.contains { $0.isInterval && script.ftp > 0 && Double($0.powerLow) >= Double(script.ftp) * 0.88 }
+        let eatEvery = hard ? 1800 : 2400
+        let st = phase == .free ? nil : step
+        let working = st?.isInterval == true && (st!.durationSec - inStep) > 45
+        func due(_ last: Int, _ every: Int) -> Bool { s - last >= every && (!working || s - last >= every + 600) }
+        if eatOn && due(lastEat, eatEvery) {
+            lastEat = s; lastDrink = s
+            say("eat", [:], .info, speak)
+        } else if drinkOn && due(lastDrink, 1200) {
+            lastDrink = s
+            say("drink", [:], .info, speak)
+        }
     }
 
     // MARK: - Odprawa na rozgrzewce
