@@ -462,7 +462,7 @@ export class FlexEngine {
     const hard = steps.some((x) => x.type === 'interval' && this.script.ftp > 0 && x.powerLow >= this.script.ftp * 0.88);
     const eatEvery = hard ? 1800 : 2400;
     const st = this.phase === 'free' ? undefined : this.step;
-    const working = st?.type === 'interval' && st.durationSec - this.inStep > 45;
+    const working = st?.type === 'interval'; // w trakcie pracy nie przeszkadzamy
     const due = (last: number, every: number) => s - last >= every && (!working || s - last >= every + 600);
     if (eatOn && due(this.lastEat, eatEvery)) {
       this.lastEat = s; this.lastDrink = s;

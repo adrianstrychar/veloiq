@@ -559,7 +559,7 @@ final class WorkoutEngine {
         let hard = script.steps.contains { $0.isInterval && script.ftp > 0 && Double($0.powerLow) >= Double(script.ftp) * 0.88 }
         let eatEvery = hard ? 1800 : 2400
         let st = phase == .free ? nil : step
-        let working = st?.isInterval == true && (st!.durationSec - inStep) > 45
+        let working = st?.isInterval == true   // w trakcie pracy nie przeszkadzamy
         func due(_ last: Int, _ every: Int) -> Bool { s - last >= every && (!working || s - last >= every + 600) }
         if eatOn && due(lastEat, eatEvery) {
             lastEat = s; lastDrink = s
