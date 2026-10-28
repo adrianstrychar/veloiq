@@ -11,6 +11,17 @@ struct WorkoutScript: Codable {
     let steps: [WorkoutStep]          // pusta lista = jazda swobodna
     let rules: WorkoutRules?
     let phrases: [String: String]?
+    let briefing: RideBriefing?
+}
+
+/// Odprawa na rozgrzewce (z serwera): gotowość z PMC + model tętna HR = hrA + hrB·W z ostatnich jazd.
+struct RideBriefing: Codable {
+    let readiness: Double?
+    let readyColor: String?
+    let readyState: String?
+    let yTss: Double?
+    let hrA: Double?
+    let hrB: Double?
 }
 
 struct WorkoutStep: Codable {
@@ -160,6 +171,9 @@ enum Phrases {
         "hrHigh": "Tętno {hr}, powyżej zakresu. Zwolnij trochę.",
         "hrRecovered": "Tętno spadło do {hr}. Jesteś gotowy.",
         "status": "Średnio {avg} watów.{hrTxt}",
+        "readiness": "Gotowość dziś {pct} procent. {state}.",
+        "condition": "Kondycja dziś {sign}{n}.",
+        "count": "{word}",
     ]
 
     static func render(_ template: String, _ vars: [String: String]) -> String {

@@ -226,6 +226,7 @@ final class WorkoutEngine {
             if phase == .free { say("freeStart", [:], .info, speak) } else { announceStep(0, speak) }
         }
         checkSensors(s, speak)
+        briefingTick(s, speak)
         if phase == .free { freeTick(s, speak); return }
         guard let st = step else { return }
         if p < R.autoPauseWatts && (cad == nil || cad == 0) { quietUntil = s + Self.quietAfterStopSec }
@@ -301,12 +302,12 @@ final class WorkoutEngine {
                 let wasRecovery = st.type == "recovery"
                 enterStep(stepIdx + 1, startSec: startSec, pre: s - startSec + 1, speak: false)
                 lastRestSec = rest
-                var text = Phrases.render(phrases["autoStart"] ?? "", [
-                    "dur": Phrases.duration(next.durationSec), "low": "\(next.powerLow)", "high": "\(next.powerHigh)"])
+                let av = ["dur": Phrases.duration(next.durationSec), "low": "\(next.powerLow)", "high": "\(next.powerHigh)"]
+                var text = Phrases.render(phrases["autoStart"] ?? "", av)
                 if wasRecovery && abs(rest - st.durationSec) > 20, let ri = phrases["restInfo"] {
                     text += " " + Phrases.render(ri, ["rest": Phrases.duration(rest)])
                 }
-                emit(text, .step, speak)
+                emit(text, .step, speak, key: "autoStart", vars: av)
                 return
             }
             if remaining < 0 && (-remaining) % R.waitRemindSec == 0 {
@@ -339,7 +340,6 @@ final class WorkoutEngine {
 
     private func announceStep(_ idx: Int, _ speak: Bool) {
         let st = script.steps[idx]
-        if let c = st.cueStart, !c.isEmpty { emit(c, .step, speak); return }
         let key: String
         switch st.type {
         case "interval": key = "intervalStart"
@@ -348,8 +348,11 @@ final class WorkoutEngine {
         case "cooldown": key = "cooldownStart"
         default: key = "steadyStart"
         }
-        say(key, ["n": "\(intervalNumbers[idx] ?? 0)", "total": "\(intervalCount)", "name": st.name,
-                  "dur": Phrases.duration(st.durationSec), "low": "\(st.powerLow)", "high": "\(st.powerHigh)"], .step, speak)
+        let vars = ["n": "\(intervalNumbers[idx] ?? 0)", "total": "\(intervalCount)", "name": st.name,
+                    "dur": Phrases.duration(st.durationSec), "low": "\(st.powerLow)", "high": "\(st.powerHigh)"]
+        // własny tekst kroku (AI) idzie na ekran, a Enzo mówi swoje wejście dla tego typu kroku
+        if let c = st.cueStart, !c.isEmpty { emit(c, .step, speak, key: key, vars: vars); return }
+        say(key, vars, .step, speak)
     }
 
     private func closeInterval(early: Bool, speak: Bool) {
@@ -373,17 +376,18 @@ final class WorkoutEngine {
             avgHr: hrs.isEmpty ? nil : avgInt(hrs), endedEarly: early, restBeforeSec: lastRestSec, startSec: stepStartSec)
         let prev = series.last
         series.append(res)
-        var text = Phrases.render(phrases["seriesEnd"] ?? "", [
-            "n": "\(res.n)", "total": "\(intervalCount)", "dur": Phrases.duration(res.durationSec),
-            "avg": "\(res.avgPower)", "pct": "\(res.compliancePct)"])
+        var sv = ["n": "\(res.n)", "total": "\(intervalCount)", "dur": Phrases.duration(res.durationSec),
+                  "avg": "\(res.avgPower)", "pct": "\(res.compliancePct)"]
+        var text = Phrases.render(phrases["seriesEnd"] ?? "", sv)
         if let p = prev, let t = phrases["seriesPrev"] { text += " " + Phrases.render(t, ["prev": "\(p.avgPower)"]) }
         if series.count >= 2, !spokeHr, let first = series.first, let h1 = first.avgHr, let h = res.avgHr,
            abs(Double(res.avgPower - first.avgPower)) <= Double(first.avgPower) * 0.03, h - h1 >= R.hrDriftBpm,
            let t = phrases["hrUp"] {
             text += " " + Phrases.render(t, ["d": "\(h - h1)"])
+            sv["hrUp"] = "\(h - h1)"
             spokeHr = true
         }
-        emit(text, .summary, speak)
+        emit(text, .summary, speak, key: "seriesEnd", vars: sv)   // jeden komunikat Enzo, bez głosu systemowego
         lastRestSec = nil
     }
 
@@ -428,10 +432,10 @@ final class WorkoutEngine {
                                 "dur": Phrases.duration(next.durationSec), "low": "\(next.powerLow)", "high": "\(next.powerHigh)"], .arm, speak)
             }
             if remaining == 10 && lead > 15 && once("ten") { say("tenSec", [:], .countdown, speak) }
-            if (1...3).contains(remaining) { emit(countdown[remaining], .countdown, speak) }
+            if (1...3).contains(remaining) { say("count", ["n": "\(remaining)", "word": countdown[remaining]], .countdown, speak) }
             if remaining == 0 && once("go") { say("goNow", [:], .countdown, speak) }
         } else if stepIdx + 1 < script.steps.count, script.steps[stepIdx + 1].isInterval, (1...3).contains(remaining) {
-            emit(countdown[remaining], .countdown, speak)
+            say("count", ["n": "\(remaining)", "word": countdown[remaining]], .countdown, speak)
         }
     }
 
@@ -482,6 +486,32 @@ final class WorkoutEngine {
             } else if can && cadHighRun >= R.cadenceGraceSec, let hi = st.cadenceHigh {
                 say("cadenceHigh", ["cad": "\(c)", "cadHigh": "\(hi)"], .cadence, speak); lastCorrection = s; cadHighRun = 0
             }
+        }
+    }
+
+    // MARK: - Odprawa na rozgrzewce
+
+    private static let briefReadySec = 150, briefCondFrom = 360, briefCondSec = 600
+
+    /// Gotowość dziś (z PMC) po 2,5 min i „kondycja” jak w Garminie po 10 min: tętno przy tej mocy
+    /// względem Twoich ostatnich jazd (model HR = hrA + hrB·W liczony na serwerze).
+    private func briefingTick(_ s: Int, _ speak: Bool) {
+        guard let b = script.briefing else { return }
+        if s == Self.briefReadySec, let r = b.readiness {
+            say("readiness", ["pct": "\(Int(r.rounded()))", "level": b.readyColor ?? "yellow", "state": b.readyState ?? "",
+                              "heavy": (b.yTss ?? 0) >= 150 ? "1" : "0"], .info, speak)
+        }
+        if s == Self.briefCondSec, let a = b.hrA, let k = b.hrB {
+            var pw = 0.0, hr = 0.0, n = 0
+            for i in Self.briefCondFrom...s where i < P.count {
+                if P[i] >= 50, let h = HR[i], h > 0 { pw += Double(P[i]); hr += Double(h); n += 1 }
+            }
+            guard Double(n) >= Double(s - Self.briefCondFrom) * 0.6 else { return }
+            pw /= Double(n); hr /= Double(n)
+            let exp = a + k * pw
+            guard exp > 60 else { return }
+            let c = max(-10, min(10, Int(((exp - hr) / exp * 100).rounded())))
+            say("condition", ["n": "\(c)", "sign": c > 0 ? "+" : "", "level": c >= 3 ? "good" : (c <= -3 ? "bad" : "ok")], .info, speak)
         }
     }
 

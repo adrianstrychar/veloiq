@@ -221,10 +221,11 @@ export class WebRideEngine implements RideEnginePlugin {
   /** Dyrektor Enzo, gdy paczka jest dostępna; inaczej synteza przeglądarki. */
   private say(key: string | undefined, vars: Record<string, string | number>, text: string, interrupt = false) {
     if (!this.voice || this.speed > 2) return;
-    if (this.mode === 'enzo' && key && this.composer && this.director) {
-      const seg = this.composer.compose(key, vars);
-      if (seg === null) return;
-      if (seg.length) { this.director.play(seg, interrupt); return; }
+    if (this.mode === 'enzo' && this.composer && this.director) {
+      // tryb Enzo: tylko Enzo (bez nagrania → sam tekst na ekranie), nigdy dwa głosy naraz
+      const seg = key ? this.composer.compose(key, vars) : null;
+      if (seg?.length) this.director.play(seg, interrupt);
+      return;
     }
     this.speak(text);
   }

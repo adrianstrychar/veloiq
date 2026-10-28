@@ -68,7 +68,7 @@ export type PhraseKey =
   | 'powerLost' | 'powerBack' | 'hrLost' | 'hrBack'
   | 'armNext' | 'tenSec' | 'goNow' | 'waiting' | 'autoStart' | 'restInfo' | 'autoPause' | 'autoResume'
   | 'earlyStop' | 'seriesEnd' | 'seriesPrev' | 'hrUp' | 'planDone' | 'freeStart' | 'effort'
-  | 'hrHigh' | 'hrRecovered' | 'status';
+  | 'hrHigh' | 'hrRecovered' | 'status' | 'readiness' | 'condition' | 'count';
 
 export interface WorkoutScript {
   version: 1;
@@ -79,6 +79,16 @@ export interface WorkoutScript {
   steps: WorkoutStep[];
   rules?: WorkoutRules;
   phrases?: Partial<Record<PhraseKey, string>>;
+  /** Odprawa na rozgrzewce: gotowość z PMC i model tętna (HR = hrA + hrB·W) z ostatnich jazd. */
+  briefing?: RideBriefing;
+}
+
+export interface RideBriefing {
+  readiness?: number;                    // 0–100 (jak pierścień na pulpicie)
+  readyColor?: 'green' | 'yellow' | 'red';
+  readyState?: string;                   // „Dobra gotowość”…
+  yTss?: number;                         // TSS wczoraj
+  hrA?: number; hrB?: number;            // oczekiwane tętno przy mocy W: hrA + hrB·W
 }
 
 // ---------- Builder: z prostego opisu planu (procenty FTP) na skrypt w watach ----------

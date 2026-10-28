@@ -22,6 +22,7 @@ const LEAD_FOR: Record<string, string> = {
   planDone: 'done', freeStart: 'free', effort: 'effort',
   powerLost: 'powerLost', powerBack: 'powerBack', hrLost: 'hrLost', hrBack: 'hrBack',
   hrHigh: 'hrHigh', hrRecovered: 'hrRec', status: 'status',
+  listen: 'listen', repeat: 'repeat', think: 'think', offline: 'offline', doneCmd: 'doneCmd',
 };
 /** Komunikaty, których dyrektor nie mówi (są tylko na ekranie). */
 const SILENT = new Set(['seriesPrev', 'restInfo']);
@@ -83,6 +84,21 @@ export class DirectorComposer {
   /** null = nie mów nic; [] = brak nagrania → użyj głosu systemowego. */
   compose(key: string, vars: Record<string, string | number>): string[] | null {
     if (SILENT.has(key)) return null;
+    // komunikaty bez stałego wejścia: odliczanie, odprawa
+    if (key === 'count') { const id = `cnt.${num(vars.n)}`; return this.has(id) ? [id] : null; }
+    if (key === 'readiness') {
+      const r = Math.min(100, Math.max(20, r5(num(vars.pct))));
+      const lv = String(vars.level ?? 'yellow');
+      const lead = this.lead(lv === 'green' ? 'readyGreen' : lv === 'red' ? 'readyRed' : 'readyYellow');
+      const heavy = num(vars.heavy) ? this.lead('yHeavy') : null;
+      return [...(this.has(`rd.${r}`) ? [`rd.${r}`] : []), ...(lead ? [lead] : []), ...(heavy ? [heavy] : [])];
+    }
+    if (key === 'condition') {
+      const id = `cond.${Math.round(num(vars.n))}`;
+      const lv = String(vars.level ?? 'ok');
+      const lead = this.lead(lv === 'good' ? 'condGood' : lv === 'bad' ? 'condBad' : 'condOk');
+      return [...(this.has(id) ? [id] : []), ...(lead ? [lead] : [])];
+    }
     const ev = LEAD_FOR[key];
     const lead = ev ? this.lead(ev) : null;
     if (!lead) return [];
@@ -101,6 +117,8 @@ export class DirectorComposer {
         seg.push(...this.watts(vars.avg));
         const p = Math.round(num(vars.pct));
         if (this.has(`pct.${p}`)) seg.push(`pct.${p}`);
+        const d = Math.round(num(vars.hrUp));
+        if (d && this.has(`hr.${d}`)) { seg.push(`hr.${d}`); const l = this.lead('hr'); if (l) seg.push(l); }
         break;
       }
       case 'hrUp': { const d = Math.round(num(vars.d)); if (this.has(`hr.${d}`)) seg.splice(0, 1, `hr.${d}`, lead); break; }

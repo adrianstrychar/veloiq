@@ -55,6 +55,7 @@ final class DirectorVoice: NSObject {
         "planDone": "done", "freeStart": "free", "effort": "effort",
         "powerLost": "powerLost", "powerBack": "powerBack", "hrLost": "hrLost", "hrBack": "hrBack",
         "hrHigh": "hrHigh", "hrRecovered": "hrRec", "status": "status",
+        "listen": "listen", "repeat": "repeat", "think": "think", "offline": "offline", "doneCmd": "doneCmd",
     ]
     private static let silent: Set<String> = ["seriesPrev", "restInfo"]
 
@@ -116,6 +117,23 @@ final class DirectorVoice: NSObject {
     /// nil = nic nie mów; [] = brak nagrania (użyj głosu systemowego).
     func compose(_ key: String, _ vars: [String: String]) -> [String]? {
         if Self.silent.contains(key) { return nil }
+        // komunikaty bez stałego wejścia: odliczanie, odprawa
+        if key == "count" { let id = "cnt.\(vars["n"] ?? "")"; return has(id) ? [id] : nil }
+        if key == "readiness" {
+            let r = min(100, max(20, r5(num(vars["pct"]) ?? 0)))
+            let lv = vars["level"] ?? "yellow"
+            var out: [String] = has("rd.\(r)") ? ["rd.\(r)"] : []
+            if let l = lead(lv == "green" ? "readyGreen" : (lv == "red" ? "readyRed" : "readyYellow")) { out.append(l) }
+            if vars["heavy"] == "1", let l = lead("yHeavy") { out.append(l) }
+            return out
+        }
+        if key == "condition" {
+            let id = "cond.\(Int((num(vars["n"]) ?? 0).rounded()))"
+            let lv = vars["level"] ?? "ok"
+            var out: [String] = has(id) ? [id] : []
+            if let l = lead(lv == "good" ? "condGood" : (lv == "bad" ? "condBad" : "condOk")) { out.append(l) }
+            return out
+        }
         guard let ev = Self.leadFor[key], let first = lead(ev) else { return [] }
         var seg = [first]
         switch key {
@@ -129,6 +147,10 @@ final class DirectorVoice: NSObject {
         case "seriesEnd":
             seg += watts(vars["avg"])
             if let p = num(vars["pct"]), has("pct.\(Int(p.rounded()))") { seg.append("pct.\(Int(p.rounded()))") }
+            if let d = num(vars["hrUp"]), has("hr.\(Int(d.rounded()))") {
+                seg.append("hr.\(Int(d.rounded()))")
+                if let l = lead("hr") { seg.append(l) }
+            }
         case "hrUp":
             if let d = num(vars["d"]), has("hr.\(Int(d.rounded()))") { seg = ["hr.\(Int(d.rounded()))", first] }
         case "tooHigh":

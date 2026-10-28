@@ -43,11 +43,13 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         get { UserDefaults.standard.string(forKey: Self.modeKey) ?? "enzo" }
         set { UserDefaults.standard.set(newValue, forKey: Self.modeKey) }
     }
-    /// Główny wątek: Dyrektor, gdy ma nagranie; inaczej synteza iOS.
+    /// Główny wątek. Tryb Enzo: mówi WYŁĄCZNIE Enzo (bez nagrania = tylko tekst na ekranie), żeby dwa
+    /// głosy nigdy nie nakładały się na siebie. Tryb systemowy: synteza iOS.
     private func say(_ key: String?, _ vars: [String: String], _ text: String, interrupt: Bool) {
-        if voiceMode == "enzo", let d = director, let k = key {
-            guard let seg = d.compose(k, vars) else { return }   // nil: tego dyrektor nie mówi (jest na ekranie)
-            if !seg.isEmpty { d.play(seg, interrupt: interrupt); return }
+        if voiceMode == "enzo", let d = director {
+            guard let k = key, let seg = d.compose(k, vars), !seg.isEmpty else { return }
+            d.play(seg, interrupt: interrupt)
+            return
         }
         speaker.speak(text, interrupt: interrupt)
     }

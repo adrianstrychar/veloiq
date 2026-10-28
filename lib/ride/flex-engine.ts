@@ -83,9 +83,15 @@ export const FLEX_PHRASES: Record<string, string> = {
   hrHigh: 'Tętno {hr}, powyżej zakresu. Zwolnij trochę.',
   hrRecovered: 'Tętno spadło do {hr}. Jesteś gotowy.',
   status: 'Średnio {avg} watów.{hrTxt}',
+  readiness: 'Gotowość dziś {pct} procent. {state}.',
+  condition: 'Kondycja dziś {sign}{n}.',
+  count: '{word}',
 };
 
-const QUIET_AFTER_STOP_SEC = 20; // cisza po postoju (światła, skrzyżowanie)
+const QUIET_AFTER_STOP_SEC = 20;
+const BRIEF_READY_SEC = 150;   // gotowość: 2,5 min po starcie
+const BRIEF_COND_FROM = 360;   // kondycja: okno 6.–10. minuty (tętno już się ustaliło)
+const BRIEF_COND_SEC = 600; // cisza po postoju (światła, skrzyżowanie)
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 export function durationPl(sec: number): string {
@@ -178,6 +184,7 @@ export class FlexEngine {
       if (this.phase === 'free') this.say('freeStart', {}, 'info', speak);
       else this.announceStep(0, speak);
     }
+    this.briefingTick(s, speak);
     if (this.phase === 'free') return this.freeTick(s, p, speak);
 
     const st = this.step!;
@@ -259,7 +266,7 @@ export class FlexEngine {
         if (st.type === 'recovery' && Math.abs(this.lastRestSec - plannedRest) > 20) {
           text += ' ' + render(this.phrases.restInfo, { rest: durationPl(this.lastRestSec) });
         }
-        this.emit(text, 'step', speak);
+        this.emit(text, 'step', speak, 'autoStart', vars);
         return;
       }
       if (remaining < 0 && (-remaining) % this.rules.waitRemindSec === 0) {
@@ -290,11 +297,12 @@ export class FlexEngine {
 
   private announceStep(idx: number, speak: boolean) {
     const st = this.script.steps[idx];
-    if (st.cueStart) return this.emit(st.cueStart, 'step', speak);
     const key = st.type === 'interval' ? 'intervalStart' : st.type === 'recovery' ? 'recoveryStart'
       : st.type === 'warmup' ? 'warmupStart' : st.type === 'cooldown' ? 'cooldownStart' : 'steadyStart';
-    this.say(key, { n: this.intervalNumbers[idx] ?? 0, total: this.intervalCount, name: st.name,
-      dur: durationPl(st.durationSec), low: st.powerLow, high: st.powerHigh }, 'step', speak);
+    const vars = { n: this.intervalNumbers[idx] ?? 0, total: this.intervalCount, name: st.name,
+      dur: durationPl(st.durationSec), low: st.powerLow, high: st.powerHigh };
+    if (st.cueStart) return this.emit(st.cueStart, 'step', speak, key, vars); // tekst własny na ekranie, Enzo mówi swoje
+    this.say(key, vars, 'step', speak);
   }
 
   private closeInterval(early: boolean, speak: boolean) {
@@ -317,17 +325,19 @@ export class FlexEngine {
     };
     const prev = this.series[this.series.length - 1];
     this.series.push(res);
-    let text = render(this.phrases.seriesEnd, { n: res.n, total: this.intervalCount, dur: durationPl(res.durationSec), avg: res.avgPower, pct: res.compliancePct });
+    const sv: Record<string, string | number> = { n: res.n, total: this.intervalCount, dur: durationPl(res.durationSec), avg: res.avgPower, pct: res.compliancePct };
+    let text = render(this.phrases.seriesEnd, sv);
     if (prev) text += ' ' + render(this.phrases.seriesPrev, { prev: prev.avgPower });
     const first = this.series[0];
     if (this.series.length >= 2 && first.avgHr && res.avgHr && !this.spokeHr) {
       // porównanie tylko przy podobnej mocy (±3%)
       if (Math.abs(res.avgPower - first.avgPower) <= first.avgPower * 0.03 && res.avgHr - first.avgHr >= this.rules.hrDriftBpm) {
         text += ' ' + render(this.phrases.hrUp, { d: res.avgHr - first.avgHr });
+        sv.hrUp = res.avgHr - first.avgHr;
         this.spokeHr = true;
       }
     }
-    this.emit(text, 'summary', speak);
+    this.emit(text, 'summary', speak, 'seriesEnd', sv); // jeden komunikat Enzo (z tętnem), bez głosu systemowego
     this.lastRestSec = undefined;
   }
   private spokeHr = false;
@@ -365,11 +375,11 @@ export class FlexEngine {
           dur: durationPl(next.durationSec), low: next.powerLow, high: next.powerHigh }, 'arm', speak);
       }
       if (remaining === 10 && lead > 15 && once('ten')) this.say('tenSec', {}, 'countdown', speak);
-      if (remaining >= 1 && remaining <= 3) this.emit(['', 'Jeden', 'Dwa', 'Trzy'][remaining], 'countdown', speak);
+      if (remaining >= 1 && remaining <= 3) this.countdown(remaining, speak);
       if (remaining === 0 && once('go')) this.say('goNow', {}, 'countdown', speak);
     } else if (this.stepIdx + 1 < this.script.steps.length && this.script.steps[this.stepIdx + 1].type === 'interval'
       && remaining >= 1 && remaining <= 3) {
-      this.emit(['', 'Jeden', 'Dwa', 'Trzy'][remaining], 'countdown', speak);
+      this.countdown(remaining, speak);
     }
   }
 
@@ -421,6 +431,31 @@ export class FlexEngine {
       } else if (can && this.cadHighRun >= R.cadenceGraceSec) {
         this.say('cadenceHigh', { cad, cadHigh: st.cadenceHigh! }, 'cadence', speak); this.lastCorrection = s; this.cadHighRun = 0;
       }
+    }
+  }
+
+  private countdown(n: number, speak: boolean) {
+    this.say('count', { n, word: ['', 'Jeden', 'Dwa', 'Trzy'][n] }, 'countdown', speak);
+  }
+
+  // ------------------------------------------------------------------ odprawa (rozgrzewka)
+  /** Gotowość dziś (z PMC) i „kondycja” jak w Garminie: tętno przy tej mocy vs Twoje ostatnie jazdy. */
+  private briefingTick(s: number, speak: boolean) {
+    const b = this.script.briefing;
+    if (!b) return;
+    if (s === BRIEF_READY_SEC && b.readiness != null) {
+      this.say('readiness', { pct: Math.round(b.readiness), level: b.readyColor ?? 'yellow', state: b.readyState ?? '',
+        heavy: (b.yTss ?? 0) >= 150 ? 1 : 0 }, 'info', speak);
+    }
+    if (s === BRIEF_COND_SEC && b.hrA != null && b.hrB != null) {
+      const idx: number[] = [];
+      for (let i = BRIEF_COND_FROM; i <= s; i++) if ((this.P[i] ?? 0) >= 50 && (this.HR[i] ?? 0) > 0) idx.push(i);
+      if (idx.length < (s - BRIEF_COND_FROM) * 0.6) return; // za mało jazdy z tętnem
+      const pw = mean(idx.map((i) => this.P[i])), hr = mean(idx.map((i) => this.HR[i]!));
+      const exp = b.hrA + b.hrB * pw;
+      if (!(exp > 60)) return;
+      const n = Math.max(-10, Math.min(10, Math.round(((exp - hr) / exp) * 100)));
+      this.say('condition', { n, sign: n > 0 ? '+' : '', level: n >= 3 ? 'good' : n <= -3 ? 'bad' : 'ok' }, 'info', speak);
     }
   }
 
