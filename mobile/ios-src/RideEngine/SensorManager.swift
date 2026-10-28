@@ -41,12 +41,65 @@ final class SensorManager: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
     private var sides: [String: Side] = [:]
     private let sideFreshSec: TimeInterval = 2.5
 
+    /// Ostatnie dane z każdego slotu – strażnik wykrywa „połączony, ale milczy”.
+    private var lastData: [String: Date] = [:]
+    private var resubscribedAt: [String: Date] = [:]
+    private var linkedAt: [String: Date] = [:]   // od kiedy połączony (czy od tego czasu przyszły jakiekolwiek dane)
+    private var watchdog: DispatchSourceTimer?
+
     override init() {
         super.init()
         central = CBCentralManager(delegate: self, queue: queue, options: [
             CBCentralManagerOptionRestoreIdentifierKey: "veloiq.ble.central",
             CBCentralManagerOptionShowPowerAlertKey: true,
         ])
+        startWatchdog()
+    }
+
+    /// Co 5 s: zapamiętany czujnik, który nie jest połączony → połącz; połączony, ale bez danych
+    /// > 12 s → ponowna subskrypcja; nadal cisza > 30 s → zerwij i połącz od nowa.
+    /// (Typowy przypadek: następnego dnia iOS trzyma czujnik „połączony” na poziomie systemu,
+    /// a aplikacja nie dostaje pomiarów – wcześniej pomagało tylko „zapomnij urządzenie”.)
+    private func startWatchdog() {
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + 5, repeating: 5)
+        t.setEventHandler { [weak self] in self?.checkSensors() }
+        t.resume()
+        watchdog = t
+    }
+
+    private func checkSensors() {
+        guard central.state == .poweredOn, !wanted.isEmpty else { return }
+        let now = Date()
+        for (k, id) in wanted {
+            guard let p = peripherals[id] ?? central.retrievePeripherals(withIdentifiers: [id]).first else {
+                if !central.isScanning { startScan() }   // system go nie zna – szukaj skanem
+                continue
+            }
+            peripherals[id] = p
+            p.delegate = self
+            switch p.state {
+            case .disconnected:
+                central.connect(p, options: nil)
+            case .connected:
+                // pilnujemy tylko „połączony i ANI JEDNEGO pomiaru od połączenia” – czujnik, który
+                // wysyłał i ucichł (postój, korby śpią), zostawiamy w spokoju
+                if linkedAt[k] == nil { linkedAt[k] = now }
+                let linked = linkedAt[k]!
+                if let d = lastData[k], d >= linked { continue }
+                let silent = now.timeIntervalSince(linked)
+                let since = now.timeIntervalSince(resubscribedAt[k] ?? .distantPast)
+                if silent > 30 && since > 25 && resubscribedAt[k] != nil {
+                    onLog?("\(k): połączony bez danych – łączę od nowa")
+                    resubscribedAt[k] = nil; linkedAt[k] = nil
+                    central.cancelPeripheralConnection(p)   // didDisconnect połączy ponownie
+                } else if silent > 12 && since > 12 {
+                    resubscribedAt[k] = now
+                    p.discoverServices([Self.hrService, Self.cpService])
+                }
+            default: break
+            }
+        }
     }
 
     var savedSensors: (hr: String?, power: String?, power2: String?) {
@@ -148,15 +201,24 @@ final class SensorManager: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
     private func connectWanted() {
         let ids = Array(Set(wanted.values))
         let known = central.retrievePeripherals(withIdentifiers: ids)
-        for p in known {
+        // czujniki trzymane przez system (inna aplikacja, poprzednia sesja) – też je bierzemy
+        let systemConnected = central.retrieveConnectedPeripherals(withServices: [Self.hrService, Self.cpService])
+            .filter { ids.contains($0.identifier) }
+        var all = known
+        for p in systemConnected where !all.contains(where: { $0.identifier == p.identifier }) { all.append(p) }
+        for p in all {
             peripherals[p.identifier] = p
             p.delegate = self
-            if p.state != .connected && p.state != .connecting {
+            if p.state == .connected {
+                // połączony, ale ta instancja aplikacji nie subskrybuje pomiarów → odkryj usługi od nowa
+                p.discoverServices([Self.hrService, Self.cpService])
+                if let k = kind(of: p) { onStatus?(k, p.identifier.uuidString, p.name, true) }
+            } else if p.state != .connecting {
                 central.connect(p, options: nil)
             }
         }
         // czujnik nieznany systemowi (np. po reinstalacji) – znajdź go skanem
-        if known.count < ids.count {
+        if all.count < ids.count {
             scanKinds = ["hr", "power"]
             startScan()
         }
@@ -183,7 +245,10 @@ final class SensorManager: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
         guard c.state == .poweredOn else { return }
         if scanning { startScan() }
         if !wanted.isEmpty { connectWanted() }
-        for p in peripherals.values where p.state == .connected { p.discoverServices([Self.hrService, Self.cpService]) }
+        for p in peripherals.values where p.state == .connected {
+            p.discoverServices([Self.hrService, Self.cpService])
+            if let k = kind(of: p) { onStatus?(k, p.identifier.uuidString, p.name, true) }
+        }
     }
 
     func centralManager(_ c: CBCentralManager, didDiscover p: CBPeripheral,
@@ -203,7 +268,7 @@ final class SensorManager: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
     func centralManager(_ c: CBCentralManager, didConnect p: CBPeripheral) {
         p.delegate = self
         p.discoverServices([Self.hrService, Self.cpService])
-        if let k = kind(of: p) { onStatus?(k, p.identifier.uuidString, p.name, true) }
+        if let k = kind(of: p) { linkedAt[k] = Date(); onStatus?(k, p.identifier.uuidString, p.name, true) }
         if !scanning && wanted.values.allSatisfy({ peripherals[$0]?.state == .connected }) { c.stopScan() }
     }
 
@@ -284,6 +349,7 @@ final class SensorManager: NSObject, CBCentralManagerDelegate, CBPeripheralDeleg
 
     func peripheral(_ p: CBPeripheral, didUpdateValueFor ch: CBCharacteristic, error: Error?) {
         guard let data = ch.value, let k = kind(of: p) else { return }
+        if ch.uuid != Self.cpControlPoint { lastData[k] = Date(); resubscribedAt[k] = nil }
         switch ch.uuid {
         case Self.hrMeasurement:
             if let hr = BleParsers.heartRate(data) { onHeartRate?(hr) }
