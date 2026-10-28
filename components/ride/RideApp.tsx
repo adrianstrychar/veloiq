@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import s from './ride.module.css';
-import type { WorkoutScript } from '@/lib/ride/workout-script';
+import type { RideBriefing, WorkoutScript } from '@/lib/ride/workout-script';
 import type { WorkoutSummary } from '@/lib/ride/ride-engine';
 import { DEFAULT_SETTINGS, freeRideScript, type RideSettings } from './useRide';
 import { useRideContext } from './RideProvider';
@@ -17,6 +17,7 @@ import { hmmss } from './parts';
 type Screen = 'home' | 'sensors' | 'pre' | 'live' | 'summary';
 
 export interface RideAppProps {
+  briefing?: RideBriefing;
   /** Dzisiejszy trening z planu (już jako skrypt – patrz lib/ride/plan-to-script.ts) albo null. */
   plan: WorkoutScript | null;
   planLabel?: string;
@@ -32,7 +33,7 @@ interface Pending { summary: WorkoutSummary; script: WorkoutScript; startedAt: s
 const readPending = (): Pending | null => { try { const v = localStorage.getItem(PENDING_KEY); return v ? JSON.parse(v) : null; } catch { return null; } };
 const writePending = (p: Pending | null) => { try { if (p) localStorage.setItem(PENDING_KEY, JSON.stringify(p)); else localStorage.removeItem(PENDING_KEY); } catch { /* brak storage */ } };
 
-export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach }: RideAppProps) {
+export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing }: RideAppProps) {
   const ride = useRideContext(); // wspólny stan z layoutu (mini-pasek, nawigacja)
   const [screen, setScreen] = useState<Screen>('home');
   const [settings, setSettings] = useState<RideSettings>(DEFAULT_SETTINGS);
@@ -86,7 +87,7 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach }: RideAppPro
   const start = (sc: WorkoutScript) => {
     setScript(sc.steps.length ? sc : null);
     setStartedAt(new Date());
-    ride.start(sc, settings);
+    ride.start(briefing ? { ...sc, briefing } : sc, settings); // odprawa Enzo na rozgrzewce
   };
 
   const dateLabel = new Date().toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });

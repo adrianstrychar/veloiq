@@ -122,6 +122,8 @@ export class WebRideEngine implements RideEnginePlugin {
   }
   async pause() { this.paused = true; this.emit('cue', { text: 'Pauza.', kind: 'info' }); this.say('manualPause', {}, 'Pauza.'); this.emitLive(); }
   async resume() { this.paused = false; this.emit('cue', { text: 'Wznawiamy.', kind: 'info' }); this.say('manualResume', {}, 'Wznawiamy.'); }
+  async setCoach() { /* rozmowa tylko w aplikacji na iPhonie */ }
+  async talk() { this.emit('coach', { state: 'error', text: 'Rozmowa z Enzo działa w aplikacji na iPhonie.' }); }
   async skipStep() { this.engine?.skipStep(true); this.emitLive(); }
   async stopWorkout(): Promise<WorkoutSummary> {
     this.stopTimer();
@@ -221,10 +223,11 @@ export class WebRideEngine implements RideEnginePlugin {
   /** Dyrektor Enzo, gdy paczka jest dostępna; inaczej synteza przeglądarki. */
   private say(key: string | undefined, vars: Record<string, string | number>, text: string, interrupt = false) {
     if (!this.voice || this.speed > 2) return;
-    if (this.mode === 'enzo' && key && this.composer && this.director) {
-      const seg = this.composer.compose(key, vars);
-      if (seg === null) return;
-      if (seg.length) { this.director.play(seg, interrupt); return; }
+    if (this.mode === 'enzo' && this.composer && this.director) {
+      // tryb Enzo: tylko Enzo (bez nagrania → sam tekst na ekranie), nigdy dwa głosy naraz
+      const seg = key ? this.composer.compose(key, vars) : null;
+      if (seg?.length) this.director.play(seg, interrupt);
+      return;
     }
     this.speak(text);
   }

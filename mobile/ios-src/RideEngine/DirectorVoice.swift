@@ -55,10 +55,14 @@ final class DirectorVoice: NSObject {
         "planDone": "done", "freeStart": "free", "effort": "effort",
         "powerLost": "powerLost", "powerBack": "powerBack", "hrLost": "hrLost", "hrBack": "hrBack",
         "hrHigh": "hrHigh", "hrRecovered": "hrRec", "status": "status",
+        "listen": "listen", "repeat": "repeat", "think": "think", "offline": "offline", "doneCmd": "doneCmd",
+        "left": "left", "power": "power",
+        "nextInfo": "nextInfo", "planEnd": "planEnd", "ivlLeft": "ivlLeft", "lastIvl": "lastIvl", "ivlDone": "ivlDone", "prevSeries": "prevSeries", "noSeries": "noSeries", "planLeft": "planLeft", "fuelAdvice": "fuelAdvice", "eatNow": "eatNow", "eatLater": "eatLater", "ateOk": "ateOk", "drankOk": "drankOk", "motivate": "motivate", "drink": "drink", "eat": "eat",
     ]
     private static let silent: Set<String> = ["seriesPrev", "restInfo"]
 
     private func has(_ id: String) -> Bool { pack.clips[id] != nil }
+    func hasClip(_ id: String) -> Bool { pack.clips[id] != nil }
     private func r5(_ v: Double) -> Int { Int((v / 5).rounded()) * 5 }
     private func num(_ s: String?) -> Double? { s.flatMap { Double($0.replacingOccurrences(of: ",", with: ".")) } }
 
@@ -116,6 +120,23 @@ final class DirectorVoice: NSObject {
     /// nil = nic nie mów; [] = brak nagrania (użyj głosu systemowego).
     func compose(_ key: String, _ vars: [String: String]) -> [String]? {
         if Self.silent.contains(key) { return nil }
+        // komunikaty bez stałego wejścia: odliczanie, odprawa
+        if key == "count" { let id = "cnt.\(vars["n"] ?? "")"; return has(id) ? [id] : nil }
+        if key == "readiness" {
+            let r = min(100, max(20, r5(num(vars["pct"]) ?? 0)))
+            let lv = vars["level"] ?? "yellow"
+            var out: [String] = has("rd.\(r)") ? ["rd.\(r)"] : []
+            if let l = lead(lv == "green" ? "readyGreen" : (lv == "red" ? "readyRed" : "readyYellow")) { out.append(l) }
+            if vars["heavy"] == "1", let l = lead("yHeavy") { out.append(l) }
+            return out
+        }
+        if key == "condition" {
+            let id = "cond.\(Int((num(vars["n"]) ?? 0).rounded()))"
+            let lv = vars["level"] ?? "ok"
+            var out: [String] = has(id) ? [id] : []
+            if let l = lead(lv == "good" ? "condGood" : (lv == "bad" ? "condBad" : "condOk")) { out.append(l) }
+            return out
+        }
         guard let ev = Self.leadFor[key], let first = lead(ev) else { return [] }
         var seg = [first]
         switch key {
@@ -129,6 +150,10 @@ final class DirectorVoice: NSObject {
         case "seriesEnd":
             seg += watts(vars["avg"])
             if let p = num(vars["pct"]), has("pct.\(Int(p.rounded()))") { seg.append("pct.\(Int(p.rounded()))") }
+            if let d = num(vars["hrUp"]), has("hr.\(Int(d.rounded()))") {
+                seg.append("hr.\(Int(d.rounded()))")
+                if let l = lead("hr") { seg.append(l) }
+            }
         case "hrUp":
             if let d = num(vars["d"]), has("hr.\(Int(d.rounded()))") { seg = ["hr.\(Int(d.rounded()))", first] }
         case "tooHigh":
@@ -170,8 +195,10 @@ final class DirectorVoice: NSObject {
             return AVPlayerItem(url: dir.appendingPathComponent(c.file))
         }
         guard !items.isEmpty else { return }
-        try? session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
-        try? session.setActive(true)
+        if !AudioGate.hold {   // tryb rozmowy trzyma własną sesję (przyciski słuchawek)
+            try? session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+            try? session.setActive(true)
+        }
         if interrupt { player.removeAllItems() }
         for it in items { player.insert(it, after: nil) }
         player.play()
@@ -179,9 +206,21 @@ final class DirectorVoice: NSObject {
 
     func stop() { player.removeAllItems(); releaseIfIdle() }
 
+    /// Łączny czas klipów (z piknięciem) – do „Słucham!” → dopiero potem mikrofon.
+    func duration(_ ids: [String]) -> Double {
+        (["fx.beep"] + ids).compactMap { pack.clips[$0]?.dur }.reduce(0, +)
+    }
+    /// Kolejka zaległych komunikatów (np. podsumowanie serii) – rozmowa czeka, aż Enzo skończy.
+    var pendingDuration: Double {
+        guard let cur = player.currentItem else { return 0 }
+        let left = max(0, cur.duration.seconds.isFinite ? cur.duration.seconds - cur.currentTime().seconds : 0)
+        let rest = player.items().dropFirst().map { $0.asset.duration.seconds }.filter { $0.isFinite }.reduce(0, +)
+        return left + rest
+    }
+
     private func releaseIfIdle() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            guard let self = self, self.player.items().isEmpty || self.player.currentItem == nil else { return }
+            guard let self = self, !AudioGate.hold, self.player.items().isEmpty || self.player.currentItem == nil else { return }
             try? self.session.setActive(false, options: .notifyOthersOnDeactivation)
         }
     }

@@ -201,6 +201,22 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
 
       <Cue text={lastCue} />
 
+      {/* rozmowa z Enzo: pytanie i odpowiedź (znika po 20 s) */}
+      {ride.coach && (ride.coach.state === 'listening' || Date.now() - ride.coach.at < 20000) && (
+        <section className={s.cardCyan} aria-live="polite" style={{ padding: '10px 14px', fontSize: 14, lineHeight: 1.45 }}>
+          {ride.coach.state === 'listening' ? <span className={s.strong}>🎙 Słucham…</span> : (
+            <>
+              {ride.coach.question && <div style={{ color: 'var(--muted)' }}>„{ride.coach.question}”</div>}
+              {ride.coach.answer
+                ? <div><span className={s.strong}>Enzo:</span> {ride.coach.answer}</div>
+                : <div style={{ color: 'var(--muted)' }}>Enzo myśli…</div>}
+            </>
+          )}
+        </section>
+      )}
+      <button type="button" className={s.btnGhost} onClick={ride.talk} style={{ width: '100%', height: 46, fontSize: 15 }}
+        aria-label="Zapytaj Enzo">🎙 Zapytaj Enzo</button>
+
       {plan && plan.steps.length > 0 && phase !== 'free' && <ProgressStrip script={plan} current={idx} />}
 
       {next && phase !== 'free' && phase !== 'armed' && phase !== 'waiting' && (

@@ -67,6 +67,8 @@ final class WorkoutEngine {
     private var hrHighRun = 0, lastHrAlert = -1_000_000
     private var hrRecStart: Int?
     private var corrRepeat = 0, lastCorrDir = 0
+    private var CADS: [Int] = []
+    private var lastDrink = 0, lastEat = 0
     private var quietUntil = -1
     private static let quietAfterStopSec = 20   // cisza po postoju (światła, skrzyżowanie)
 
@@ -219,6 +221,7 @@ final class WorkoutEngine {
         let p = max(0, pIn ?? 0)
         P.append(p)
         HR.append(hr)
+        CADS.append(cad ?? 0)
         if !replaying { onSecond?(s, pIn, hr, cad, bal) }
         defer { if speak && !replaying { emitLive(s, pIn, hr, cad, bal) } }
 
@@ -226,6 +229,8 @@ final class WorkoutEngine {
             if phase == .free { say("freeStart", [:], .info, speak) } else { announceStep(0, speak) }
         }
         checkSensors(s, speak)
+        briefingTick(s, speak)
+        fuelTick(s, speak)
         if phase == .free { freeTick(s, speak); return }
         guard let st = step else { return }
         if p < R.autoPauseWatts && (cad == nil || cad == 0) { quietUntil = s + Self.quietAfterStopSec }
@@ -301,12 +306,12 @@ final class WorkoutEngine {
                 let wasRecovery = st.type == "recovery"
                 enterStep(stepIdx + 1, startSec: startSec, pre: s - startSec + 1, speak: false)
                 lastRestSec = rest
-                var text = Phrases.render(phrases["autoStart"] ?? "", [
-                    "dur": Phrases.duration(next.durationSec), "low": "\(next.powerLow)", "high": "\(next.powerHigh)"])
+                let av = ["dur": Phrases.duration(next.durationSec), "low": "\(next.powerLow)", "high": "\(next.powerHigh)"]
+                var text = Phrases.render(phrases["autoStart"] ?? "", av)
                 if wasRecovery && abs(rest - st.durationSec) > 20, let ri = phrases["restInfo"] {
                     text += " " + Phrases.render(ri, ["rest": Phrases.duration(rest)])
                 }
-                emit(text, .step, speak)
+                emit(text, .step, speak, key: "autoStart", vars: av)
                 return
             }
             if remaining < 0 && (-remaining) % R.waitRemindSec == 0 {
@@ -339,7 +344,6 @@ final class WorkoutEngine {
 
     private func announceStep(_ idx: Int, _ speak: Bool) {
         let st = script.steps[idx]
-        if let c = st.cueStart, !c.isEmpty { emit(c, .step, speak); return }
         let key: String
         switch st.type {
         case "interval": key = "intervalStart"
@@ -348,8 +352,11 @@ final class WorkoutEngine {
         case "cooldown": key = "cooldownStart"
         default: key = "steadyStart"
         }
-        say(key, ["n": "\(intervalNumbers[idx] ?? 0)", "total": "\(intervalCount)", "name": st.name,
-                  "dur": Phrases.duration(st.durationSec), "low": "\(st.powerLow)", "high": "\(st.powerHigh)"], .step, speak)
+        let vars = ["n": "\(intervalNumbers[idx] ?? 0)", "total": "\(intervalCount)", "name": st.name,
+                    "dur": Phrases.duration(st.durationSec), "low": "\(st.powerLow)", "high": "\(st.powerHigh)"]
+        // własny tekst kroku (AI) idzie na ekran, a Enzo mówi swoje wejście dla tego typu kroku
+        if let c = st.cueStart, !c.isEmpty { emit(c, .step, speak, key: key, vars: vars); return }
+        say(key, vars, .step, speak)
     }
 
     private func closeInterval(early: Bool, speak: Bool) {
@@ -373,17 +380,18 @@ final class WorkoutEngine {
             avgHr: hrs.isEmpty ? nil : avgInt(hrs), endedEarly: early, restBeforeSec: lastRestSec, startSec: stepStartSec)
         let prev = series.last
         series.append(res)
-        var text = Phrases.render(phrases["seriesEnd"] ?? "", [
-            "n": "\(res.n)", "total": "\(intervalCount)", "dur": Phrases.duration(res.durationSec),
-            "avg": "\(res.avgPower)", "pct": "\(res.compliancePct)"])
+        var sv = ["n": "\(res.n)", "total": "\(intervalCount)", "dur": Phrases.duration(res.durationSec),
+                  "avg": "\(res.avgPower)", "pct": "\(res.compliancePct)"]
+        var text = Phrases.render(phrases["seriesEnd"] ?? "", sv)
         if let p = prev, let t = phrases["seriesPrev"] { text += " " + Phrases.render(t, ["prev": "\(p.avgPower)"]) }
         if series.count >= 2, !spokeHr, let first = series.first, let h1 = first.avgHr, let h = res.avgHr,
            abs(Double(res.avgPower - first.avgPower)) <= Double(first.avgPower) * 0.03, h - h1 >= R.hrDriftBpm,
            let t = phrases["hrUp"] {
             text += " " + Phrases.render(t, ["d": "\(h - h1)"])
+            sv["hrUp"] = "\(h - h1)"
             spokeHr = true
         }
-        emit(text, .summary, speak)
+        emit(text, .summary, speak, key: "seriesEnd", vars: sv)   // jeden komunikat Enzo, bez głosu systemowego
         lastRestSec = nil
     }
 
@@ -428,10 +436,10 @@ final class WorkoutEngine {
                                 "dur": Phrases.duration(next.durationSec), "low": "\(next.powerLow)", "high": "\(next.powerHigh)"], .arm, speak)
             }
             if remaining == 10 && lead > 15 && once("ten") { say("tenSec", [:], .countdown, speak) }
-            if (1...3).contains(remaining) { emit(countdown[remaining], .countdown, speak) }
+            if (1...3).contains(remaining) { say("count", ["n": "\(remaining)", "word": countdown[remaining]], .countdown, speak) }
             if remaining == 0 && once("go") { say("goNow", [:], .countdown, speak) }
         } else if stepIdx + 1 < script.steps.count, script.steps[stepIdx + 1].isInterval, (1...3).contains(remaining) {
-            emit(countdown[remaining], .countdown, speak)
+            say("count", ["n": "\(remaining)", "word": countdown[remaining]], .countdown, speak)
         }
     }
 
@@ -482,6 +490,109 @@ final class WorkoutEngine {
             } else if can && cadHighRun >= R.cadenceGraceSec, let hi = st.cadenceHigh {
                 say("cadenceHigh", ["cad": "\(c)", "cadHigh": "\(hi)"], .cadence, speak); lastCorrection = s; cadHighRun = 0
             }
+        }
+    }
+
+    // MARK: - Stan dla rozmowy z trenerem
+
+    /// Migawka jazdy dla pytań „jak mi idzie?” (lokalnie i na serwer). Tylko wartości nie-nil (JSON).
+    func coachState() -> [String: Any] {
+        var d: [String: Any] = ["elapsedSec": max(0, lastSecond), "phase": isPaused ? "paused" : phase.rawValue,
+                                "ftp": script.ftp, "workout": script.name]
+        d["power3s"] = avgInt(Array(P.suffix(3)))
+        d["power30s"] = avgInt(Array(P.suffix(30)))
+        d["avgPowerRide"] = avgInt(P.filter { $0 >= R.autoPauseWatts })
+        if let h = hrAvg(10) { d["hr"] = h }
+        let cads = CADS.suffix(10).filter { $0 > 0 }
+        if !cads.isEmpty { d["cadence"] = avgInt(Array(cads)) }
+        d["kJ"] = P.reduce(0, +) / 1000
+        d["sinceEatSec"] = max(0, lastSecond - lastEat)
+        d["sinceDrinkSec"] = max(0, lastSecond - lastDrink)
+        let ivNos = intervalNumbers.enumerated().compactMap { i, n in n == nil ? nil : i }
+        d["intervalsLeft"] = ivNos.filter { $0 > stepIdx }.count
+        d["inInterval"] = phase != .free && step?.isInterval == true
+        if phase != .free, let st = step {
+            var sd: [String: Any] = ["name": st.name, "type": st.type, "elapsedSec": inStep,
+                                     "remainingSec": max(0, st.durationSec - inStep), "durationSec": st.durationSec,
+                                     "targetLow": st.powerLow, "targetHigh": st.powerHigh,
+                                     "avgPower": avgInt(stepSecs.map { P[$0] }.filter { $0 >= R.autoPauseWatts })]
+            if let v = st.hrLow { sd["hrLow"] = v }
+            if let v = st.hrHigh { sd["hrHigh"] = v }
+            if let n = intervalNumbers[stepIdx] { sd["intervalNo"] = n; sd["intervalCount"] = intervalCount }
+            d["step"] = sd
+            let rest = script.steps.dropFirst(stepIdx + 1)
+            d["planRemainingSec"] = rest.reduce(0) { $0 + $1.durationSec } + max(0, st.durationSec - inStep)
+            if let n = rest.first {
+                var nd: [String: Any] = ["name": n.name, "type": n.type, "durationSec": n.durationSec, "targetLow": n.powerLow, "targetHigh": n.powerHigh]
+                if let no = intervalNumbers[stepIdx + 1] { nd["intervalNo"] = no; nd["intervalCount"] = intervalCount }
+                d["nextStep"] = nd
+            }
+        }
+        d["series"] = series.map { x -> [String: Any] in
+            var o: [String: Any] = ["n": x.n, "durationSec": x.durationSec, "avgPower": x.avgPower, "compliancePct": x.compliancePct]
+            if let h = x.avgHr { o["avgHr"] = h }
+            return o
+        }
+        if let b = script.briefing {
+            if let r = b.readiness { d["readiness"] = Int(r.rounded()) }
+            if let s = b.readyState { d["readyState"] = s }
+        }
+        return d
+    }
+
+    // MARK: - Jedzenie i picie
+
+    /// „Zjadłem” / „wypiłem” (głosem) – przesuwa przypomnienia.
+    func fueled(_ kind: String) {
+        if kind == "eat" { lastEat = max(0, lastSecond) }
+        lastDrink = max(0, lastSecond)
+    }
+
+    /// Przypomnienia na dłuższych jazdach: pić co 20 min, jeść co 40 min (co 30 przy mocnym planie).
+    /// Nie w trakcie interwału – poczekamy na przerwę (najdłużej 10 min). Tak samo jak flex-engine.ts.
+    private func fuelTick(_ s: Int, _ speak: Bool) {
+        guard phase != .autoPaused, s > 0 else { return }
+        let total = script.steps.reduce(0) { $0 + $1.durationSec }
+        let free = script.steps.isEmpty
+        let drinkOn = free ? s >= 1200 : total >= 2700
+        let eatOn = free ? s >= 3600 : total >= 4500
+        let hard = script.steps.contains { $0.isInterval && script.ftp > 0 && Double($0.powerLow) >= Double(script.ftp) * 0.88 }
+        let eatEvery = hard ? 1800 : 2400
+        let st = phase == .free ? nil : step
+        let working = st?.isInterval == true   // w trakcie pracy nie przeszkadzamy
+        func due(_ last: Int, _ every: Int) -> Bool { s - last >= every && (!working || s - last >= every + 600) }
+        if eatOn && due(lastEat, eatEvery) {
+            lastEat = s; lastDrink = s
+            say("eat", [:], .info, speak)
+        } else if drinkOn && due(lastDrink, 1200) {
+            lastDrink = s
+            say("drink", [:], .info, speak)
+        }
+    }
+
+    // MARK: - Odprawa na rozgrzewce
+
+    private static let briefReadySec = 150, briefCondFrom = 360, briefCondSec = 600
+
+    /// Gotowość dziś (z PMC) po 2,5 min i „kondycja” jak w Garminie po 10 min: tętno przy tej mocy
+    /// względem Twoich ostatnich jazd (model HR = hrA + hrB·W liczony na serwerze).
+    private func briefingTick(_ s: Int, _ speak: Bool) {
+        guard let b = script.briefing else { return }
+        if s == Self.briefReadySec, let r = b.readiness {
+            say("readiness", ["pct": "\(Int(r.rounded()))", "level": b.readyColor ?? "yellow", "state": b.readyState ?? "",
+                              "heavy": (b.yTss ?? 0) >= 150 ? "1" : "0"], .info, speak)
+        }
+        if s == Self.briefCondSec, let a = b.hrA, let k = b.hrB {
+            var pw = 0.0, hr = 0.0, n = 0
+            for i in Self.briefCondFrom...s where i < P.count {
+                if P[i] >= 50, let h = HR[i], h > 0 { pw += Double(P[i]); hr += Double(h); n += 1 }
+            }
+            guard Double(n) >= Double(s - Self.briefCondFrom) * 0.6 else { return }
+            pw /= Double(n); hr /= Double(n)
+            let exp = a + k * pw
+            guard exp > 60 else { return }
+            let c = max(-10, min(10, Int(((exp - hr) / exp * 100).rounded())))
+            say("condition", ["n": "\(c)", "sign": c > 0 ? "+" : "", "level": c >= 3 ? "good" : (c <= -3 ? "bad" : "ok")], .info, speak)
         }
     }
 

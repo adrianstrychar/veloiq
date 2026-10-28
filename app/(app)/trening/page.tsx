@@ -4,6 +4,7 @@ import { userTodayISO } from '@/lib/timezone';
 import type { PlanDayRow } from '@/lib/planned-day';
 import { planDayToScript } from '@/lib/ride/plan-to-script';
 import { TreningClient } from './TreningClient';
+import { buildBriefing } from '@/lib/ride/briefing';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,5 +39,6 @@ export default async function TreningPage() {
   const planLabel = day && script ? [day.type, `${day.dur_min} min`, day.tss ? `TSS ${day.tss}` : null].filter(Boolean).join(' · ') : undefined;
 
   const firstName = String((athlete?.name as string | null) ?? '').trim().split(/\s+/)[0] || undefined;
-  return <TreningClient plan={script} planLabel={planLabel} ftp={ftp} firstName={firstName} />;
+  const briefing = athlete?.id ? await buildBriefing(supabase, athlete.id as string).catch(() => undefined) : undefined;
+  return <TreningClient plan={script} planLabel={planLabel} ftp={ftp} firstName={firstName} briefing={briefing} />;
 }

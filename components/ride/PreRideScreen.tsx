@@ -38,10 +38,11 @@ interface Props {
 
 export function PreRideScreen({ ride, plan, settings, onSettings, onBack, onStart }: Props) {
   const rows = groupSteps(plan.steps);
-  const toggles: { k: 'autoStart' | 'announceArm' | 'autoPause'; label: string; sub: string }[] = [
+  const toggles: { k: 'autoStart' | 'announceArm' | 'autoPause' | 'talkTap'; label: string; sub: string }[] = [
     { k: 'autoStart', label: 'Interwały startują automatycznie', sub: 'Wykrywam start po mocy – plan przesuwa się razem z Tobą.' },
     { k: 'announceArm', label: 'Zapowiedź minutę wcześniej', sub: 'Głos + odliczanie 10 s i 3-2-1.' },
     { k: 'autoPause', label: 'Auto-pauza na postojach', sub: 'Światła albo skrzyżowanie nie zjadają interwału.' },
+    { k: 'talkTap', label: 'Rozmowa z Enzo: dotknij słuchawki', sub: 'Dotknięcie okularów/słuchawek = pytanie. Zatrzymuje muzykę z innych aplikacji – wyłącz, jeśli słuchasz muzyki (zostaje przycisk na ekranie).' },
   ];
   const levels: { v: VoiceLevel; l: string; hint: string }[] = [
     { v: 'full', l: 'Pełne', hint: 'Zapowiedzi, korekty mocy i kadencji, podsumowania serii.' },
