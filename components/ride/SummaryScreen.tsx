@@ -34,11 +34,21 @@ interface Props {
   /** Zapis do VeloIQ (Supabase) – patrz lib/ride/save-ride.ts. */
   onSave: (summary: WorkoutSummary, samples: RecordedSample[]) => Promise<void>;
   onAskCoach?: () => void;
+  onExportStrava?: () => Promise<{ url?: string; pending?: boolean; already?: boolean }>;
   /** discard = true: użytkownik odrzucił niezapisany trening. */
   onDone: (discard: boolean) => void;
 }
 
-export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onAskCoach, onDone }: Props) {
+export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onAskCoach, onExportStrava, onDone }: Props) {
+  const [strava, setStrava] = useState<{ st: 'idle' | 'sending' | 'done' | 'error'; msg?: string; url?: string }>({ st: 'idle' });
+  const exportStrava = async () => {
+    if (!onExportStrava || strava.st === 'sending') return;
+    setStrava({ st: 'sending' });
+    try {
+      const r = await onExportStrava();
+      setStrava({ st: 'done', url: r.url, msg: r.pending ? 'Wysłano – Strava jeszcze przetwarza jazdę.' : r.already ? 'Ta jazda już jest na Stravie.' : 'Jazda jest na Stravie.' });
+    } catch (e) { setStrava({ st: 'error', msg: e instanceof Error ? e.message : 'Nie udało się wysłać.' }); }
+  };
   const [samples, setSamples] = useState<RecordedSample[]>([]);
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveErr, setSaveErr] = useState<string>('');
@@ -204,6 +214,27 @@ export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onA
               <span className={s.statValue} style={{ fontSize: 20, color: 'var(--cyan)' }}>{x.avgPower} W</span>
             </div>
           ))}
+        </section>
+      )}
+
+      {onExportStrava && saving === 'saved' && (
+        <section className={s.card} aria-label="Strava" style={{ gap: 8 }}>
+          <span className={s.eyebrow} style={{ color: '#FC4C02' }}>Strava</span>
+          {strava.st === 'done' ? (
+            <>
+              <span className={s.body} style={{ fontSize: 14 }}>{strava.msg}</span>
+              {strava.url && <a className={s.btnGhost} href={strava.url} target="_blank" rel="noreferrer" style={{ textAlign: 'center', textDecoration: 'none' }}>Zobacz na Stravie</a>}
+            </>
+          ) : (
+            <>
+              <span className={s.small}>Wyślij jazdę z mocą, tętnem, kadencją i trasą GPS. Na liście VeloIQ zostanie jedna aktywność.</span>
+              <button type="button" className={s.btnPrimary} onClick={exportStrava} disabled={strava.st === 'sending'}
+                style={{ backgroundColor: '#FC4C02', color: '#fff' }}>
+                {strava.st === 'sending' ? 'Wysyłam na Stravę…' : 'Wyślij na Stravę'}
+              </button>
+              {strava.st === 'error' && <span className={s.small} style={{ color: 'var(--danger)' }} role="alert">{strava.msg}</span>}
+            </>
+          )}
         </section>
       )}
 

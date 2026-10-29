@@ -128,6 +128,7 @@ export async function importMissingRides(supabase: SupabaseClient, userId: strin
     .select('id, started_at, duration_sec, avg_power, normalized_power, intensity_factor, tss, kj, avg_hr, max_hr, outdoor, workout_name, series, samples_path, source')
     .eq('user_id', userId)
     .neq('source', 'veloiq-web-sim') // symulacja w przeglądarce to nie trening
+    .not('source', 'like', '%:strava:%') // wysłane na Stravę – wracają jako aktywność ze Stravy
     .order('started_at', { ascending: false })
     .limit(30);
   if (error || !rides?.length) return 0;
