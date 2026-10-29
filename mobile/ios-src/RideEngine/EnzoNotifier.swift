@@ -60,6 +60,19 @@ final class EnzoNotifier: NSObject, UNUserNotificationCenterDelegate {
         case "drink": return "Pij!"
         case "eat": return "Jedz – żel/baton"
         case "planDone": return "Plan zrobiony"
+        case "navTurn":
+            let d = ["left": "w lewo", "right": "w prawo", "slightLeft": "lekko w lewo", "slightRight": "lekko w prawo",
+                     "sharpLeft": "ostro w lewo", "sharpRight": "ostro w prawo", "uturn": "zawróć"][g("dir")] ?? "skręt"
+            return g("dist") == "0" ? "Teraz \(d)" : "Za \(g("m")) m \(d)"
+        case "navOff": return "Zjechałeś z trasy"
+        case "navBack": return "Z powrotem na trasie"
+        case "navClimb": return "Podjazd za 1 km: \(g("len")) km · \(g("grade"))%"
+        case "navClimbStart": return "Podjazd: \(g("len")) km · \(g("grade"))% · +\(g("gain")) m"
+        case "navTop": return "Szczyt"
+        case "navLeft": return "Do mety: \(g("km")) km"
+        case "navDone": return "Meta trasy"
+        case "navStart": return "Nawigacja: jesteś na trasie"
+        case "navToStart": return "Jedź do startu trasy (\(g("m")) m)"
         case "powerLost": return "Brak sygnału mocy"
         case "hrLost": return "Brak sygnału tętna"
         default: return nil

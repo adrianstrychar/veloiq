@@ -168,6 +168,7 @@
 
 /* --- dolna nawigacja aplikacji: Forma · Plan · Jedź · Trener · Kalendarz */
 .nav {
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
   height: calc(76px + env(safe-area-inset-bottom)); padding: 0 4px env(safe-area-inset-bottom);
   background-color: rgba(8, 14, 22, 0.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
@@ -181,7 +182,9 @@
 .navItemActive { composes: navItem; color: #EDEFF2; font-size: 12px; font-weight: 600; }
 .navItemActive::before { content: ''; position: absolute; top: -12px; width: 24px; height: 2px; border-radius: 1px; background-color: #4A8FC7; }
 .navItemActive svg { stroke: #4A8FC7; }
-.navRide { composes: navItem; color: #EDEFF2; font-size: 11px; font-weight: 700; }
+.navRide { composes: navItem; color: #EDEFF2; font-size: 11px; font-weight: 700; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.navRide:active .navRideBtn, .navRide:active .navRideBtnLive { transform: scale(0.92); }
+.navRideBtn, .navRideBtnLive { transition: transform 0.08s ease; }
 .navRideBtn { width: 56px; height: 56px; border-radius: 28px; margin-top: -28px; box-shadow: 0 0 0 5px #0A0A0F;
   background-color: #4A8FC7; color: #14161B; display: flex; align-items: center; justify-content: center; }
 .navRideBtnLive { composes: navRideBtn; background-color: #0A0A0F; border: 3px solid #4A8FC7; box-sizing: border-box; color: #4A8FC7;

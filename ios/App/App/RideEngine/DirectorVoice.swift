@@ -58,6 +58,8 @@ final class DirectorVoice: NSObject {
         "powerLost": "powerLost", "powerBack": "powerBack", "hrLost": "hrLost", "hrBack": "hrBack",
         "hrHigh": "hrHigh", "hrRecovered": "hrRec", "status": "status",
         "rideAutoPause": "pause", "rideAutoResume": "resume",
+        "navStart": "navStart", "navToStart": "navToStart", "navOff": "navOff", "navBack": "navBack",
+        "navTop": "navTop", "navDone": "navDone",
         "listen": "listen", "repeat": "repeat", "think": "think", "offline": "offline", "doneCmd": "doneCmd",
         "left": "left", "power": "power",
         "nextInfo": "nextInfo", "planEnd": "planEnd", "ivlLeft": "ivlLeft", "lastIvl": "lastIvl", "ivlDone": "ivlDone", "prevSeries": "prevSeries", "noSeries": "noSeries", "planLeft": "planLeft", "fuelAdvice": "fuelAdvice", "eatNow": "eatNow", "eatLater": "eatLater", "ateOk": "ateOk", "drankOk": "drankOk", "motivate": "motivate", "drink": "drink", "eat": "eat",
@@ -124,6 +126,27 @@ final class DirectorVoice: NSObject {
     func compose(_ key: String, _ vars: [String: String]) -> [String]? {
         if Self.silent.contains(key) { return nil }
         // komunikaty bez stałego wejścia: odliczanie, odprawa
+        // nawigacja po trasie
+        if key == "navTurn" {
+            let out = ["dist.\(vars["dist"] ?? "0")", "dir.\(vars["dir"] ?? "")"].filter { has($0) }
+            return out.count == 2 ? out : []
+        }
+        if key == "navClimb" || key == "navClimbStart" {
+            var out: [String] = []
+            if let l = lead(key) { out.append(l) }
+            let len = num(vars["len"]) ?? 0
+            let c = len < 0.75 ? "clen.0.5" : "clen.\(min(25, Int(len.rounded())))"
+            if has(c) { out.append(c) }
+            let g = "grade.\(min(15, max(2, Int((num(vars["grade"]) ?? 0).rounded()))))"
+            if has(g) { out.append(g) }
+            return out
+        }
+        if key == "navLeft" {
+            var out: [String] = []
+            if let l = lead("navLeft") { out.append(l) }
+            if let k = vars["km"], has("kmLeft.\(k)") { out.append("kmLeft.\(k)") }
+            return out.count == 2 ? out : []
+        }
         if key == "count" { let id = "cnt.\(vars["n"] ?? "")"; return has(id) ? [id] : nil }
         if key == "readiness" {
             let r = min(100, max(20, r5(num(vars["pct"]) ?? 0)))

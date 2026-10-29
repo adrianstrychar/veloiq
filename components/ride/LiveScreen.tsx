@@ -4,6 +4,7 @@ import s from './ride.module.css';
 import type { WorkoutScript } from '@/lib/ride/workout-script';
 import type { LiveSample } from '@/lib/ride/ride-engine';
 import type { Ride } from './useRide';
+import { NavCard } from './RouteCard';
 import { Cue, IconNext, IconPause, IconPlay, IconStop, Metric, PowerGauge, ProgressStrip, StatusDot, hmmss, mmss } from './parts';
 
 const intervalNo = (plan: WorkoutScript | null, idx: number) =>
@@ -198,6 +199,8 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
           {plan ? <Metric label="Do końca" value={hmmss(planLeft)} /> : <Metric label="Czas" value={hmmss(live?.elapsed ?? 0)} />}
         </section>
       )}
+
+      {ride.route && <NavCard nav={ride.nav} route={ride.route} pos={live?.lat && live?.lon ? { lat: live.lat, lon: live.lon } : null} />}
 
       <Cue text={lastCue} />
 

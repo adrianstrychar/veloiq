@@ -13,6 +13,8 @@ import { PreRideScreen } from './PreRideScreen';
 import { LiveScreen } from './LiveScreen';
 import { SummaryScreen, describeSaveError, parseJsonl, type RecordedSample } from './SummaryScreen';
 import { hmmss } from './parts';
+import { loadSavedRoute } from './RouteCard';
+import type { RideRoute } from '@/lib/ride/gpx';
 
 type Screen = 'home' | 'sensors' | 'pre' | 'live' | 'summary';
 
@@ -43,6 +45,8 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing }: 
   const [pending, setPending] = useState<Pending | null>(null);
   const [pendingState, setPendingState] = useState<{ busy: boolean; err?: string }>({ busy: false });
   useEffect(() => { setPending(readPending()); }, []);
+  const [route, setRoute] = useState<RideRoute | null>(null);
+  useEffect(() => { setRoute(loadSavedRoute()); }, []);
 
   // ustawienia per użytkownik (wygoda – nic krytycznego)
   useEffect(() => {
@@ -87,7 +91,7 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing }: 
   const start = (sc: WorkoutScript) => {
     setScript(sc.steps.length ? sc : null);
     setStartedAt(new Date());
-    ride.start(briefing ? { ...sc, briefing } : sc, settings); // odprawa Enzo na rozgrzewce
+    ride.start(briefing ? { ...sc, briefing } : sc, settings, undefined, route); // odprawa Enzo + trasa GPX
   };
 
   const dateLabel = new Date().toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -122,7 +126,8 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing }: 
     )}
     <HomeScreen ride={ride} plan={plan} planLabel={planLabel} dateLabel={dateLabel[0].toUpperCase() + dateLabel.slice(1)}
       settings={settings} onSettings={updateSettings}
-      onStart={() => setScreen('pre')} onFree={() => start(freeRideScript(ftp))} onSensors={() => setScreen('sensors')} />
+      onStart={() => setScreen('pre')} onFree={() => start(freeRideScript(ftp))} onSensors={() => setScreen('sensors')}
+      route={route} onRoute={setRoute} />
     </>
   );
 
