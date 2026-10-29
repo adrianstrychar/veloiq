@@ -87,7 +87,6 @@ final class EnzoNotifier: NSObject, UNUserNotificationCenterDelegate {
         content.body = body
         content.threadIdentifier = Self.thread
         content.sound = nil                                   // dźwięk robi Enzo
-        if #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
         let id = "enzo-\(Date().timeIntervalSince1970)"
         c.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
         // porządek: na telefonie zostają tylko 3 ostatnie

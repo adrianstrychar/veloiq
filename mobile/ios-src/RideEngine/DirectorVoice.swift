@@ -240,7 +240,10 @@ final class DirectorVoice: NSObject {
         let m = queue.removeFirst()
         // sesja MIESZANA: Spotify gra dalej, tylko ściszony na czas komunikatu
         do {
-            try session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+            // w trakcie pytania do Enzo (mikrofon) nie zmieniamy kategorii – zepsułoby nagrywanie
+            if session.category != .playAndRecord {
+                try session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+            }
             try session.setActive(true)
         } catch {
             // nie da się teraz grać (np. rozmowa telefoniczna) – nie kolejkujemy zaległości

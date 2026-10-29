@@ -58,7 +58,7 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
   const totals = useTotals(live);
   useEffect(() => { if (!confirmStop) return; const t = setTimeout(() => setConfirmStop(false), 3000); return () => clearTimeout(t); }, [confirmStop]);
 
-  const phase = ride.paused ? 'paused' : live?.phase ?? 'running';
+  const phase = ride.paused ? 'paused' : ride.autoPaused ? 'ridePaused' : live?.phase ?? 'running';
   const type = live?.stepType ?? plan?.steps[0]?.type ?? 'warmup';
   const idx = live?.stepIndex ?? 0;
   const next = plan?.steps[idx + 1];
@@ -71,6 +71,7 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
   // --- chip
   let chipCls = s.chipRest, chip = live?.stepName ?? 'Start';
   if (phase === 'paused') { chipCls = s.chipPaused; chip = 'Pauza'; }
+  else if (phase === 'ridePaused') { chipCls = s.chipPaused; chip = 'Auto-pauza · ruszysz – liczę dalej'; }
   else if (phase === 'free') { chipCls = s.chipFree; chip = 'Jazda swobodna'; }
   else if (phase === 'autoPaused') { chipCls = s.chipPaused; chip = `Auto-pauza · Interwał ${intervalNo(plan, idx)} / ${total}`; }
   else if (phase === 'armed' || phase === 'waiting') { chipCls = s.chipArmed; chip = `Za chwilę · ${intervalNo(plan, idx + 1)} / ${total}`; }
@@ -80,7 +81,7 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
   // --- kolor mocy
   const work = type === 'interval' || type === 'steady';
   let pColor = 'var(--text)', pState = '';
-  if (phase !== 'free' && phase !== 'autoPaused' && high > 0) {
+  if (phase !== 'free' && phase !== 'autoPaused' && phase !== 'ridePaused' && high > 0) {
     if (p3 > high) { pColor = 'var(--over)'; pState = 'za mocno'; }
     else if (work && p3 < low) { pColor = 'var(--under)'; pState = 'za słabo'; }
     else if (work) { pColor = 'var(--cyan)'; pState = 'w zakresie'; }

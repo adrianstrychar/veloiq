@@ -198,16 +198,10 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         let notify = call.getBool("notifications") ?? true
         // trasa GPX (tylko na zewnątrz) – ta sama droga przez JSON co skrypt
         var nav: RouteNavigator?
-        if outdoor, let r = call.getObject("route"), let d = try? JSONSerialization.data(withJSONObject: r),
-           let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] { nav = RouteNavigator(json: j) }
-        if let n = nav {
-            n.onSay = { [weak self] key, vars in
-                guard let self = self else { return }
-                self.notifier.post(key, vars)
-                guard self.voiceLevel != "off" else { return }
-                let text = EnzoNotifier.text(key, vars) ?? ""
-                DispatchQueue.main.async { self.say(key, vars, text, interrupt: key == "navTurn" && vars["dist"] == "0") }
-            }
+        Self.clearSavedRoute()
+        if outdoor, let r = call.getObject("route"), let d = try? JSONSerialization.data(withJSONObject: r) {
+            nav = makeNavigator(d)
+            if nav != nil { try? d.write(to: Self.routeFile) }   // na wypadek awarii – wznowienie z trasą
         }
         engineQueue.async { self.pendingNav = nav }   // begin() podłączy po stopInternal
         engineQueue.async { self.autoPauseOn = autoPause; self.stillRun = 0; self.moveRun = 0; self.lastSpeed = nil }
@@ -345,6 +339,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     private func finishWorkout() -> WorkoutSummary {
         guard let eng = engine else { return WorkoutSummary(file: "", durationSec: 0, avgPower: 0, normalizedPower: 0, kJ: 0, compliancePct: 0) }
         var summary = eng.stop()
+        Self.clearSavedRoute()
         summary.file = recorder?.fileName ?? "" // tylko nazwa pliku – ścieżka kontenera się zmienia
         stopInternal(speakSummary: false)
         return summary
@@ -408,6 +403,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
                 // Wznawiamy w pauzie od ostatniej zapisanej sekundy: czas od awarii się nie liczy,
                 // zawodnik sam wciska "Wznów".
                 let recorded = Recorder.readSamples(fileName: r.fileName).count
+                if r.outdoor, let d = try? Data(contentsOf: Self.routeFile) { self.pendingNav = self.makeNavigator(d) }
                 let now = Date()
                 let pausedTotal = max(r.pausedTotal, now.timeIntervalSince(r.startDate) - Double(recorded))
                 try self.begin(script: script, json: r.scriptJSON, outdoor: r.outdoor, simulate: false,
@@ -422,7 +418,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    @objc func discardRecovered(_ call: CAPPluginCall) { Recorder.clearRecovery(); call.resolve() }
+    @objc func discardRecovered(_ call: CAPPluginCall) { Recorder.clearRecovery(); Self.clearSavedRoute(); call.resolve() }
 
     // MARK: - Inne
 
@@ -458,6 +454,25 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             } else { self.speaker.speak(text) }
         }
         call.resolve()
+    }
+
+    // MARK: - Nawigacja GPX
+
+    private static var routeFile: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("veloiq-route.json")
+    }
+    private static func clearSavedRoute() { try? FileManager.default.removeItem(at: routeFile) }
+
+    private func makeNavigator(_ data: Data) -> RouteNavigator? {
+        guard let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let n = RouteNavigator(json: j) else { return nil }
+        n.onSay = { [weak self] key, vars in
+            guard let self = self else { return }
+            self.notifier.post(key, vars)
+            guard self.voiceLevel != "off" else { return }
+            let text = EnzoNotifier.text(key, vars) ?? ""
+            DispatchQueue.main.async { self.say(key, vars, text, interrupt: key == "navTurn" && vars["dist"] == "0") }
+        }
+        return n
     }
 
     // MARK: - Auto-pauza jazdy (engineQueue)

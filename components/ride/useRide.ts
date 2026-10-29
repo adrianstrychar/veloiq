@@ -51,6 +51,7 @@ export function useRide() {
   const [summary, setSummary] = useState<WorkoutSummary | null>(null);
   const [active, setActive] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [autoPaused, setAutoPaused] = useState(false);   // postój (auto-pauza) – nie ręczna pauza
   const [recoverable, setRecoverable] = useState<{ name?: string; elapsed?: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [voice, setVoiceState] = useState<{ voices: VoiceInfo[]; current?: string; rate: number; mode?: VoiceMode; packs?: { id: string; name: string }[] }>({ voices: [], rate: 0.5 });
@@ -70,8 +71,8 @@ export function useRide() {
       engine.addListener('sensorFound', (d) => setFound((f) => (f.some((x) => x.id === d.id) ? f : [...f, d]))),
       engine.addListener('sensor', (d) => setSensors((s) => ({ ...s, [d.kind]: d }))),
       engine.addListener('planFinished', (d) => setPlanDone(d)),
-      engine.addListener('paused', () => { setActive(true); setPaused(true); }),
-      engine.addListener('resumed', () => setPaused(false)),
+      engine.addListener('paused', (d) => { setActive(true); if (d?.auto) setAutoPaused(true); else setPaused(true); }),
+      engine.addListener('resumed', () => { setPaused(false); setAutoPaused(false); }),   // też po auto-pauzie
       engine.addListener('nav', (d) => setNav(d)),   // też po auto-pauzie
       engine.addListener('coach', (d) => setCoach((c) => {
         const at = Date.now();
@@ -92,7 +93,7 @@ export function useRide() {
   }, []);
 
   return {
-    native, live, sensorData, cues, found, sensors, planDone, summary, active, paused, recoverable, error,
+    native, live, sensorData, cues, found, sensors, planDone, summary, active, paused, autoPaused, recoverable, error,
     scan: () => run(() => { setFound([]); return engine.scan({ kinds: ['power', 'hr'] }); }),
     stopScan: () => run(() => engine.stopScan()),
     connect: (o: { hrId?: string; powerId?: string; power2Id?: string }) => run(() => engine.connect(o)),
@@ -122,7 +123,7 @@ export function useRide() {
     coach,
     talk: () => run(() => engine.talk()),
     pause: () => run(async () => { await engine.pause(); setPaused(true); }),
-    resume: () => run(async () => { await engine.resume(); setPaused(false); }),
+    resume: () => run(async () => { await engine.resume(); setPaused(false); setAutoPaused(false); }),
     skip: () => run(() => engine.skipStep()),
     stop: () => run(async () => {
       const sum = await engine.stopWorkout();

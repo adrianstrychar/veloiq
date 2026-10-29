@@ -170,11 +170,11 @@ final class RouteNavigator {
         var d: [String: Any] = ["name": name, "total": Int(total), "progress": Int(progress),
                                 "left": Int(max(0, total - progress)), "acquired": acquired, "offRoute": offRoute]
         if let i = cues.firstIndex(where: { $0.d - progress > -10 }) {
-            d["nextTurn"] = ["dir": cues[i].dir, "in": Int(max(0, cues[i].d - progress))]
+            d["nextTurn"] = ["dir": cues[i].dir, "in": Int(max(0, cues[i].d - progress))] as [String: Any]
         }
         if let c = climbs.first(where: { $0.end > progress }) {
             d["nextClimb"] = ["in": Int(max(0, c.start - progress)), "len": Int(c.end - c.start), "grade": c.grade,
-                              "gain": Int(c.gain), "onIt": progress >= c.start]
+                              "gain": Int(c.gain), "onIt": progress >= c.start] as [String: Any]
         }
         return d
     }
