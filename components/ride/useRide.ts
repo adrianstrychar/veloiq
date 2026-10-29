@@ -15,11 +15,11 @@ export interface RideSettings {
   announceArm: boolean;  // „Za minutę interwał…”
   autoPause: boolean;    // auto-pauza na postojach
   voiceLevel: VoiceLevel;
-  talkTap: boolean;      // dotknięcie słuchawki/okularów = pytanie do Enzo (zatrzymuje muzykę z innych aplikacji)
+  notifyDevice: boolean; // krótkie powiadomienia Enzo na licznik (Garmin Edge przez iPhone)
 }
 
 export const DEFAULT_SETTINGS: RideSettings = {
-  outdoor: false, autoStart: true, announceArm: true, autoPause: true, voiceLevel: 'full', talkTap: true,
+  outdoor: false, autoStart: true, announceArm: true, autoPause: true, voiceLevel: 'full', notifyDevice: true,
 };
 
 /** Ustawienia użytkownika → skrypt dla silnika. */
@@ -67,7 +67,7 @@ export function useRide() {
       engine.addListener('sensor', (d) => setSensors((s) => ({ ...s, [d.kind]: d }))),
       engine.addListener('planFinished', (d) => setPlanDone(d)),
       engine.addListener('paused', () => { setActive(true); setPaused(true); }),
-      engine.addListener('resumed', () => setPaused(false)),
+      engine.addListener('resumed', () => setPaused(false)),   // też po auto-pauzie
       engine.addListener('coach', (d) => setCoach((c) => {
         const at = Date.now();
         if (d.state === 'listening') return { state: d.state, at };
@@ -102,12 +102,12 @@ export function useRide() {
     start: (script: WorkoutScript, s: RideSettings, simulate = !native) => run(async () => {
       setCues([]); setPlanDone(null); setSummary(null); setLive(null);
       await engine.startWorkout({ script: applySettings(script, s), outdoor: s.outdoor, simulate,
-        voiceLevel: s.voiceLevel, announceArm: s.announceArm });
+        voiceLevel: s.voiceLevel, announceArm: s.announceArm, autoPause: s.autoPause, notifications: s.notifyDevice !== false });
       setActive(true); setPaused(false);
       // rozmowa z Enzo: krótki token dla natywnego pluginu (działa też przy zgaszonym ekranie)
       if (native) {
         fetch('/api/ride/token').then((r) => (r.ok ? r.json() : null)).then((j) => {
-          if (j?.token) return engine.setCoach({ token: j.token, baseUrl: window.location.origin, tapMode: s.talkTap });
+          if (j?.token) return engine.setCoach({ token: j.token, baseUrl: window.location.origin, tapMode: false });
         }).catch(() => {});
       }
     }),

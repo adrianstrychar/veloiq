@@ -59,7 +59,11 @@ final class CoachTalk: NSObject {
 
     /// Włączone: aplikacja jest „odtwarzaczem” (cicha pętla), więc play/pauza ze słuchawek trafia do Enzo.
     /// Uwaga: muzyka z innej aplikacji zostaje wtedy zatrzymana – to warunek iOS.
-    func setTapMode(_ on: Bool) {
+    func setTapMode(_ requested: Bool) {
+        // WYŁĄCZONE: niemieszalna sesja odbierała przyciski słuchawek, ale blokowała Spotify
+        // (i zbierała zaległe komunikaty). Rozmowa: przycisk na ekranie. Zostaje tylko sprzątanie.
+        let on = false
+        _ = requested
         guard on != tapOn else { return }
         tapOn = on
         let cc = MPRemoteCommandCenter.shared()
@@ -120,7 +124,8 @@ final class CoachTalk: NSObject {
 
     private func record() {
         do {
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .defaultToSpeaker])
+            // mieszana z muzyką: Spotify tylko ściszony na czas pytania, potem wraca
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .defaultToSpeaker, .mixWithOthers, .duckOthers])
             try session.setActive(true)
             let req = SFSpeechAudioBufferRecognitionRequest()
             req.shouldReportPartialResults = true

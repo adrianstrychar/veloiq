@@ -71,6 +71,11 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     private var distKm = 0.0, speedKmh = 0.0, prevFix: (lat: Double, lon: Double, s: Int)?
     /// "full" – wszystko | "struct" – bez korekt/pochwał | "off" – bez głosu (tekst nadal idzie do UI)
     private var voiceLevel = "full"
+    // auto-pauza jazdy + powiadomienia na licznik (engineQueue)
+    private var autoPauseOn = true, stillRun = 0, moveRun = 0, spokePause = false
+    private var lastAutoPauseVoice = Date.distantPast
+    private var lastSpeed: (kmh: Double, at: Date)?
+    private let notifier = EnzoNotifier()
     // podgląd czujników poza treningiem
     private var previewPower: Int?, previewCadence: Int?, previewHr: Int?, previewBalance: Double?
     private var lastPreview = Date.distantPast
@@ -135,6 +140,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
                 self.lastLat = loc.coordinate.latitude
                 self.lastLon = loc.coordinate.longitude
                 self.engine?.location = (loc.coordinate.latitude, loc.coordinate.longitude)
+                if loc.speed >= 0 { self.lastSpeed = (loc.speed * 3.6, Date()) }
                 self.engine?.advance()
             }
         }
@@ -177,6 +183,11 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         let simulate = call.getBool("simulate") ?? false
         let level = call.getString("voiceLevel") ?? "full"
         let arm = call.getBool("announceArm") ?? true
+        let autoPause = call.getBool("autoPause") ?? true
+        let notify = call.getBool("notifications") ?? true
+        engineQueue.async { self.autoPauseOn = autoPause; self.stillRun = 0; self.moveRun = 0; self.lastSpeed = nil }
+        notifier.enabled = notify
+        if notify { notifier.requestPermission() }
         engineQueue.async { self.voiceLevel = level; self.announceArm = arm }
         do {
             let json = try JSONSerialization.data(withJSONObject: scriptObj)
@@ -213,7 +224,9 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             self?.notifyListeners("cue", data: ["text": text, "kind": kind.rawValue])
         }
         eng.onSpeak = { [weak self] key, vars, text, kind in
-            guard let self = self, self.shouldSpeak(kind) else { return }
+            guard let self = self else { return }
+            self.notifier.post(key, vars)              // krótko na licznik (Garmin), niezależnie od głosu
+            guard self.shouldSpeak(kind) else { return }
             DispatchQueue.main.async { self.say(key, vars, text, interrupt: kind == .countdown) }
         }
         eng.onLive = { [weak self] live in self?.notifyListeners("live", data: live.toDict()) }
@@ -261,7 +274,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
 
         let tm = DispatchSource.makeTimerSource(queue: engineQueue)
         tm.schedule(deadline: .now() + 0.5, repeating: 1.0, leeway: .milliseconds(100))
-        tm.setEventHandler { [weak self] in self?.engine?.advance() }
+        tm.setEventHandler { [weak self] in self?.engine?.advance(); self?.autoPauseTick() }
         tm.resume()
         ticker = tm
     }
@@ -420,6 +433,40 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve()
     }
 
+    // MARK: - Auto-pauza jazdy (engineQueue)
+
+    private func autoPauseTick() {
+        guard autoPauseOn, let eng = engine, !eng.stopped, eng.lastSecond > 10 else { return }
+        if eng.isPaused && !eng.autoPaused { stillRun = 0; moveRun = 0; return }   // ręczna pauza – nie ruszamy
+        let m = eng.motion
+        let spd: Double? = outdoor ? lastSpeed.flatMap { Date().timeIntervalSince($0.at) <= 5 ? $0.kmh : nil } : nil
+        let pedaling = (m.power ?? 0) > 0 || (m.cadence ?? 0) > 0
+        let moving = pedaling || (spd ?? 0) >= 3
+        // stoimy: zero mocy i kadencji, a na zewnątrz dodatkowo GPS < 3 km/h (zjazd bez pedałowania to nie postój)
+        let still = !pedaling && (outdoor ? (spd.map { $0 < 3 } ?? false) : m.hasPower)
+        if eng.autoPaused {
+            moveRun = moving ? moveRun + 1 : 0
+            if moveRun >= 2 {
+                eng.autoResume(speak: spokePause)
+                moveRun = 0; spokePause = false
+                saveRecoveryState()
+                notifyListeners("resumed", data: ["elapsed": eng.lastSecond, "auto": true])
+            }
+        } else {
+            stillRun = still ? stillRun + 1 : 0
+            if stillRun >= 3 {
+                // głos najwyżej co 5 min – na światłach w mieście bez gadania
+                let speak = Date().timeIntervalSince(lastAutoPauseVoice) > 300
+                if speak { lastAutoPauseVoice = Date() }
+                spokePause = speak
+                eng.autoPause(speak: speak)
+                stillRun = 0
+                saveRecoveryState()
+                notifyListeners("paused", data: ["elapsed": eng.lastSecond, "auto": true])
+            }
+        }
+    }
+
     // MARK: - Rozmowa z Enzo
 
     /// JS po starcie treningu: token do /api/ride/ask, adres serwera, czy dotknięcie słuchawki = pytanie.
@@ -430,7 +477,8 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             CoachTalk.requestPermissions()
             self.coach.token = token
             self.coach.baseURL = base
-            self.coach.setTapMode(tap && self.engine != nil)
+            self.coach.setTapMode(false)   // tryb dotyku wyłączony – blokował Spotify
+            _ = tap
             call.resolve()
         }
     }

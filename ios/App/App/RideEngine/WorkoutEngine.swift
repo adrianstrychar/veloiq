@@ -136,6 +136,32 @@ final class WorkoutEngine {
         }
     }
 
+    /// Auto-pauza całej jazdy (postój). Czas postoju nie liczy się do jazdy – jak w Garminie.
+    private(set) var autoPaused = false
+    func autoPause(at now: Date = Date(), speak: Bool) {
+        guard pausedAt == nil, !stopped else { return }
+        advance(now: now)
+        pausedAt = now
+        autoPaused = true
+        onCue?("Auto-pauza.", .pause)
+        if speak { onSpeak?("rideAutoPause", [:], "Auto-pauza.", .pause) }
+    }
+    func autoResume(at now: Date = Date(), speak: Bool) {
+        guard autoPaused, let p = pausedAt else { return }
+        pausedTotal += now.timeIntervalSince(p)
+        pausedAt = nil
+        autoPaused = false
+        onCue?("Jedziemy dalej.", .pause)
+        if speak { onSpeak?("rideAutoResume", [:], "Jedziemy dalej.", .pause) }
+    }
+    /// Świeże odczyty ruchu: moc (≤ 3 s), kadencja (≤ 4 s); hasPower = czujnik mocy w ogóle nadaje.
+    var motion: (power: Int?, cadence: Int?, hasPower: Bool) {
+        let now = Date()
+        let p = lastPower.flatMap { now.timeIntervalSince($0.at) <= 3 ? $0.w : nil }
+        let c = lastCadence.flatMap { now.timeIntervalSince($0.at) <= 4 ? $0.rpm : nil }
+        return (p, c, lastPower != nil)
+    }
+
     func pause(at now: Date = Date()) {
         guard pausedAt == nil, !stopped else { return }
         advance(now: now)
@@ -149,6 +175,7 @@ final class WorkoutEngine {
         guard let p = pausedAt else { return }
         pausedTotal += now.timeIntervalSince(p)
         pausedAt = nil
+        autoPaused = false
         if phase != .free, let st = step {
             let t = "Wznawiamy. \(st.name), zostało \(Phrases.duration(max(0, st.durationSec - inStep)))."
             onCue?(t, .info)

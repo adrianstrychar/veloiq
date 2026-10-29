@@ -72,6 +72,7 @@ export interface RideEnginePlugin {
 
   /** script.steps = [] → jazda swobodna (nagrywanie + automatyczne wykrywanie wysiłków). */
   startWorkout(options: {
+    autoPause?: boolean; notifications?: boolean;
     script: WorkoutScript; outdoor?: boolean; simulate?: boolean;
     /** full – wszystko | struct – bez korekt i pochwał | off – bez głosu (tekst nadal w zdarzeniu 'cue') */
     voiceLevel?: VoiceLevel;
