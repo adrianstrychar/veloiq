@@ -418,6 +418,18 @@ export async function syncStravaActivities(
     }
   }
 
+  // Jazdy z VeloIQ wysłane na Stravę: gdy przyszedł oryginał ze Stravy, usuń lokalną kopię (bez duplikatu).
+  try {
+    const got = new Set(rows.map((r) => Number(r.strava_activity_id)));
+    const { data: local } = await supabase.from('strava_activities')
+      .select('strava_activity_id, uploaded_as:raw_data->uploaded_as')
+      .eq('athlete_id', athlete.id).lt('strava_activity_id', 0);
+    const del = (local ?? []).filter((x) => x.uploaded_as != null && got.has(Number(x.uploaded_as))).map((x) => x.strava_activity_id);
+    if (del.length) await supabase.from('strava_activities').delete().eq('athlete_id', athlete.id).in('strava_activity_id', del);
+  } catch (e) {
+    console.error('usuwanie kopii VeloIQ po imporcie ze Stravy:', e instanceof Error ? e.message : e);
+  }
+
   // Silnik FTP: dociągnij krzywą mocy dla jazd bez best_efforts w oknie 28 dni
   // (nowe z tego syncu + ewentualne zaległości) i przelicz cichą estymatę.
   // Oba kroki best effort — nie wysadzają syncu aktywności.

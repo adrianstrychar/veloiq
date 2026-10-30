@@ -101,7 +101,7 @@ export class WebRideEngine implements RideEnginePlugin {
   private voiceLevel: VoiceLevel = 'full';
   private announceArm = true;
 
-  async startWorkout(o: { script: WorkoutScript; outdoor?: boolean; simulate?: boolean; voiceLevel?: VoiceLevel; announceArm?: boolean }) {
+  async startWorkout(o: { script: WorkoutScript; outdoor?: boolean; simulate?: boolean; voiceLevel?: VoiceLevel; announceArm?: boolean; autoPause?: boolean; notifications?: boolean; route?: unknown }) {
     this.stopTimer();
     this.voiceLevel = o.voiceLevel ?? 'full';
     this.announceArm = o.announceArm ?? true;

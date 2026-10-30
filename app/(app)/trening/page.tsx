@@ -24,21 +24,18 @@ export default async function TreningPage() {
   const today = userTodayISO();
   const dow = ((new Date(today + 'T12:00:00Z').getUTCDay() + 6) % 7) + 1; // 1=Pn … 7=Nd
 
-  let day: PlanDayRow | null = null;
-  if (athlete?.id) {
-    const { data: plan } = await supabase
-      .from('weekly_plans')
-      .select('plan_json')
-      .eq('athlete_id', athlete.id)
-      .eq('week_start', mondayOfISO(today))
-      .maybeSingle();
-    day = (plan?.plan_json as { days?: PlanDayRow[] } | null)?.days?.find((d) => d.dow === dow) ?? null;
-  }
+  // plan dnia i odprawa równolegle (wcześniej po kolei – „Jedź” długo nie reagował)
+  const [planRes, briefing] = athlete?.id
+    ? await Promise.all([
+        supabase.from('weekly_plans').select('plan_json').eq('athlete_id', athlete.id).eq('week_start', mondayOfISO(today)).maybeSingle(),
+        buildBriefing(supabase, athlete.id as string).catch(() => undefined),
+      ])
+    : [null, undefined];
+  const day: PlanDayRow | null = (planRes?.data?.plan_json as { days?: PlanDayRow[] } | null)?.days?.find((d) => d.dow === dow) ?? null;
 
   const script = planDayToScript(day, ftp, `plan-${today}`, athlete?.hrmax as number | null);
   const planLabel = day && script ? [day.type, `${day.dur_min} min`, day.tss ? `TSS ${day.tss}` : null].filter(Boolean).join(' · ') : undefined;
 
   const firstName = String((athlete?.name as string | null) ?? '').trim().split(/\s+/)[0] || undefined;
-  const briefing = athlete?.id ? await buildBriefing(supabase, athlete.id as string).catch(() => undefined) : undefined;
   return <TreningClient plan={script} planLabel={planLabel} ftp={ftp} firstName={firstName} briefing={briefing} />;
 }

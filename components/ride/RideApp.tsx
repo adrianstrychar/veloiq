@@ -13,6 +13,8 @@ import { PreRideScreen } from './PreRideScreen';
 import { LiveScreen } from './LiveScreen';
 import { SummaryScreen, describeSaveError, parseJsonl, type RecordedSample } from './SummaryScreen';
 import { hmmss } from './parts';
+import { loadSavedRoute } from './RouteCard';
+import type { RideRoute } from '@/lib/ride/gpx';
 
 type Screen = 'home' | 'sensors' | 'pre' | 'live' | 'summary';
 
@@ -24,6 +26,8 @@ export interface RideAppProps {
   ftp: number;
   onSave: (summary: WorkoutSummary, samples: RecordedSample[], script: WorkoutScript, settings: RideSettings, startedAt: Date) => Promise<void>;
   onAskCoach?: () => void;
+  /** Eksport ostatnio zapisanej jazdy na Stravę. */
+  onExportStrava?: () => Promise<{ url?: string; pending?: boolean; already?: boolean }>;
 }
 
 const SETTINGS_KEY = 'veloiq.ride.settings';
@@ -33,7 +37,7 @@ interface Pending { summary: WorkoutSummary; script: WorkoutScript; startedAt: s
 const readPending = (): Pending | null => { try { const v = localStorage.getItem(PENDING_KEY); return v ? JSON.parse(v) : null; } catch { return null; } };
 const writePending = (p: Pending | null) => { try { if (p) localStorage.setItem(PENDING_KEY, JSON.stringify(p)); else localStorage.removeItem(PENDING_KEY); } catch { /* brak storage */ } };
 
-export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing }: RideAppProps) {
+export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, onExportStrava }: RideAppProps) {
   const ride = useRideContext(); // wspólny stan z layoutu (mini-pasek, nawigacja)
   const [screen, setScreen] = useState<Screen>('home');
   const [settings, setSettings] = useState<RideSettings>(DEFAULT_SETTINGS);
@@ -43,6 +47,8 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing }: 
   const [pending, setPending] = useState<Pending | null>(null);
   const [pendingState, setPendingState] = useState<{ busy: boolean; err?: string }>({ busy: false });
   useEffect(() => { setPending(readPending()); }, []);
+  const [route, setRoute] = useState<RideRoute | null>(null);
+  useEffect(() => { setRoute(loadSavedRoute()); }, []);
 
   // ustawienia per użytkownik (wygoda – nic krytycznego)
   useEffect(() => {
@@ -87,7 +93,7 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing }: 
   const start = (sc: WorkoutScript) => {
     setScript(sc.steps.length ? sc : null);
     setStartedAt(new Date());
-    ride.start(briefing ? { ...sc, briefing } : sc, settings); // odprawa Enzo na rozgrzewce
+    ride.start(briefing ? { ...sc, briefing } : sc, settings, undefined, route); // odprawa Enzo + trasa GPX
   };
 
   const dateLabel = new Date().toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -102,7 +108,7 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing }: 
   else if (screen === 'summary' && ride.summary) view = (
     <SummaryScreen ride={ride} plan={script} summary={ride.summary} ftp={ftp} startedAt={startedAt}
       onSave={async (sum, samples) => { await onSave(sum, samples, script ?? freeRideScript(ftp), settings, startedAt); clearPending(); }}
-      onAskCoach={onAskCoach} onDone={(discard) => { if (discard) clearPending(); ride.reset(); setScreen('home'); }} />
+      onAskCoach={onAskCoach} onExportStrava={onExportStrava} onDone={(discard) => { if (discard) clearPending(); ride.reset(); setScreen('home'); }} />
   );
   else view = (
     <>
@@ -122,7 +128,8 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing }: 
     )}
     <HomeScreen ride={ride} plan={plan} planLabel={planLabel} dateLabel={dateLabel[0].toUpperCase() + dateLabel.slice(1)}
       settings={settings} onSettings={updateSettings}
-      onStart={() => setScreen('pre')} onFree={() => start(freeRideScript(ftp))} onSensors={() => setScreen('sensors')} />
+      onStart={() => setScreen('pre')} onFree={() => start(freeRideScript(ftp))} onSensors={() => setScreen('sensors')}
+      route={route} onRoute={setRoute} />
     </>
   );
 

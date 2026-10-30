@@ -51,7 +51,7 @@ export function BottomNav() {
                     <circle cx="5.5" cy="17" r="3.5" /><circle cx="18.5" cy="17" r="3.5" /><path d="M5.5 17l4-8h6l3 8M9.5 9L8 6H6M15.5 9l-3 8" />
                   </svg>
                 </span>}
-            {live ? 'W toku' : 'Jedź'}
+            {live ? (ride.autoPaused ? 'Auto-pauza' : ride.paused ? 'Pauza' : 'W toku') : 'Jedź'}
           </Link>
           {item(NAV_ROUTES.coach, 'Trener', ICONS.coach)}
           {item(NAV_ROUTES.calendar, 'Kalendarz', ICONS.calendar)}

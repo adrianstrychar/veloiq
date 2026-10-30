@@ -82,7 +82,8 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
 
     private func releaseIfIdle() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self = self, !self.synth.isSpeaking, !AudioGate.hold else { return }
+            guard let self = self, !self.synth.isSpeaking, !AudioGate.hold,
+                  self.session.category != .playAndRecord else { return }
             try? self.session.setActive(false, options: .notifyOthersOnDeactivation)
         }
     }

@@ -72,6 +72,8 @@ export interface RideEnginePlugin {
 
   /** script.steps = [] → jazda swobodna (nagrywanie + automatyczne wykrywanie wysiłków). */
   startWorkout(options: {
+    autoPause?: boolean; notifications?: boolean;
+    route?: import('./gpx').RideRoute;
     script: WorkoutScript; outdoor?: boolean; simulate?: boolean;
     /** full – wszystko | struct – bez korekt i pochwał | off – bez głosu (tekst nadal w zdarzeniu 'cue') */
     voiceLevel?: VoiceLevel;
@@ -105,10 +107,11 @@ export interface RideEnginePlugin {
   /** Podgląd czujników poza treningiem (ekran Czujniki), ~1 Hz. */
   addListener(event: 'sensorData', cb: (d: SensorData) => void): Promise<PluginListenerHandle>;
   addListener(event: 'cue', cb: (d: { text: string; kind: string }) => void): Promise<PluginListenerHandle>;
-  addListener(event: 'paused', cb: (d: { elapsed: number; recovered?: boolean }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'paused', cb: (d: { elapsed: number; recovered?: boolean; auto?: boolean }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'planFinished', cb: (d: WorkoutSummary) => void): Promise<PluginListenerHandle>;
   addListener(event: 'finished', cb: (d: WorkoutSummary) => void): Promise<PluginListenerHandle>;
   addListener(event: 'coach', cb: (d: CoachEvent) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'nav', cb: (d: import('@/components/ride/RouteCard').NavState) => void): Promise<PluginListenerHandle>;
   addListener(event: 'resumed', cb: (d: { elapsed: number }) => void): Promise<PluginListenerHandle>;
   /** Rozmowa z Enzo: token do /api/ride/ask, adres serwera, dotknięcie słuchawki = pytanie. */
   setCoach(options: { token: string; baseUrl: string; tapMode: boolean }): Promise<void>;

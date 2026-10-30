@@ -4,6 +4,8 @@ import type { WorkoutScript } from '@/lib/ride/workout-script';
 import type { Ride, RideSettings } from './useRide';
 import { IconBolt, IconHeart, IconPlay, Profile, StatusDot, hmmss, scriptStats } from './parts';
 import { VoiceSettings } from './VoiceSettings';
+import { RouteCard } from './RouteCard';
+import type { RideRoute } from '@/lib/ride/gpx';
 
 interface Props {
   ride: Ride;
@@ -15,9 +17,11 @@ interface Props {
   onStart: () => void;
   onFree: () => void;
   onSensors: () => void;
+  route: RideRoute | null;
+  onRoute: (r: RideRoute | null) => void;
 }
 
-export function HomeScreen({ ride, plan, planLabel, dateLabel, settings, onSettings, onStart, onFree, onSensors }: Props) {
+export function HomeScreen({ ride, plan, planLabel, dateLabel, settings, onSettings, onStart, onFree, onSensors, route, onRoute }: Props) {
   const st = plan ? scriptStats(plan) : null;
   const power = ride.sensors.power;
   const hr = ride.sensors.hr;
@@ -88,6 +92,10 @@ export function HomeScreen({ ride, plan, planLabel, dateLabel, settings, onSetti
             className={settings.outdoor === o.v ? s.segBtnOn : s.segBtn} onClick={() => onSettings({ ...settings, outdoor: o.v })}>{o.l}</button>
         ))}
       </div>
+
+      {settings.outdoor
+        ? <RouteCard route={route} onRoute={onRoute} />
+        : route && <span className={s.small}>Trasa „{route.name}” działa tylko na zewnątrz (GPS).</span>}
 
       <details className={s.card} style={{ gap: 0 }}>
         <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 600, listStyle: 'none', display: 'flex', justifyContent: 'space-between' }}>

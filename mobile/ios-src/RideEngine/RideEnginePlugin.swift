@@ -71,6 +71,14 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     private var distKm = 0.0, speedKmh = 0.0, prevFix: (lat: Double, lon: Double, s: Int)?
     /// "full" – wszystko | "struct" – bez korekt/pochwał | "off" – bez głosu (tekst nadal idzie do UI)
     private var voiceLevel = "full"
+    // auto-pauza jazdy + powiadomienia na licznik (engineQueue)
+    private var autoPauseOn = true, stillRun = 0, moveRun = 0, spokePause = false
+    private var lastAutoPauseVoice = Date.distantPast
+    private var lastSpeed: (kmh: Double, at: Date)?
+    private let notifier = EnzoNotifier()
+    /// Nawigacja po trasie GPX (engineQueue).
+    private var navigator: RouteNavigator?, pendingNav: RouteNavigator?
+    private var lastNavEmit = Date.distantPast
     // podgląd czujników poza treningiem
     private var previewPower: Int?, previewCadence: Int?, previewHr: Int?, previewBalance: Double?
     private var lastPreview = Date.distantPast
@@ -135,6 +143,15 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
                 self.lastLat = loc.coordinate.latitude
                 self.lastLon = loc.coordinate.longitude
                 self.engine?.location = (loc.coordinate.latitude, loc.coordinate.longitude)
+                if loc.speed >= 0 { self.lastSpeed = (loc.speed * 3.6, Date()) }
+                if let nav = self.navigator, self.engine != nil {
+                    nav.update(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude,
+                               speedKmh: loc.speed >= 0 ? loc.speed * 3.6 : nil)
+                    if Date().timeIntervalSince(self.lastNavEmit) >= 1 {
+                        self.lastNavEmit = Date()
+                        self.notifyListeners("nav", data: nav.state())
+                    }
+                }
                 self.engine?.advance()
             }
         }
@@ -177,6 +194,19 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         let simulate = call.getBool("simulate") ?? false
         let level = call.getString("voiceLevel") ?? "full"
         let arm = call.getBool("announceArm") ?? true
+        let autoPause = call.getBool("autoPause") ?? true
+        let notify = call.getBool("notifications") ?? true
+        // trasa GPX (tylko na zewnątrz) – ta sama droga przez JSON co skrypt
+        var nav: RouteNavigator?
+        Self.clearSavedRoute()
+        if outdoor, let r = call.getObject("route"), let d = try? JSONSerialization.data(withJSONObject: r) {
+            nav = makeNavigator(d)
+            if nav != nil { try? d.write(to: Self.routeFile) }   // na wypadek awarii – wznowienie z trasą
+        }
+        engineQueue.async { self.pendingNav = nav }   // begin() podłączy po stopInternal
+        engineQueue.async { self.autoPauseOn = autoPause; self.stillRun = 0; self.moveRun = 0; self.lastSpeed = nil }
+        notifier.enabled = notify
+        if notify { notifier.requestPermission() }
         engineQueue.async { self.voiceLevel = level; self.announceArm = arm }
         do {
             let json = try JSONSerialization.data(withJSONObject: scriptObj)
@@ -199,6 +229,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     private func begin(script: WorkoutScript, json: Data, outdoor: Bool, simulate: Bool,
                        startDate: Date, pausedTotal: TimeInterval, pausedAt: Date?, resumeFileName: String?) throws {
         stopInternal(speakSummary: false)
+        navigator = pendingNav; pendingNav = nil; lastNavEmit = .distantPast
         let rec = try Recorder(workoutId: script.id, resumeFileName: resumeFileName)
         let eng = WorkoutEngine(script: script, startDate: startDate, pausedTotal: pausedTotal, pausedAt: pausedAt)
         if let f = resumeFileName { eng.seed(Recorder.readSamples(fileName: f)) }
@@ -213,7 +244,9 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             self?.notifyListeners("cue", data: ["text": text, "kind": kind.rawValue])
         }
         eng.onSpeak = { [weak self] key, vars, text, kind in
-            guard let self = self, self.shouldSpeak(kind) else { return }
+            guard let self = self else { return }
+            self.notifier.post(key, vars)              // krótko na licznik (Garmin), niezależnie od głosu
+            guard self.shouldSpeak(kind) else { return }
             DispatchQueue.main.async { self.say(key, vars, text, interrupt: kind == .countdown) }
         }
         eng.onLive = { [weak self] live in self?.notifyListeners("live", data: live.toDict()) }
@@ -261,7 +294,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
 
         let tm = DispatchSource.makeTimerSource(queue: engineQueue)
         tm.schedule(deadline: .now() + 0.5, repeating: 1.0, leeway: .milliseconds(100))
-        tm.setEventHandler { [weak self] in self?.engine?.advance() }
+        tm.setEventHandler { [weak self] in self?.engine?.advance(); self?.autoPauseTick() }
         tm.resume()
         ticker = tm
     }
@@ -306,12 +339,14 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     private func finishWorkout() -> WorkoutSummary {
         guard let eng = engine else { return WorkoutSummary(file: "", durationSec: 0, avgPower: 0, normalizedPower: 0, kJ: 0, compliancePct: 0) }
         var summary = eng.stop()
+        Self.clearSavedRoute()
         summary.file = recorder?.fileName ?? "" // tylko nazwa pliku – ścieżka kontenera się zmienia
         stopInternal(speakSummary: false)
         return summary
     }
 
     private func stopInternal(speakSummary: Bool) {
+        navigator = nil
         DispatchQueue.main.async { self.coach.setTapMode(false) }
         ticker?.cancel(); ticker = nil
         simulator?.stop(); simulator = nil
@@ -368,6 +403,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
                 // Wznawiamy w pauzie od ostatniej zapisanej sekundy: czas od awarii się nie liczy,
                 // zawodnik sam wciska "Wznów".
                 let recorded = Recorder.readSamples(fileName: r.fileName).count
+                if r.outdoor, let d = try? Data(contentsOf: Self.routeFile) { self.pendingNav = self.makeNavigator(d) }
                 let now = Date()
                 let pausedTotal = max(r.pausedTotal, now.timeIntervalSince(r.startDate) - Double(recorded))
                 try self.begin(script: script, json: r.scriptJSON, outdoor: r.outdoor, simulate: false,
@@ -382,7 +418,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    @objc func discardRecovered(_ call: CAPPluginCall) { Recorder.clearRecovery(); call.resolve() }
+    @objc func discardRecovered(_ call: CAPPluginCall) { Recorder.clearRecovery(); Self.clearSavedRoute(); call.resolve() }
 
     // MARK: - Inne
 
@@ -420,6 +456,59 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve()
     }
 
+    // MARK: - Nawigacja GPX
+
+    private static var routeFile: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("veloiq-route.json")
+    }
+    private static func clearSavedRoute() { try? FileManager.default.removeItem(at: routeFile) }
+
+    private func makeNavigator(_ data: Data) -> RouteNavigator? {
+        guard let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let n = RouteNavigator(json: j) else { return nil }
+        n.onSay = { [weak self] key, vars in
+            guard let self = self else { return }
+            self.notifier.post(key, vars)
+            guard self.voiceLevel != "off" else { return }
+            let text = EnzoNotifier.text(key, vars) ?? ""
+            DispatchQueue.main.async { self.say(key, vars, text, interrupt: key == "navTurn" && vars["dist"] == "0") }
+        }
+        return n
+    }
+
+    // MARK: - Auto-pauza jazdy (engineQueue)
+
+    private func autoPauseTick() {
+        guard autoPauseOn, let eng = engine, !eng.stopped, eng.lastSecond > 10 else { return }
+        if eng.isPaused && !eng.autoPaused { stillRun = 0; moveRun = 0; return }   // ręczna pauza – nie ruszamy
+        let m = eng.motion
+        let spd: Double? = outdoor ? lastSpeed.flatMap { Date().timeIntervalSince($0.at) <= 5 ? $0.kmh : nil } : nil
+        let pedaling = (m.power ?? 0) > 0 || (m.cadence ?? 0) > 0
+        let moving = pedaling || (spd ?? 0) >= 3
+        // stoimy: zero mocy i kadencji, a na zewnątrz dodatkowo GPS < 3 km/h (zjazd bez pedałowania to nie postój)
+        let still = !pedaling && (outdoor ? (spd.map { $0 < 3 } ?? false) : m.hasPower)
+        if eng.autoPaused {
+            moveRun = moving ? moveRun + 1 : 0
+            if moveRun >= 2 {
+                eng.autoResume(speak: spokePause)
+                moveRun = 0; spokePause = false
+                saveRecoveryState()
+                notifyListeners("resumed", data: ["elapsed": eng.lastSecond, "auto": true])
+            }
+        } else {
+            stillRun = still ? stillRun + 1 : 0
+            if stillRun >= 3 {
+                // głos najwyżej co 5 min – na światłach w mieście bez gadania
+                let speak = Date().timeIntervalSince(lastAutoPauseVoice) > 300
+                if speak { lastAutoPauseVoice = Date() }
+                spokePause = speak
+                eng.autoPause(speak: speak)
+                stillRun = 0
+                saveRecoveryState()
+                notifyListeners("paused", data: ["elapsed": eng.lastSecond, "auto": true])
+            }
+        }
+    }
+
     // MARK: - Rozmowa z Enzo
 
     /// JS po starcie treningu: token do /api/ride/ask, adres serwera, czy dotknięcie słuchawki = pytanie.
@@ -430,7 +519,8 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             CoachTalk.requestPermissions()
             self.coach.token = token
             self.coach.baseURL = base
-            self.coach.setTapMode(tap && self.engine != nil)
+            self.coach.setTapMode(false)   // tryb dotyku wyłączony – blokował Spotify
+            _ = tap
             call.resolve()
         }
     }
@@ -492,6 +582,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     private func stateForCoach() -> [String: Any] {
         var d = engine?.coachState() ?? [:]
         if outdoor { d["distanceKm"] = (distKm * 10).rounded() / 10; d["speedKmh"] = Int(speedKmh.rounded()) }
+        if let n = navigator { d["route"] = n.state() }
         return d
     }
 
@@ -590,6 +681,40 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             if let d = enzo, let c = d.compose("seriesEnd", ["avg": "\(avg)", "pct": "\(pct)"]) { ids += c.dropFirst() }
             play(ids, "Poprzednia seria: średnio \(avg) watów, \(pct)% w zakresie.")
             return true
+        }
+        // --- trasa GPX
+        if let r = st["route"] as? [String: Any] {
+            if has("do mety", "do konca trasy", "ile kilometr", "ile km", "ile jeszcze trasy") {
+                let left = (r["left"] as? Int) ?? 0
+                let km = max(1, Int((Double(left) / 1000).rounded()))
+                let marks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] + Array(stride(from: 15, through: 100, by: 5)) + Array(stride(from: 110, through: 200, by: 10))
+                let near = marks.min { abs($0 - km) < abs($1 - km) } ?? km
+                play(enzo?.compose("navLeft", ["km": "\(near)"]) ?? [], "Do mety \(String(format: "%.1f", Double(left) / 1000)) km.")
+                return true
+            }
+            if has("podjazd", "gora", "wspinaczk") {
+                guard let c = r["nextClimb"] as? [String: Any] else { play([], "Na trasie nie ma już podjazdów."); return true }
+                let len = Double((c["len"] as? Int) ?? 0) / 1000, grade = (c["grade"] as? Double) ?? 0
+                let onIt = (c["onIt"] as? Bool) ?? false
+                let v = ["len": String(format: "%.1f", len), "grade": "\(Int(grade.rounded()))"]
+                var ids: [String] = []
+                if !onIt, let inM = c["in"] as? Int, let d = enzo {
+                    // „Za kilometr / pięćset / trzysta metrów” + podjazd
+                    let dist = inM >= 750 ? "1000" : inM >= 400 ? "500" : inM >= 250 ? "300" : inM >= 150 ? "200" : "100"
+                    if inM < 1500, d.hasClip("dist.\(dist)") { ids.append("dist.\(dist)") }
+                }
+                ids += enzo?.compose(onIt ? "navClimbStart" : "navClimb", v) ?? []
+                play(ids, onIt ? "Jesteś na podjeździe: \(v["len"]!) km, \(v["grade"]!)%." : "Podjazd za \(((c["in"] as? Int) ?? 0) / 100 * 100) m: \(v["len"]!) km, \(v["grade"]!)%.")
+                return true
+            }
+            if has("gdzie skrec", "jaki skret", "nastepny skret", "kiedy skret") {
+                guard let t = r["nextTurn"] as? [String: Any], let dir = t["dir"] as? String, let inM = t["in"] as? Int else {
+                    play([], "Na razie prosto."); return true
+                }
+                let dist = inM <= 60 ? "0" : inM <= 150 ? "100" : inM <= 250 ? "200" : inM <= 400 ? "300" : inM <= 750 ? "500" : "1000"
+                play(enzo?.compose("navTurn", ["dist": dist, "dir": dir]) ?? [], "Za \(inM) m: \(dir).")
+                return true
+            }
         }
         // --- czas
         if (has("ile") && has("trening", "planu", "calego", "calosc", "jazdy")) || has("do konca treningu", "do konca planu") {

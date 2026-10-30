@@ -39,9 +39,11 @@ final class DirectorVoice: NSObject {
             leadIds[String(ev), default: []].append(k)
         }
         for k in leadIds.keys { leadIds[k]?.sort() }
-        endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] _ in
-            self?.releaseIfIdle()
+        endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] n in
+            if let it = n.object as? AVPlayerItem { self?.itemEnded(it) }
         }
+        NotificationCenter.default.addObserver(self, selector: #selector(interrupted(_:)),
+                                               name: AVAudioSession.interruptionNotification, object: nil)
     }
 
     deinit { if let o = endObserver { NotificationCenter.default.removeObserver(o) } }
@@ -55,6 +57,9 @@ final class DirectorVoice: NSObject {
         "planDone": "done", "freeStart": "free", "effort": "effort",
         "powerLost": "powerLost", "powerBack": "powerBack", "hrLost": "hrLost", "hrBack": "hrBack",
         "hrHigh": "hrHigh", "hrRecovered": "hrRec", "status": "status",
+        "rideAutoPause": "pause", "rideAutoResume": "resume",
+        "navStart": "navStart", "navToStart": "navToStart", "navOff": "navOff", "navBack": "navBack",
+        "navTop": "navTop", "navDone": "navDone",
         "listen": "listen", "repeat": "repeat", "think": "think", "offline": "offline", "doneCmd": "doneCmd",
         "left": "left", "power": "power",
         "nextInfo": "nextInfo", "planEnd": "planEnd", "ivlLeft": "ivlLeft", "lastIvl": "lastIvl", "ivlDone": "ivlDone", "prevSeries": "prevSeries", "noSeries": "noSeries", "planLeft": "planLeft", "fuelAdvice": "fuelAdvice", "eatNow": "eatNow", "eatLater": "eatLater", "ateOk": "ateOk", "drankOk": "drankOk", "motivate": "motivate", "drink": "drink", "eat": "eat",
@@ -121,6 +126,27 @@ final class DirectorVoice: NSObject {
     func compose(_ key: String, _ vars: [String: String]) -> [String]? {
         if Self.silent.contains(key) { return nil }
         // komunikaty bez stałego wejścia: odliczanie, odprawa
+        // nawigacja po trasie
+        if key == "navTurn" {
+            let out = ["dist.\(vars["dist"] ?? "0")", "dir.\(vars["dir"] ?? "")"].filter { has($0) }
+            return out.count == 2 ? out : []
+        }
+        if key == "navClimb" || key == "navClimbStart" {
+            var out: [String] = []
+            if let l = lead(key) { out.append(l) }
+            let len = num(vars["len"]) ?? 0
+            let c = len < 0.75 ? "clen.0.5" : "clen.\(min(25, Int(len.rounded())))"
+            if has(c) { out.append(c) }
+            let g = "grade.\(min(15, max(2, Int((num(vars["grade"]) ?? 0).rounded()))))"
+            if has(g) { out.append(g) }
+            return out
+        }
+        if key == "navLeft" {
+            var out: [String] = []
+            if let l = lead("navLeft") { out.append(l) }
+            if let k = vars["km"], has("kmLeft.\(k)") { out.append("kmLeft.\(k)") }
+            return out.count == 2 ? out : []
+        }
         if key == "count" { let id = "cnt.\(vars["n"] ?? "")"; return has(id) ? [id] : nil }
         if key == "readiness" {
             let r = min(100, max(20, r5(num(vars["pct"]) ?? 0)))
@@ -186,42 +212,99 @@ final class DirectorVoice: NSObject {
         return seg
     }
 
+    // MARK: - Odtwarzanie: komunikat po komunikacie, bez zaległości
+
+    private struct Msg { let ids: [String]; let at: Date }
+    private var queue: [Msg] = []
+    private var current: Msg?
+    private var startedAt = Date.distantPast
+    private var watchdog: Timer?
+    /// Komunikat starszy niż tyle sekund nie jest już aktualny – nie gramy go.
+    private static let maxAge: TimeInterval = 20
+
     /// Wywoływać na głównym wątku. interrupt: odliczanie przerywa zaległe komunikaty.
     func play(_ ids: [String], interrupt: Bool = false) {
-        // piknięcie radia przed każdym komunikatem
-        let ids = (has("fx.beep") ? ["fx.beep"] : []) + ids
-        let items = ids.compactMap { id -> AVPlayerItem? in
-            guard let c = pack.clips[id] else { return nil }
-            return AVPlayerItem(url: dir.appendingPathComponent(c.file))
-        }
-        guard !items.isEmpty else { return }
-        if !AudioGate.hold {   // tryb rozmowy trzyma własną sesję (przyciski słuchawek)
-            try? session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
-            try? session.setActive(true)
-        }
-        if interrupt { player.removeAllItems() }
-        for it in items { player.insert(it, after: nil) }
-        player.play()
+        let all = ((has("fx.beep") ? ["fx.beep"] : []) + ids).filter { pack.clips[$0] != nil }
+        guard all.count > (has("fx.beep") ? 1 : 0) else { return }
+        if interrupt { queue.removeAll(); if current != nil { player.removeAllItems(); current = nil } }
+        queue.append(Msg(ids: all, at: Date()))
+        if current == nil { next() }
     }
 
-    func stop() { player.removeAllItems(); releaseIfIdle() }
+    func stop() { queue.removeAll(); player.removeAllItems(); current = nil; releaseIfIdle() }
+
+    private func next() {
+        let now = Date()
+        queue.removeAll { now.timeIntervalSince($0.at) > Self.maxAge }   // nieaktualne – precz
+        guard !queue.isEmpty else { current = nil; stopWatchdog(); releaseIfIdle(); return }
+        let m = queue.removeFirst()
+        // sesja MIESZANA: Spotify gra dalej, tylko ściszony na czas komunikatu
+        do {
+            // w trakcie pytania do Enzo (mikrofon) nie zmieniamy kategorii – zepsułoby nagrywanie
+            if session.category != .playAndRecord {
+                try session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+            }
+            try session.setActive(true)
+        } catch {
+            // nie da się teraz grać (np. rozmowa telefoniczna) – nie kolejkujemy zaległości
+            queue.removeAll(); current = nil; stopWatchdog(); return
+        }
+        player.removeAllItems()
+        for id in m.ids { player.insert(AVPlayerItem(url: dir.appendingPathComponent(pack.clips[id]!.file)), after: nil) }
+        current = m; startedAt = now
+        player.play()
+        startWatchdog()
+    }
+
+    /// Koniec klipu: jeśli to był ostatni klip komunikatu – następny komunikat.
+    private func itemEnded(_ item: AVPlayerItem) {
+        guard current != nil, player.items().contains(item) else { return }
+        if player.items().count <= 1 {
+            DispatchQueue.main.async { [weak self] in self?.current = nil; self?.next() }
+        }
+    }
+
+    /// Jeśli system wstrzymał odtwarzanie (przerwanie, inna aplikacja) – porzuć, zamiast trzymać zaległości.
+    private func startWatchdog() {
+        guard watchdog == nil else { return }
+        watchdog = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self = self, self.current != nil else { return }
+            let stuck = self.player.timeControlStatus != .playing && Date().timeIntervalSince(self.startedAt) > 3
+            if stuck || Date().timeIntervalSince(self.startedAt) > 30 {
+                self.player.removeAllItems(); self.current = nil; self.next()
+            }
+        }
+    }
+    private func stopWatchdog() { watchdog?.invalidate(); watchdog = nil }
+
+    /// Przerwanie sesji audio (połączenie, Siri, inna aplikacja) – czyścimy kolejkę.
+    @objc private func interrupted(_ n: Notification) {
+        guard let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              AVAudioSession.InterruptionType(rawValue: raw) == .began else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.queue.removeAll(); self?.player.removeAllItems(); self?.current = nil; self?.stopWatchdog()
+        }
+    }
 
     /// Łączny czas klipów (z piknięciem) – do „Słucham!” → dopiero potem mikrofon.
     func duration(_ ids: [String]) -> Double {
         (["fx.beep"] + ids).compactMap { pack.clips[$0]?.dur }.reduce(0, +)
     }
-    /// Kolejka zaległych komunikatów (np. podsumowanie serii) – rozmowa czeka, aż Enzo skończy.
+    /// Ile jeszcze potrwają komunikaty w kolejce – rozmowa czeka, aż Enzo skończy.
     var pendingDuration: Double {
-        guard let cur = player.currentItem else { return 0 }
-        let left = max(0, cur.duration.seconds.isFinite ? cur.duration.seconds - cur.currentTime().seconds : 0)
-        let rest = player.items().dropFirst().map { $0.asset.duration.seconds }.filter { $0.isFinite }.reduce(0, +)
-        return left + rest
+        var left = 0.0
+        if current != nil, let cur = player.currentItem {
+            left = max(0, cur.duration.seconds.isFinite ? cur.duration.seconds - cur.currentTime().seconds : 0)
+            left += player.items().dropFirst().map { $0.asset.duration.seconds }.filter { $0.isFinite }.reduce(0, +)
+        }
+        return left + queue.map { m in m.ids.compactMap { pack.clips[$0]?.dur }.reduce(0, +) }.reduce(0, +)
     }
 
     private func releaseIfIdle() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            guard let self = self, !AudioGate.hold, self.player.items().isEmpty || self.player.currentItem == nil else { return }
-            try? self.session.setActive(false, options: .notifyOthersOnDeactivation)
+            guard let self = self, self.current == nil, self.queue.isEmpty,
+                  self.session.category != .playAndRecord else { return }   // trwa rozmowa – mikrofon nie do ruszania
+            try? self.session.setActive(false, options: .notifyOthersOnDeactivation)   // Spotify wraca do pełnej głośności
         }
     }
 }
