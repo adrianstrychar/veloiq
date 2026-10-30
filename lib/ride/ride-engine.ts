@@ -89,6 +89,8 @@ export interface RideEnginePlugin {
   skipStep(): Promise<void>;
   /** „Fałstart” – odwołuje świeżo wykryty start interwału (czekanie wraca). */
   cancelStart(): Promise<void>;
+  /** Wyłączenie / włączenie nawigacji GPX w trakcie jazdy. */
+  setNavEnabled(options: { enabled: boolean }): Promise<void>;
   /** Czy po awarii aplikacji jest trening do wznowienia. */
   getRecoverable(): Promise<{ available: boolean; name?: string; elapsed?: number }>;
   /** Wznawia w pauzie od ostatniej zapisanej sekundy – UI pokazuje przycisk "Wznów" (resume()). */

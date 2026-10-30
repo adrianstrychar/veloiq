@@ -201,7 +201,7 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
         </section>
       )}
 
-      {ride.route && <NavCard nav={ride.nav} route={ride.route} pos={live?.lat && live?.lon ? { lat: live.lat, lon: live.lon } : null} />}
+      {ride.route && <NavCard nav={ride.nav} route={ride.route} pos={live?.lat && live?.lon ? { lat: live.lat, lon: live.lon } : null} onToggle={ride.setNavEnabled} />}
 
       <Cue text={lastCue} />
 

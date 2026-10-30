@@ -61,6 +61,7 @@ final class DirectorVoice: NSObject {
         "rideAutoPause": "pause", "rideAutoResume": "resume",
         "navStart": "navStart", "navToStart": "navToStart", "navOff": "navOff", "navBack": "navBack",
         "navTop": "navTop", "navDone": "navDone",
+        "navMute": "navMute", "navDisabled": "navDisabled", "navEnabled": "navEnabled",
         "listen": "listen", "repeat": "repeat", "think": "think", "offline": "offline", "doneCmd": "doneCmd",
         "left": "left", "power": "power",
         "nextInfo": "nextInfo", "planEnd": "planEnd", "ivlLeft": "ivlLeft", "lastIvl": "lastIvl", "ivlDone": "ivlDone", "prevSeries": "prevSeries", "noSeries": "noSeries", "planLeft": "planLeft", "fuelAdvice": "fuelAdvice", "eatNow": "eatNow", "eatLater": "eatLater", "ateOk": "ateOk", "drankOk": "drankOk", "motivate": "motivate", "drink": "drink", "eat": "eat",

@@ -126,6 +126,10 @@ export function useRide() {
     resume: () => run(async () => { await engine.resume(); setPaused(false); setAutoPaused(false); }),
     skip: () => run(() => engine.skipStep()),
     cancelStart: () => run(() => engine.cancelStart()),
+    setNavEnabled: (on: boolean) => run(async () => {
+      setNav((n) => (n ? { ...n, enabled: on, muted: false } : n));   // od razu na ekranie
+      await engine.setNavEnabled({ enabled: on });
+    }),
     stop: () => run(async () => {
       const sum = await engine.stopWorkout();
       setSummary(sum); setActive(false); setPaused(false);

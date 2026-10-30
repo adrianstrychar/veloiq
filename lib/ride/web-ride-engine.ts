@@ -126,6 +126,7 @@ export class WebRideEngine implements RideEnginePlugin {
   async talk() { this.emit('coach', { state: 'error', text: 'Rozmowa z Enzo działa w aplikacji na iPhonie.' }); }
   async skipStep() { this.engine?.skipStep(true); this.emitLive(); }
   async cancelStart() { this.engine?.cancelStart(true); this.emitLive(); }
+  async setNavEnabled() { /* nawigacja GPX działa tylko w aplikacji na iPhonie */ }
   async stopWorkout(): Promise<WorkoutSummary> {
     this.stopTimer();
     const sum = this.engine?.summary('web-sim.jsonl') ?? emptySummary();
