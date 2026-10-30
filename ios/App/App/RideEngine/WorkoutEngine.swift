@@ -63,6 +63,19 @@ final class WorkoutEngine {
     private var lastCorrection = -1_000_000
     private var spoke = Set<String>()
     private var lastRestSec: Int?
+    // Fałstart: przez pierwsze sekundy auto-interwału można go odwołać (sam albo przyciskiem/głosem) – wraca czekanie
+    private struct StartSnap { let idx: Int; let startSec: Int; let secs: [Int]; let rest: Int? }
+    private var startSnap: StartSnap?
+    private var fsStopRun = 0, fsEaseRun = 0
+    private var needRearm = false, rearmLow = 0   // po fałstarcie nowy start dopiero po zejściu z mocy
+    static let falseStartMaxSec = 60, falseStartPct = 0.7
+    /// Okno fałstartu: do 60 s, przy krótkich interwałach 1/3 długości (min. 10 s).
+    private func falseStartWindow(_ st: WorkoutStep) -> Int { min(Self.falseStartMaxSec, max(10, st.durationSec / 3)) }
+    /// Ile sekund jeszcze można odwołać start interwału (0 = już nie).
+    var falseStartLeft: Int {
+        guard startSnap != nil, phase != .free, let st = step else { return 0 }
+        return max(0, falseStartWindow(st) - inStep)
+    }
     private var spokeHr = false
     private var hrHighRun = 0, lastHrAlert = -1_000_000
     private var hrRecStart: Int?
@@ -212,6 +225,7 @@ final class WorkoutEngine {
         for (i, smp) in rec.samples.enumerated() {
             process(i, smp.power, smp.hr, smp.cad, nil, speak: false)
             if rec.skips.contains(i) { skipStep() }   // ręczne "Następny krok" sprzed awarii
+            if rec.cancels.contains(i) { cancelStart() }   // ręczny „Fałstart” sprzed awarii
         }
         replaying = false
     }
@@ -262,6 +276,18 @@ final class WorkoutEngine {
         guard let st = step else { return }
         if p < R.autoPauseWatts && (cad == nil || cad == 0) { quietUntil = s + Self.quietAfterStopSec }
         let autoInterval = st.isInterval && isAuto(stepIdx)
+
+        // --- fałstart: odpuszczenie albo postój tuż po auto-starcie = interwał się nie liczy, czekamy na prawdziwy start
+        if startSnap != nil {
+            if !autoInterval || inStep >= falseStartWindow(st) { startSnap = nil }
+            else {
+                let stopped = p < R.autoPauseWatts && (cad == nil || cad == 0)
+                fsStopRun = stopped ? fsStopRun + 1 : 0
+                let avg5 = Double(P.suffix(5).reduce(0, +)) / Double(max(1, min(5, P.count)))
+                fsEaseRun = !stopped && avg5 < Double(st.powerLow) * Self.falseStartPct ? fsEaseRun + 1 : 0
+                if fsStopRun >= 3 || fsEaseRun >= 5 { cancelFalseStart(s, speak: speak); return }
+            }
+        }
 
         // --- interwał: auto-pauza i wznowienie; elastyczny dodatkowo wcześniejsze przerwanie
         if st.isInterval && st.durationSec >= 60 {
@@ -319,7 +345,11 @@ final class WorkoutEngine {
             let next = script.steps[stepIdx + 1]
             let thr = Double(next.powerLow) * R.autoStartPct
             // seria sekund nad progiem; jedna krótka "dziura" (szum pomiaru) nie przerywa serii
-            if Double(p) >= thr {
+            if needRearm {
+                rearmLow = Double(p) < thr ? rearmLow + 1 : 0
+                if rearmLow >= 3 { needRearm = false }
+                startRun = 0; startDips = 0
+            } else if Double(p) >= thr {
                 if startRun == 0 { startRunAt = s; startDips = 0 }
                 startRun += 1
             } else if startRun > 0 && startDips == 0 {
@@ -331,7 +361,9 @@ final class WorkoutEngine {
                 let startSec = startRunAt
                 let rest = startSec - stepStartSec
                 let wasRecovery = st.type == "recovery"
+                let snap = StartSnap(idx: stepIdx, startSec: stepStartSec, secs: stepSecs, rest: lastRestSec)
                 enterStep(stepIdx + 1, startSec: startSec, pre: s - startSec + 1, speak: false)
+                startSnap = snap; fsStopRun = 0; fsEaseRun = 0
                 lastRestSec = rest
                 let av = ["dur": Phrases.duration(next.durationSec), "low": "\(next.powerLow)", "high": "\(next.powerHigh)"]
                 var text = Phrases.render(phrases["autoStart"] ?? "", av)
@@ -354,10 +386,38 @@ final class WorkoutEngine {
         }
     }
 
+    /// Odwołanie startu auto-interwału (fałstart): sekundy wracają do przerwy, interwał czeka na prawdziwy start
+    /// (bez wpisu do serii, numer interwału bez zmian).
+    private func cancelFalseStart(_ s: Int?, speak: Bool) {
+        guard let snap = startSnap else { return }
+        var secs = Set(snap.secs).union(stepSecs)
+        if let s = s { secs.insert(s) }
+        let n = intervalNumbers[stepIdx] ?? 0
+        stepIdx = snap.idx; stepStartSec = snap.startSec
+        stepSecs = secs.sorted(); inStep = stepSecs.count
+        lastRestSec = snap.rest
+        startSnap = nil; fsStopRun = 0; fsEaseRun = 0
+        needRearm = true; rearmLow = 0
+        startRun = 0; startDips = 0; lowRun = 0; easeRun = 0; resumeRun = 0
+        lastCorrection = lastSecond
+        if let st = step {
+            let rem = st.durationSec - inStep
+            phase = rem < 0 ? .waiting : (rem < R.armLeadSec ? .armed : .running)
+        }
+        say("falseStart", ["n": "\(n)"], .info, speak)
+    }
+
+    /// Przycisk / polecenie głosowe „Fałstart”.
+    func cancelStart() {
+        guard startSnap != nil, !stopped else { return }
+        cancelFalseStart(nil, speak: !replaying)
+    }
+
     // MARK: - Kroki
 
     private func enterStep(_ idx: Int, startSec: Int, pre: Int, speak: Bool) {
         if idx >= script.steps.count { planDone(speak); return }
+        startSnap = nil; needRearm = false
         stepIdx = idx; stepStartSec = startSec; inStep = pre
         stepSecs = pre > 0 ? Array(startSec..<(startSec + pre)) : []
         startRun = 0; startDips = 0; lowRun = 0; easeRun = 0; resumeRun = 0
@@ -527,6 +587,7 @@ final class WorkoutEngine {
         var d: [String: Any] = ["elapsedSec": max(0, lastSecond), "phase": isPaused ? "paused" : phase.rawValue,
                                 "ftp": script.ftp, "workout": script.name]
         d["power3s"] = avgInt(Array(P.suffix(3)))
+        d["falseStartLeft"] = falseStartLeft
         d["power30s"] = avgInt(Array(P.suffix(30)))
         d["avgPowerRide"] = avgInt(P.filter { $0 >= R.autoPauseWatts })
         if let h = hrAvg(10) { d["hr"] = h }
@@ -730,7 +791,7 @@ final class WorkoutEngine {
             power: p, power3s: p == nil ? nil : p3, powerSmooth: st == nil ? nil : ps, hr: hr, cadence: cad, balanceL: bal,
             targetLow: st?.powerLow ?? 0, targetHigh: st?.powerHigh ?? 0,
             inRange: (st != nil && ps != nil) ? (ps! >= st!.powerLow && ps! <= st!.powerHigh) : nil,
-            lat: location?.lat, lon: location?.lon, lastSeries: series.last))
+            lat: location?.lat, lon: location?.lon, lastSeries: series.last, falseStartLeft: falseStartLeft))
     }
 
     private func avgInt(_ a: [Int]) -> Int { a.isEmpty ? 0 : Int((Double(a.reduce(0, +)) / Double(a.count)).rounded()) }

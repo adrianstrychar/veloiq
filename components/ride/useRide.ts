@@ -125,6 +125,7 @@ export function useRide() {
     pause: () => run(async () => { await engine.pause(); setPaused(true); }),
     resume: () => run(async () => { await engine.resume(); setPaused(false); setAutoPaused(false); }),
     skip: () => run(() => engine.skipStep()),
+    cancelStart: () => run(() => engine.cancelStart()),
     stop: () => run(async () => {
       const sum = await engine.stopWorkout();
       setSummary(sum); setActive(false); setPaused(false);

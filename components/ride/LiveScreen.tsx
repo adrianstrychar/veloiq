@@ -237,7 +237,10 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
         {pauseBtn}
         {phase === 'armed' || phase === 'waiting'
           ? <button type="button" className={s.btnPrimary} style={{ height: 58, fontSize: 15 }} onClick={ride.skip}><IconPlay size={16} />Start teraz</button>
-          : phase !== 'free' && <button type="button" className={s.btnDark} onClick={ride.skip}><IconNext />Dalej</button>}
+          : phase !== 'free' && ((live?.falseStartLeft ?? 0) > 0
+            ? <button type="button" className={s.btnDark} style={{ color: '#D98A57' }} onClick={ride.cancelStart}
+                aria-label="Fałstart – odwołaj start interwału">↺ Fałstart · {live?.falseStartLeft} s</button>
+            : <button type="button" className={s.btnDark} onClick={ride.skip}><IconNext />Dalej</button>)}
         {stopBtn}
       </nav>
     </div>

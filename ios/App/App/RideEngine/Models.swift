@@ -145,6 +145,7 @@ enum Phrases {
         "autoPause": "Pauza interwału. Zostało {left}.",
         "autoResume": "Wznawiam. Zostało {left}.",
         "earlyStop": "Interwał przerwany po {done}.",
+        "falseStart": "Fałstart – nie liczę. Interwał {n} ruszy, gdy znów przyspieszysz.",
         "seriesEnd": "Seria {n} z {total} zrobiona. {dur}, średnio {avg} watów, {pct} procent w zakresie.",
         "seriesPrev": "Poprzednia {prev}.",
         "hrUp": "Tętno o {d} uderzeń wyżej niż w pierwszej serii.",
@@ -252,6 +253,7 @@ struct LiveSample {
     var lat: Double?
     var lon: Double?
     var lastSeries: SeriesResult?
+    var falseStartLeft: Int = 0  // s, w których można jeszcze odwołać start interwału (fałstart)
 
     func toDict() -> [String: Any] {
         var d: [String: Any] = [
@@ -260,6 +262,7 @@ struct LiveSample {
             "targetLow": targetLow, "targetHigh": targetHigh,
         ]
         if let v = power { d["power"] = v }
+        if falseStartLeft > 0 { d["falseStartLeft"] = falseStartLeft }
         if let v = power3s { d["power3s"] = v }
         if let v = powerSmooth { d["powerSmooth"] = v }
         if let v = hr { d["hr"] = v }

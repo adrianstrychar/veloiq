@@ -19,6 +19,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "resume", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopWorkout", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "skipStep", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelStart", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getRecoverable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "resumeRecovered", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "discardRecovered", returnType: CAPPluginReturnPromise),
@@ -247,7 +248,8 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
             self.notifier.post(key, vars)              // krótko na licznik (Garmin), niezależnie od głosu
             guard self.shouldSpeak(kind) else { return }
-            DispatchQueue.main.async { self.say(key, vars, text, interrupt: kind == .countdown) }
+            // fałstart ucina zaległe „Start!” – inaczej Enzo mówiłby o interwale, którego już nie ma
+            DispatchQueue.main.async { self.say(key, vars, text, interrupt: kind == .countdown || key == "falseStart") }
         }
         eng.onLive = { [weak self] live in self?.notifyListeners("live", data: live.toDict()) }
         // seed() ustawił lastSecond, więc sekundy już zapisane w pliku nie zostaną dopisane ponownie
@@ -324,6 +326,22 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             eng.skipStep()
             call.resolve()
         }
+    }
+
+    /// Przycisk „Fałstart” – odwołuje świeżo wykryty start interwału (wraca czekanie na start).
+    @objc func cancelStart(_ call: CAPPluginCall) {
+        engineQueue.async {
+            guard let eng = self.engine else { return call.resolve() }
+            self.cancelStartInternal(eng)
+            call.resolve()
+        }
+    }
+    /// engineQueue
+    private func cancelStartInternal(_ eng: WorkoutEngine) {
+        eng.advance()
+        guard eng.falseStartLeft > 0 else { return }
+        recorder?.appendEvent(second: eng.lastSecond, "cancel")
+        eng.cancelStart()
     }
 
     @objc func stopWorkout(_ call: CAPPluginCall) {
@@ -567,6 +585,8 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             switch a {
             case "next":
                 eng.advance(); self.recorder?.appendEvent(second: eng.lastSecond, "skip"); eng.skipStep()
+            case "cancel":
+                self.cancelStartInternal(eng)
             case "pause":
                 eng.pause(); self.saveRecoveryState()
                 self.notifyListeners("paused", data: ["elapsed": eng.lastSecond])
@@ -653,6 +673,10 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             return true
         }
         // --- polecenia
+        if has("falstart", "anuluj", "od nowa", "jeszcze nie", "nie teraz", "nie startuj"),
+           ((st["falseStartLeft"] as? Int) ?? 0) > 0 {
+            coachAction("cancel"); return true           // silnik sam mówi „Fałstart…”
+        }
         if has("nastepny krok", "pomin", "przejdz dalej", "kolejny krok", "nastepny etap") {
             coachAction("next"); play(lead("doneCmd"), "Następny krok."); return true
         }

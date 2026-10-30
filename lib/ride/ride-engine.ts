@@ -32,6 +32,7 @@ export interface LiveSample {
   stepRemaining: number;  // s
   overrunSec: number;     // o ile przeciąga się przerwa przed interwałem
   lastSeries?: SeriesResult;
+  falseStartLeft?: number; // s, w których można jeszcze odwołać start interwału (fałstart)
   power?: number;         // W chwilowe
   power3s?: number;
   powerSmooth?: number;   // średnia z okna smoothingSec
@@ -86,6 +87,8 @@ export interface RideEnginePlugin {
   stopWorkout(): Promise<WorkoutSummary>;
   /** "Następny krok" – pomija bieżący krok (np. przerwę). */
   skipStep(): Promise<void>;
+  /** „Fałstart” – odwołuje świeżo wykryty start interwału (czekanie wraca). */
+  cancelStart(): Promise<void>;
   /** Czy po awarii aplikacji jest trening do wznowienia. */
   getRecoverable(): Promise<{ available: boolean; name?: string; elapsed?: number }>;
   /** Wznawia w pauzie od ostatniej zapisanej sekundy – UI pokazuje przycisk "Wznów" (resume()). */

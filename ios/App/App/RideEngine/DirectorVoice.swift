@@ -52,6 +52,7 @@ final class DirectorVoice: NSObject {
         "armNext": "arm", "autoStart": "go", "intervalStart": "go", "warmupStart": "warmup", "recoveryStart": "recovery",
         "cooldownStart": "cooldown", "steadyStart": "steady", "tenSec": "ten", "goNow": "goNow", "waiting": "waiting",
         "autoPause": "pause", "autoResume": "resume", "manualPause": "pause", "manualResume": "resume", "earlyStop": "early",
+        "falseStart": "falseStart",
         "seriesEnd": "seriesEnd", "hrUp": "hr", "tooHigh": "tooHigh", "tooLow": "tooLow", "recoveryTooHigh": "recTooHigh",
         "cadenceLow": "cadLow", "cadenceHigh": "cadHigh", "half": "half", "lastMinute": "last", "praise": "praise",
         "planDone": "done", "freeStart": "free", "effort": "effort",

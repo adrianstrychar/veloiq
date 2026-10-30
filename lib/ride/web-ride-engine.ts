@@ -125,6 +125,7 @@ export class WebRideEngine implements RideEnginePlugin {
   async setCoach() { /* rozmowa tylko w aplikacji na iPhonie */ }
   async talk() { this.emit('coach', { state: 'error', text: 'Rozmowa z Enzo działa w aplikacji na iPhonie.' }); }
   async skipStep() { this.engine?.skipStep(true); this.emitLive(); }
+  async cancelStart() { this.engine?.cancelStart(true); this.emitLive(); }
   async stopWorkout(): Promise<WorkoutSummary> {
     this.stopTimer();
     const sum = this.engine?.summary('web-sim.jsonl') ?? emptySummary();
@@ -195,6 +196,7 @@ export class WebRideEngine implements RideEnginePlugin {
       elapsed: Math.max(0, e.s), phase: (this.paused ? 'paused' : L.phase) as RidePhase,
       stepIndex: e.stepIdx, stepName: free ? 'Jazda swobodna' : st?.name ?? '', stepType: free ? 'free' : st?.type ?? 'free',
       stepElapsed: L.stepElapsed, stepRemaining: L.stepRemaining, overrunSec: L.overrunSec, lastSeries: L.lastSeries,
+      falseStartLeft: L.falseStartLeft || undefined,
       power: this.last.p ?? undefined, power3s: p3, powerSmooth: free ? undefined : ps,
       hr: this.last.hr ?? undefined, cadence: this.last.cad ?? undefined, balanceL: 49,
       targetLow: L.targetLow, targetHigh: L.targetHigh,
