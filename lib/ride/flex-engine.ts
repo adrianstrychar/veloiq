@@ -61,6 +61,7 @@ export const FLEX_PHRASES: Record<string, string> = {
   autoPause: 'Pauza interwału. Zostało {left}.',
   autoResume: 'Wznawiam. Zostało {left}.',
   earlyStop: 'Interwał przerwany po {done}.',
+  falseStart: 'Fałstart – nie liczę. Interwał {n} ruszy, gdy znów przyspieszysz.',
   seriesEnd: 'Seria {n} z {total} zrobiona. {dur}, średnio {avg} watów, {pct} procent w zakresie.',
   seriesPrev: 'Poprzednia {prev}.',
   hrUp: 'Tętno o {d} uderzeń wyżej niż w pierwszej serii.',
@@ -91,6 +92,9 @@ export const FLEX_PHRASES: Record<string, string> = {
 };
 
 const QUIET_AFTER_STOP_SEC = 20;
+// fałstart: okno odwołania startu auto-interwału (do 60 s; krótkie interwały 1/3 długości, min. 10 s)
+// postój ≥ 15 s albo średnia z 10 s poniżej 60% dolnej granicy przez 15 s (krótkie zwolnienia nie odwołują)
+const FALSE_START_MAX_SEC = 60, FALSE_START_PCT = 0.6, FALSE_START_STOP_SEC = 15, FALSE_START_EASE_SEC = 15, FALSE_START_AVG_SEC = 10;
 const FUEL_DRINK_SEC = 1200;   // picie co 20 min
 const BRIEF_READY_SEC = 150;   // gotowość: 2,5 min po starcie
 const BRIEF_COND_FROM = 360;   // kondycja: okno 6.–10. minuty (tętno już się ustaliło)
@@ -137,6 +141,17 @@ export class FlexEngine {
   private lastCorrection = -1e9;
   private spoke = new Set<string>();
   private lastRestSec?: number;
+  // fałstart: przez pierwsze sekundy auto-interwału można go odwołać – wraca czekanie
+  private startSnap: { idx: number; startSec: number; secs: number[]; rest?: number } | null = null;
+  private fsStopRun = 0; private fsEaseRun = 0;
+  private needRearm = false; private rearmLow = 0;   // po fałstarcie nowy start dopiero po zejściu z mocy
+  private falseStartWindow(st: { durationSec: number }) { return Math.min(FALSE_START_MAX_SEC, Math.max(10, Math.floor(st.durationSec / 3))); }
+  /** Ile sekund jeszcze można odwołać start interwału (0 = już nie). */
+  get falseStartLeft(): number {
+    const st = this.step;
+    if (!this.startSnap || this.phase === 'free' || !st) return 0;
+    return Math.max(0, this.falseStartWindow(st) - this.inStep);
+  }
 
   readonly series: SeriesResult[] = [];
   readonly efforts: Effort[] = [];
@@ -196,6 +211,20 @@ export class FlexEngine {
     const cad = sample.cad ?? null;
     if (p < this.rules.autoPauseWatts && (cad === null || cad === 0)) this.quietUntil = s + QUIET_AFTER_STOP_SEC;
 
+    // --- fałstart: odpuszczenie albo postój tuż po auto-starcie = interwał się nie liczy, czekamy na prawdziwy start
+    if (this.startSnap) {
+      // odpuszczenie/postój, który zaczął się w oknie, jest oceniany do końca (nawet po oknie)
+      const lowNow = p < st.powerLow * FALSE_START_PCT;
+      if (!autoInterval || (this.inStep >= this.falseStartWindow(st) && this.fsStopRun === 0 && this.fsEaseRun === 0 && !lowNow)) this.startSnap = null;
+      else {
+        const stopped = p < this.rules.autoPauseWatts && (cad === null || cad === 0);
+        this.fsStopRun = stopped ? this.fsStopRun + 1 : 0;
+        const avg = mean(this.P.slice(-FALSE_START_AVG_SEC));
+        this.fsEaseRun = !stopped && avg < st.powerLow * FALSE_START_PCT ? this.fsEaseRun + 1 : 0;
+        if (this.fsStopRun >= FALSE_START_STOP_SEC || this.fsEaseRun >= FALSE_START_EASE_SEC) { this.cancelFalseStart(s, speak); return; }
+      }
+    }
+
     // --- interwał: auto-pauza i wznowienie; elastyczny dodatkowo wcześniejsze przerwanie
     if (st.type === 'interval' && st.durationSec >= 60) {
       const low = st.powerLow;
@@ -251,7 +280,11 @@ export class FlexEngine {
       const next = this.script.steps[this.stepIdx + 1];
       const thr = next.powerLow * this.rules.autoStartPct;
       // seria sekund nad progiem; jedna krótka "dziura" (szum pomiaru) nie przerywa serii
-      if (p >= thr) {
+      if (this.needRearm) {
+        this.rearmLow = p < thr ? this.rearmLow + 1 : 0;
+        if (this.rearmLow >= 5) this.needRearm = false;
+        this.startRun = 0; this.startDips = 0;
+      } else if (p >= thr) {
         if (this.startRun === 0) { this.startRunAt = s; this.startDips = 0; }
         this.startRun++;
       } else if (this.startRun > 0 && this.startDips === 0) {
@@ -261,10 +294,12 @@ export class FlexEngine {
       }
       if (this.startRun >= this.rules.autoStartSec) {
         const startSec = this.startRunAt;
+        const snap = { idx: this.stepIdx, startSec: this.stepStartSec, secs: [...this.stepSecs], rest: this.lastRestSec };
         this.lastRestSec = startSec - this.stepStartSec;
         const plannedRest = st.durationSec;
         const n = s - startSec + 1;
         this.enterStep(this.stepIdx + 1, startSec, n, false);
+        this.startSnap = snap; this.fsStopRun = 0; this.fsEaseRun = 0;
         const vars = { dur: durationPl(next.durationSec), low: next.powerLow, high: next.powerHigh };
         let text = render(this.phrases.autoStart, vars);
         if (st.type === 'recovery' && Math.abs(this.lastRestSec - plannedRest) > 20) {
@@ -286,9 +321,33 @@ export class FlexEngine {
     }
   }
 
+  /** Odwołanie startu auto-interwału (fałstart): sekundy wracają do przerwy, interwał czeka na prawdziwy start. */
+  private cancelFalseStart(s: number | null, speak: boolean) {
+    const snap = this.startSnap; if (!snap) return;
+    // cała jazda od auto-startu (także sekundy auto-pauzy interwału) wraca do przerwy
+    const secs = new Set([...snap.secs, ...this.stepSecs]);
+    const upTo = s ?? this.s, from = (snap.secs.length ? snap.secs[snap.secs.length - 1] : snap.startSec - 1) + 1;
+    for (let k = from; k <= upTo; k++) secs.add(k);
+    const n = this.intervalNumbers[this.stepIdx] ?? 0;
+    this.stepIdx = snap.idx; this.stepStartSec = snap.startSec;
+    this.stepSecs = Array.from(secs).sort((a, b) => a - b); this.inStep = this.stepSecs.length;
+    this.lastRestSec = snap.rest;
+    this.startSnap = null; this.fsStopRun = 0; this.fsEaseRun = 0;
+    this.needRearm = true; this.rearmLow = 0;
+    this.startRun = 0; this.startDips = 0; this.lowRun = 0; this.easeRun = 0; this.resumeRun = 0;
+    this.lastCorrection = this.s;
+    const st = this.step;
+    if (st) { const rem = st.durationSec - this.inStep; this.phase = rem < 0 ? 'waiting' : rem < this.rules.armLeadSec ? 'armed' : 'running'; }
+    this.say('falseStart', { n }, 'info', speak);
+  }
+
+  /** Przycisk „Fałstart”. */
+  cancelStart(speak = true) { if (this.startSnap) this.cancelFalseStart(null, speak); }
+
   // ------------------------------------------------------------------ kroki
   private enterStep(idx: number, startSec: number, pre: number, speak: boolean) {
     if (idx >= this.script.steps.length) return this.planDone(speak);
+    this.startSnap = null; this.needRearm = false;
     this.stepIdx = idx; this.stepStartSec = startSec; this.inStep = pre;
     this.stepSecs = []; for (let k = 0; k < pre; k++) this.stepSecs.push(startSec + k);
     this.startRun = 0; this.startDips = 0; this.lowRun = 0; this.easeRun = 0; this.resumeRun = 0;
@@ -575,6 +634,7 @@ export class FlexEngine {
       overrunSec: st && this.phase === 'waiting' ? this.inStep - st.durationSec : 0,
       targetLow: this.phase === 'free' ? 0 : st?.powerLow ?? 0, targetHigh: this.phase === 'free' ? 0 : st?.powerHigh ?? 0,
       lastSeries: this.series[this.series.length - 1],
+      falseStartLeft: this.falseStartLeft,
     };
   }
   /** Podsumowanie (te same pola co WorkoutSummary z RideEngine na iOS). */

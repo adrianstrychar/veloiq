@@ -43,6 +43,7 @@ final class EnzoNotifier: NSObject, UNUserNotificationCenterDelegate {
         case "cadenceLow": return "Kadencja \(g("cad")) → \(g("cadLow"))+"
         case "cadenceHigh": return "Kadencja \(g("cad")) → max \(g("cadHigh"))"
         case "lastMinute": return "Ostatnia minuta!"
+        case "falseStart": return "Fałstart – interwał \(g("n")) czeka na start"
         case "seriesEnd":
             var t = "Seria \(g("n"))/\(g("total")): \(g("avg")) W · \(g("pct"))%"
             if let d = v["hrUp"] { t += " · tętno +\(d)" }

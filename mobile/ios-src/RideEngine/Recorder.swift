@@ -31,6 +31,7 @@ final class Recorder {
     struct Recorded {
         var samples: [(power: Int?, hr: Int?, cad: Int?)] = []
         var skips: Set<Int> = []   // sekundy, w których zawodnik wcisnął "Następny krok"
+        var cancels: Set<Int> = [] // sekundy, w których zawodnik odwołał start interwału („Fałstart”)
         var count: Int { samples.count }
     }
 
@@ -40,12 +41,14 @@ final class Recorder {
               let text = try? String(contentsOf: dir.appendingPathComponent(fileName), encoding: .utf8) else { return Recorded() }
         var bySecond: [Int: (Int?, Int?, Int?)] = [:]
         var skips: Set<Int> = []
+        var cancels: Set<Int> = []
         var maxS = -1
         for line in text.split(separator: "\n") {
             guard let d = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
                   let s = d["s"] as? Int else { continue }
             if let ev = d["ev"] as? String {
                 if ev == "skip" { skips.insert(s) }
+                if ev == "cancel" { cancels.insert(s) }
                 continue
             }
             bySecond[s] = (d["p"] as? Int, d["hr"] as? Int, d["cad"] as? Int)
@@ -56,7 +59,7 @@ final class Recorder {
             let v = bySecond[s]
             return (power: v?.0, hr: v?.1, cad: v?.2)
         }
-        return Recorded(samples: samples, skips: skips)
+        return Recorded(samples: samples, skips: skips, cancels: cancels)
     }
 
     /// Zdarzenie w zapisie (np. ręczne "Następny krok"), potrzebne do wiernego odtworzenia po awarii.
