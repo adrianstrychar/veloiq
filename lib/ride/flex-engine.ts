@@ -93,7 +93,8 @@ export const FLEX_PHRASES: Record<string, string> = {
 
 const QUIET_AFTER_STOP_SEC = 20;
 // fałstart: okno odwołania startu auto-interwału (do 60 s; krótkie interwały 1/3 długości, min. 10 s)
-const FALSE_START_MAX_SEC = 60, FALSE_START_PCT = 0.7;
+// postój ≥ 15 s albo średnia z 10 s poniżej 60% dolnej granicy przez 15 s (krótkie zwolnienia nie odwołują)
+const FALSE_START_MAX_SEC = 60, FALSE_START_PCT = 0.6, FALSE_START_STOP_SEC = 15, FALSE_START_EASE_SEC = 15, FALSE_START_AVG_SEC = 10;
 const FUEL_DRINK_SEC = 1200;   // picie co 20 min
 const BRIEF_READY_SEC = 150;   // gotowość: 2,5 min po starcie
 const BRIEF_COND_FROM = 360;   // kondycja: okno 6.–10. minuty (tętno już się ustaliło)
@@ -212,13 +213,15 @@ export class FlexEngine {
 
     // --- fałstart: odpuszczenie albo postój tuż po auto-starcie = interwał się nie liczy, czekamy na prawdziwy start
     if (this.startSnap) {
-      if (!autoInterval || this.inStep >= this.falseStartWindow(st)) this.startSnap = null;
+      // odpuszczenie/postój, który zaczął się w oknie, jest oceniany do końca (nawet po oknie)
+      const lowNow = p < st.powerLow * FALSE_START_PCT;
+      if (!autoInterval || (this.inStep >= this.falseStartWindow(st) && this.fsStopRun === 0 && this.fsEaseRun === 0 && !lowNow)) this.startSnap = null;
       else {
         const stopped = p < this.rules.autoPauseWatts && (cad === null || cad === 0);
         this.fsStopRun = stopped ? this.fsStopRun + 1 : 0;
-        const avg5 = mean(this.P.slice(-5));
-        this.fsEaseRun = !stopped && avg5 < st.powerLow * FALSE_START_PCT ? this.fsEaseRun + 1 : 0;
-        if (this.fsStopRun >= 3 || this.fsEaseRun >= 5) { this.cancelFalseStart(s, speak); return; }
+        const avg = mean(this.P.slice(-FALSE_START_AVG_SEC));
+        this.fsEaseRun = !stopped && avg < st.powerLow * FALSE_START_PCT ? this.fsEaseRun + 1 : 0;
+        if (this.fsStopRun >= FALSE_START_STOP_SEC || this.fsEaseRun >= FALSE_START_EASE_SEC) { this.cancelFalseStart(s, speak); return; }
       }
     }
 
@@ -279,7 +282,7 @@ export class FlexEngine {
       // seria sekund nad progiem; jedna krótka "dziura" (szum pomiaru) nie przerywa serii
       if (this.needRearm) {
         this.rearmLow = p < thr ? this.rearmLow + 1 : 0;
-        if (this.rearmLow >= 3) this.needRearm = false;
+        if (this.rearmLow >= 5) this.needRearm = false;
         this.startRun = 0; this.startDips = 0;
       } else if (p >= thr) {
         if (this.startRun === 0) { this.startRunAt = s; this.startDips = 0; }
@@ -321,8 +324,10 @@ export class FlexEngine {
   /** Odwołanie startu auto-interwału (fałstart): sekundy wracają do przerwy, interwał czeka na prawdziwy start. */
   private cancelFalseStart(s: number | null, speak: boolean) {
     const snap = this.startSnap; if (!snap) return;
+    // cała jazda od auto-startu (także sekundy auto-pauzy interwału) wraca do przerwy
     const secs = new Set([...snap.secs, ...this.stepSecs]);
-    if (s !== null) secs.add(s);
+    const upTo = s ?? this.s, from = (snap.secs.length ? snap.secs[snap.secs.length - 1] : snap.startSec - 1) + 1;
+    for (let k = from; k <= upTo; k++) secs.add(k);
     const n = this.intervalNumbers[this.stepIdx] ?? 0;
     this.stepIdx = snap.idx; this.stepStartSec = snap.startSec;
     this.stepSecs = Array.from(secs).sort((a, b) => a - b); this.inStep = this.stepSecs.length;
