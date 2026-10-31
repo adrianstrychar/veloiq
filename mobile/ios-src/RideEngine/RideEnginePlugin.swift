@@ -20,6 +20,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stopWorkout", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "skipStep", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelStart", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setNavEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getRecoverable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "resumeRecovered", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "discardRecovered", returnType: CAPPluginReturnPromise),
@@ -342,6 +343,24 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         guard eng.falseStartLeft > 0 else { return }
         recorder?.appendEvent(second: eng.lastSecond, "cancel")
         eng.cancelStart()
+    }
+
+    /// Wyłączenie / włączenie nawigacji GPX w trakcie jazdy (przycisk na karcie nawigacji).
+    @objc func setNavEnabled(_ call: CAPPluginCall) {
+        let on = call.getBool("enabled") ?? true
+        engineQueue.async { self.setNav(on); call.resolve() }
+    }
+    /// engineQueue
+    private func setNav(_ on: Bool) {
+        guard let nav = navigator else { return }
+        nav.setEnabled(on)
+        let key = on ? "navEnabled" : "navDisabled"
+        notifier.post(key, [:])
+        if voiceLevel != "off" {
+            let text = EnzoNotifier.text(key, [:]) ?? ""
+            DispatchQueue.main.async { self.say(key, [:], text, interrupt: false) }
+        }
+        notifyListeners("nav", data: nav.state())
     }
 
     @objc func stopWorkout(_ call: CAPPluginCall) {
@@ -671,6 +690,15 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             let dur = Phrases.duration((n["durationSec"] as? Int) ?? 0)
             play(ids, "Następnie: \(typeName[ty] ?? ty), \(dur), \(n["targetLow"] ?? 0)–\(n["targetHigh"] ?? 0) W.")
             return true
+        }
+        // --- nawigacja: wyłącz / włącz (przed „wznów”, które steruje jazdą)
+        if st["route"] != nil {
+            if has("wylacz nawigacj", "koniec nawigacji", "zakoncz nawigacj", "stop nawigacj", "bez nawigacji") {
+                engineQueue.async { self.setNav(false) }; return true
+            }
+            if has("wlacz nawigacj", "wznow nawigacj", "wroc do nawigacji", "nawiguj") {
+                engineQueue.async { self.setNav(true) }; return true
+            }
         }
         // --- polecenia
         if has("falstart", "anuluj", "od nowa", "jeszcze nie", "nie teraz", "nie startuj"),

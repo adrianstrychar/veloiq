@@ -112,19 +112,33 @@ const DIR_PL: Record<string, string> = { left: 'w lewo', right: 'w prawo', sligh
 
 export interface NavState {
   name: string; total: number; progress: number; left: number; acquired: boolean; offRoute: boolean;
+  enabled?: boolean;   // false = wyłączona w trakcie jazdy
+  muted?: boolean;     // długo poza trasą – Enzo milczy do powrotu
   nextTurn?: { dir: string; in: number };
   nextClimb?: { in: number; len: number; grade: number; gain: number; onIt: boolean };
 }
 
 /** Karta nawigacji na ekranie jazdy. */
-export function NavCard({ nav, route, pos }: { nav: NavState | null; route: RideRoute; pos?: { lat: number; lon: number } | null }) {
+export function NavCard({ nav, route, pos, onToggle }: {
+  nav: NavState | null; route: RideRoute; pos?: { lat: number; lon: number } | null; onToggle?: (on: boolean) => void;
+}) {
   const m = (x: number) => (x >= 1000 ? `${(x / 1000).toFixed(1)} km` : `${Math.round(x / 10) * 10} m`);
+  if (nav?.enabled === false) {
+    return (
+      <section className={s.card} aria-label="Nawigacja" style={{ padding: '6px 12px' }}>
+        <div className={s.row} style={{ alignItems: 'center' }}>
+          <span className={s.small}>Nawigacja wyłączona</span>
+          {onToggle && <button type="button" className={s.btnText} style={{ height: 40, fontSize: 14, color: 'var(--cyan)' }} onClick={() => onToggle(true)}>Włącz</button>}
+        </div>
+      </section>
+    );
+  }
   return (
     <section className={nav?.offRoute ? s.cardAmber : s.card} aria-label="Nawigacja" style={{ padding: '10px 12px', gap: 8 }}>
       {!nav?.acquired ? (
         <span className={s.strong}>Jedź do startu trasy „{route.name}”</span>
       ) : nav.offRoute ? (
-        <span className={s.strong}>Zjechałeś z trasy – wróć na niebieską linię</span>
+        <span className={s.strong}>{nav.muted ? 'Poza trasą – nawigacja wyciszona do powrotu' : 'Zjechałeś z trasy – wróć na niebieską linię'}</span>
       ) : (
         <div className={s.row} style={{ alignItems: 'center' }}>
           {nav.nextTurn && nav.nextTurn.in < 2000 ? (
@@ -148,6 +162,11 @@ export function NavCard({ nav, route, pos }: { nav: NavState | null; route: Ride
         </span>
       )}
       <RouteMap route={route} pos={pos} done={nav?.progress} height={110} />
+      {onToggle && (
+        <button type="button" className={s.btnText} style={{ height: 34, fontSize: 13, alignSelf: 'flex-end' }} onClick={() => onToggle(false)}>
+          Wyłącz nawigację
+        </button>
+      )}
     </section>
   );
 }

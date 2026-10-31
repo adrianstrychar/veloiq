@@ -19,6 +19,9 @@ final class RouteNavigator {
     private(set) var acquired = false
     private(set) var offRoute = false
     private(set) var progress = 0.0
+    /// false = nawigacja wyłączona w trakcie jazdy (przycisk / głos) – nic nie liczy i nie mówi.
+    private(set) var enabled = true
+    private var offSaid = 0                       // 1 = „Zjechałeś z trasy”, 2 = wyciszone do powrotu
     private var idx = 0
     private var offSince: Date?, lastOffSay = Date.distantPast, lastGlobal = Date.distantPast
     private var cueSaid: [Int: Int] = [:]        // 1 = zapowiedź, 2 = „teraz”
@@ -77,8 +80,16 @@ final class RouteNavigator {
 
     // MARK: - Aktualizacja
 
+    /// Wyłączenie / włączenie nawigacji w trakcie jazdy. Po włączeniu trasa jest szukana od nowa.
+    func setEnabled(_ on: Bool) {
+        guard on != enabled else { return }
+        enabled = on
+        offSince = nil; offRoute = false; offSaid = 0; lastGlobal = .distantPast
+    }
+
     func update(lat la: Double, lon lo: Double, speedKmh v: Double?) {
         if let v = v, v >= 0 { speedKmh = speedKmh * 0.6 + v * 0.4 }
+        guard enabled else { return }
         let now = Date()
         // okno wokół ostatniej pozycji (do 3 km do przodu); gdy brak dopasowania – szukaj po całej trasie co 5 s
         var m = nearest(la, lo, from: idx - 30, to: idx + 300)
@@ -98,17 +109,18 @@ final class RouteNavigator {
         }
         if m.d > 50 {
             if offSince == nil { offSince = now }
+            // dwa komunikaty: po 8 s i po 2 min (wyciszenie) – potem cisza do powrotu na trasę
             if !offRoute, let s = offSince, now.timeIntervalSince(s) >= 8 {
-                offRoute = true; lastOffSay = now
+                offRoute = true; lastOffSay = now; offSaid = 1
                 onSay?("navOff", [:])
-            } else if offRoute && now.timeIntervalSince(lastOffSay) > 120 {
-                lastOffSay = now
-                onSay?("navOff", [:])
+            } else if offRoute && offSaid == 1 && now.timeIntervalSince(lastOffSay) >= 120 {
+                offSaid = 2
+                onSay?("navMute", [:])
             }
             return   // poza trasą nie przesuwamy postępu
         }
         offSince = nil
-        if offRoute && m.d <= 30 { offRoute = false; onSay?("navBack", [:]) }
+        if offRoute && m.d <= 30 { offRoute = false; offSaid = 0; onSay?("navBack", [:]) }
         idx = m.i
         progress = dist[m.i] + (dist[m.i + 1] - dist[m.i]) * m.t
 
@@ -168,7 +180,8 @@ final class RouteNavigator {
 
     func state() -> [String: Any] {
         var d: [String: Any] = ["name": name, "total": Int(total), "progress": Int(progress),
-                                "left": Int(max(0, total - progress)), "acquired": acquired, "offRoute": offRoute]
+                                "left": Int(max(0, total - progress)), "acquired": acquired, "offRoute": offRoute,
+                                "enabled": enabled, "muted": offSaid >= 2]
         if let i = cues.firstIndex(where: { $0.d - progress > -10 }) {
             d["nextTurn"] = ["dir": cues[i].dir, "in": Int(max(0, cues[i].d - progress))] as [String: Any]
         }
