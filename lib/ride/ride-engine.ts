@@ -15,7 +15,9 @@ export interface SensorStatus { kind: SensorKind; id: string; name?: string; con
 export interface SeriesResult {
   n: number; durationSec: number; plannedSec: number; avgPower: number; compliancePct: number;
   avgHr?: number; endedEarly: boolean; restBeforeSec?: number; startSec: number;
+  verdict?: 'ok' | 'high' | 'low'; deltaW?: number;   // w zakresie / mocniej / słabiej (o ile W)
 }
+export interface LapMark { startSec: number; name: string; type: string }
 export interface EffortResult { startSec: number; durationSec: number; avgPower: number }
 
 /** running – krok trwa | armed – za chwilę interwał, czekam na start | waiting – przerwa się przeciąga
@@ -33,6 +35,9 @@ export interface LiveSample {
   overrunSec: number;     // o ile przeciąga się przerwa przed interwałem
   lastSeries?: SeriesResult;
   falseStartLeft?: number; // s, w których można jeszcze odwołać start interwału (fałstart)
+  stepAvgPower?: number;   // średnia moc bieżącego kroku (np. interwału)
+  vKmh?: number;           // wirtualna prędkość (trenażer)
+  vKm?: number;            // wirtualny dystans (trenażer)
   power?: number;         // W chwilowe
   power3s?: number;
   powerSmooth?: number;   // średnia z okna smoothingSec
@@ -57,6 +62,7 @@ export interface WorkoutSummary {
   compliancePct: number;   // % czasu interwałów w zakresie
   series: SeriesResult[];  // faktyczne serie (start, czas, moc, przerwa przed)
   efforts: EffortResult[]; // wysiłki wykryte w jeździe swobodnej
+  laps?: LapMark[];        // kroki planu jako lapy (Strava)
 }
 
 export interface CoachEvent { state: 'listening' | 'question' | 'answer' | 'error' | 'idle'; text?: string }

@@ -177,7 +177,7 @@ final class DirectorVoice: NSObject {
             seg += dur(vars["dur"])
         case "seriesEnd":
             seg += watts(vars["avg"])
-            if let p = num(vars["pct"]), has("pct.\(Int(p.rounded()))") { seg.append("pct.\(Int(p.rounded()))") }
+            if let v = vars["vrd"] { seg += pick("vrd." + v) }   // w zakresie / mocniej / słabiej
             if let d = num(vars["hrUp"]), has("hr.\(Int(d.rounded()))") {
                 seg.append("hr.\(Int(d.rounded()))")
                 if let l = lead("hr") { seg.append(l) }

@@ -7,6 +7,7 @@
 // z automatycznym wykrywaniem wysiłków. Deterministyczny: tick() = jedna sekunda.
 
 import type { WorkoutScript, WorkoutStep } from './workout-script';
+import { VirtualSpeed } from './virtual-speed';
 
 export interface Sample { p?: number | null; hr?: number | null; cad?: number | null }
 export interface Cue { s: number; text: string; kind: CueKind; key?: string; vars?: Record<string, string | number> }
@@ -16,7 +17,10 @@ export type Phase = 'running' | 'armed' | 'waiting' | 'autoPaused' | 'free';
 export interface SeriesResult {
   n: number; durationSec: number; plannedSec: number; avgPower: number; compliancePct: number;
   avgHr?: number; endedEarly: boolean; restBeforeSec?: number; startSec: number;
+  verdict?: 'ok' | 'high' | 'low'; deltaW?: number;   // w zakresie / mocniej / słabiej (o ile W)
 }
+export interface LapMark { startSec: number; name: string; type: string }
+export const verdictText = (v?: string) => (v === 'high' ? 'mocniej niż plan' : v === 'low' ? 'trochę poniżej planu' : 'idealnie w zakresie');
 export interface Effort { startSec: number; durationSec: number; avgPower: number }
 
 export interface FlexRules {
@@ -62,7 +66,7 @@ export const FLEX_PHRASES: Record<string, string> = {
   autoResume: 'Wznawiam. Zostało {left}.',
   earlyStop: 'Interwał przerwany po {done}.',
   falseStart: 'Fałstart – nie liczę. Interwał {n} ruszy, gdy znów przyspieszysz.',
-  seriesEnd: 'Seria {n} z {total} zrobiona. {dur}, średnio {avg} watów, {pct} procent w zakresie.',
+  seriesEnd: 'Seria {n} z {total} zrobiona. {dur}, średnio {avg} watów – {verdict}.',
   seriesPrev: 'Poprzednia {prev}.',
   hrUp: 'Tętno o {d} uderzeń wyżej niż w pierwszej serii.',
   intervalStart: 'Interwał {n} z {total}. {dur}, cel {low} do {high} watów. Start!',
@@ -158,6 +162,12 @@ export class FlexEngine {
   private inEffort = false; private effortStart = 0;
   private intervalNumbers: (number | null)[] = [];
   private intervalCount = 0;
+  readonly laps: LapMark[] = [];
+  readonly vs: VirtualSpeed;
+  private addLap(startSec: number, name: string, type: string) {
+    for (let i = this.laps.length - 1; i >= 0; i--) if (this.laps[i].startSec >= startSec) this.laps.splice(i, 1);
+    this.laps.push({ startSec: Math.max(0, startSec), name, type });
+  }
 
   constructor(readonly script: WorkoutScript, rules: Partial<FlexRules> = {}) {
     const fromScript = Object.fromEntries(Object.entries(script.rules ?? {}).filter(([, v]) => v !== undefined));
@@ -167,6 +177,8 @@ export class FlexEngine {
     this.intervalNumbers = script.steps.map((st) => (st.type === 'interval' ? ++n : null));
     this.intervalCount = n;
     if (!script.steps.length) this.phase = 'free';
+    else this.laps.push({ startSec: 0, name: script.steps[0].name, type: script.steps[0].type });
+    this.vs = new VirtualSpeed((script as { weightKg?: number }).weightKg ?? 75);
   }
 
   /** Czy interwał startuje automatycznie (wykrywanie po mocy). Pierwszy krok nigdy. */
@@ -197,6 +209,7 @@ export class FlexEngine {
     const s = ++this.s;
     const p = Math.max(0, sample.p ?? 0);
     this.P.push(p); this.HR.push(sample.hr ?? null); this.CAD.push(sample.cad ?? null);
+    this.vs.step(p);
 
     if (s === 0) {
       if (this.phase === 'free') this.say('freeStart', {}, 'info', speak);
@@ -329,6 +342,8 @@ export class FlexEngine {
     const upTo = s ?? this.s, from = (snap.secs.length ? snap.secs[snap.secs.length - 1] : snap.startSec - 1) + 1;
     for (let k = from; k <= upTo; k++) secs.add(k);
     const n = this.intervalNumbers[this.stepIdx] ?? 0;
+    const ivStart = this.stepStartSec;
+    for (let i = this.laps.length - 1; i >= 0; i--) if (this.laps[i].startSec >= ivStart && this.laps[i].startSec > snap.startSec) this.laps.splice(i, 1);
     this.stepIdx = snap.idx; this.stepStartSec = snap.startSec;
     this.stepSecs = Array.from(secs).sort((a, b) => a - b); this.inStep = this.stepSecs.length;
     this.lastRestSec = snap.rest;
@@ -348,6 +363,7 @@ export class FlexEngine {
   private enterStep(idx: number, startSec: number, pre: number, speak: boolean) {
     if (idx >= this.script.steps.length) return this.planDone(speak);
     this.startSnap = null; this.needRearm = false;
+    this.addLap(startSec, this.script.steps[idx].name, this.script.steps[idx].type);
     this.stepIdx = idx; this.stepStartSec = startSec; this.inStep = pre;
     this.stepSecs = []; for (let k = 0; k < pre; k++) this.stepSecs.push(startSec + k);
     this.startRun = 0; this.startDips = 0; this.lowRun = 0; this.easeRun = 0; this.resumeRun = 0;
@@ -386,9 +402,15 @@ export class FlexEngine {
       avgPower: Math.round(mean(pw)), compliancePct: evalSecs.length ? Math.round((inR / evalSecs.length) * 100) : 0,
       avgHr: hrs.length ? Math.round(mean(hrs)) : undefined, endedEarly: early, restBeforeSec: this.lastRestSec, startSec: this.stepStartSec,
     };
+    // ocena prosta dla człowieka: w zakresie / mocniej / słabiej
+    const tolV = Math.max(5, ((st.powerLow + st.powerHigh) / 2) * 0.015);   // ±5 W – „idealnie” znaczy idealnie
+    if (res.avgPower > st.powerHigh + tolV) { res.verdict = 'high'; res.deltaW = res.avgPower - st.powerHigh; }
+    else if (res.avgPower < st.powerLow - tolV) { res.verdict = 'low'; res.deltaW = st.powerLow - res.avgPower; }
+    else { res.verdict = 'ok'; res.deltaW = 0; }
     const prev = this.series[this.series.length - 1];
     this.series.push(res);
-    const sv: Record<string, string | number> = { n: res.n, total: this.intervalCount, dur: durationPl(res.durationSec), avg: res.avgPower, pct: res.compliancePct };
+    const sv: Record<string, string | number> = { n: res.n, total: this.intervalCount, dur: durationPl(res.durationSec), avg: res.avgPower,
+      vrd: res.verdict, dW: res.deltaW, verdict: verdictText(res.verdict) };
     let text = render(this.phrases.seriesEnd, sv);
     if (prev) text += ' ' + render(this.phrases.seriesPrev, { prev: prev.avgPower });
     const first = this.series[0];
@@ -407,6 +429,7 @@ export class FlexEngine {
 
   private planDone(speak: boolean) {
     this.phase = 'free';
+    this.addLap(this.s + 1, 'Po planie', 'free');
     const list = this.series.map((x) => x.avgPower).join(', ');
     this.say('planDone', { list: list || '–' }, 'summary', speak);
   }
@@ -511,6 +534,13 @@ export class FlexEngine {
   }
   /** Przypomnienia na dłuższych jazdach: pić co 20 min, jeść co 40 min (co 30 przy mocnym planie).
    *  Nie w trakcie interwału – poczekamy na przerwę (najdłużej 10 min). */
+  /** Planowany czas do końca planu (bieżący krok + następne). */
+  private planLeftSec(): number {
+    const st = this.step;
+    if (this.phase === 'free' || !st) return 0;
+    return Math.max(0, st.durationSec - this.inStep) + this.script.steps.slice(this.stepIdx + 1).reduce((a, x) => a + x.durationSec, 0);
+  }
+
   private fuelTick(s: number, speak: boolean) {
     if (this.phase === 'autoPaused' || s <= 0) return;
     const steps = this.script.steps;
@@ -522,11 +552,14 @@ export class FlexEngine {
     const eatEvery = hard ? 1800 : 2400;
     const st = this.phase === 'free' ? undefined : this.step;
     const working = st?.type === 'interval'; // w trakcie pracy nie przeszkadzamy
+    // dopasowanie do sesji: po planie i na schłodzeniu nic; jeść tylko, gdy zostało ≥ 25 min, pić ≥ 10 min
+    if (!free && (this.phase === 'free' || st?.type === 'cooldown')) return;
+    const left = free ? Infinity : this.planLeftSec();
     const due = (last: number, every: number) => s - last >= every && (!working || s - last >= every + 600);
-    if (eatOn && due(this.lastEat, eatEvery)) {
+    if (eatOn && left >= 1500 && due(this.lastEat, eatEvery)) {
       this.lastEat = s; this.lastDrink = s;
       this.say('eat', {}, 'info', speak);
-    } else if (drinkOn && due(this.lastDrink, FUEL_DRINK_SEC)) {
+    } else if (drinkOn && left >= 600 && due(this.lastDrink, FUEL_DRINK_SEC)) {
       this.lastDrink = s;
       this.say('drink', {}, 'info', speak);
     }
@@ -635,6 +668,8 @@ export class FlexEngine {
       targetLow: this.phase === 'free' ? 0 : st?.powerLow ?? 0, targetHigh: this.phase === 'free' ? 0 : st?.powerHigh ?? 0,
       lastSeries: this.series[this.series.length - 1],
       falseStartLeft: this.falseStartLeft,
+      stepAvgPower: st && this.phase !== 'free' && this.stepSecs.length ? Math.round(mean(this.stepSecs.map((i) => this.P[i]))) : undefined,
+      vKmh: Math.round(this.vs.v * 36) / 10, vKm: Math.round(this.vs.dist / 10) / 100,
     };
   }
   /** Podsumowanie (te same pola co WorkoutSummary z RideEngine na iOS). */
@@ -658,7 +693,7 @@ export class FlexEngine {
       file, durationSec: n, avgPower: n ? Math.round(total / n) : 0, normalizedPower: np,
       avgHr: hrs.length ? Math.round(mean(hrs)) : undefined, maxHr: hrs.length ? Math.max(...hrs) : undefined,
       kJ: Math.floor(total / 1000), compliancePct: evalSec ? Math.floor(weighted / evalSec) : 0,
-      series: [...this.series], efforts: [...this.efforts],
+      series: [...this.series], efforts: [...this.efforts], laps: [...this.laps],
     };
   }
 

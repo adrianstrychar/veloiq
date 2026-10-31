@@ -82,6 +82,24 @@ final class WorkoutEngine {
     private var hrRecStart: Int?
     private var corrRepeat = 0, lastCorrDir = 0
     private var CADS: [Int] = []
+    // Lapy (kroki planu) i wirtualna prędkość na trenażerze (model jak lib/ride/virtual-speed.ts)
+    private(set) var laps: [LapMark] = []
+    private var vSpeed = 0.0, vDist = 0.0
+    private lazy var vMass: Double = (script.weightKg ?? 75) + 9
+    private func vStep(_ p: Int) {
+        let m = vMass, dt = 0.1
+        for _ in 0..<10 {
+            let drive = Double(max(0, p)) / max(vSpeed, 1)
+            let resist = 0.5 * 1.225 * 0.28 * vSpeed * vSpeed + 0.004 * m * 9.81
+            vSpeed = max(0, vSpeed + (drive - resist) / (m + 1) * dt)
+            if vSpeed < 0.3 && p <= 0 { vSpeed = 0 }
+            vDist += vSpeed * dt
+        }
+    }
+    private func addLap(_ startSec: Int, _ name: String, _ type: String) {
+        laps.removeAll { $0.startSec >= startSec }   // start cofnięty (auto-start) zastępuje późniejszy znacznik
+        laps.append(LapMark(startSec: max(0, startSec), name: name, type: type))
+    }
     private var lastDrink = 0, lastEat = 0
     private var quietUntil = -1
     private static let quietAfterStopSec = 20   // cisza po postoju (światła, skrzyżowanie)
@@ -105,6 +123,7 @@ final class WorkoutEngine {
         self.pausedTotal = pausedTotal
         self.pausedAt = pausedAt
         if script.steps.isEmpty { phase = .free }
+        if let f = script.steps.first { laps = [LapMark(startSec: 0, name: f.name, type: f.type)] }
     }
 
     private var step: WorkoutStep? { stepIdx < script.steps.count ? script.steps[stepIdx] : nil }
@@ -264,6 +283,7 @@ final class WorkoutEngine {
         P.append(p)
         HR.append(hr)
         CADS.append(cad ?? 0)
+        vStep(p)
         if !replaying { onSecond?(s, pIn, hr, cad, bal) }
         defer { if speak && !replaying { emitLive(s, pIn, hr, cad, bal) } }
 
@@ -398,6 +418,8 @@ final class WorkoutEngine {
         let upTo = s ?? lastSecond, from = (snap.secs.last ?? snap.startSec - 1) + 1
         let secs = Set(snap.secs).union(stepSecs).union(from <= upTo ? Array(from...upTo) : [])
         let n = intervalNumbers[stepIdx] ?? 0
+        let ivStart = stepStartSec
+        laps.removeAll { $0.startSec >= ivStart && $0.startSec > snap.startSec }
         stepIdx = snap.idx; stepStartSec = snap.startSec
         stepSecs = secs.sorted(); inStep = stepSecs.count
         lastRestSec = snap.rest
@@ -424,6 +446,7 @@ final class WorkoutEngine {
         if idx >= script.steps.count { planDone(speak); return }
         startSnap = nil; needRearm = false
         stepIdx = idx; stepStartSec = startSec; inStep = pre
+        addLap(startSec, script.steps[idx].name, script.steps[idx].type)
         stepSecs = pre > 0 ? Array(startSec..<(startSec + pre)) : []
         startRun = 0; startDips = 0; lowRun = 0; easeRun = 0; resumeRun = 0
         outHigh = 0; outLow = 0; inRangeStreak = 0; cadLowRun = 0; cadHighRun = 0
@@ -466,13 +489,19 @@ final class WorkoutEngine {
             }
         }
         let hrs = secs.compactMap { HR[$0] }.filter { $0 > 0 }
-        let res = SeriesResult(
+        var res = SeriesResult(
             n: intervalNumbers[stepIdx] ?? series.count + 1, durationSec: secs.count, plannedSec: st.durationSec,
             avgPower: avgInt(pw), compliancePct: evalSecs.isEmpty ? 0 : Int((Double(inR) / Double(evalSecs.count) * 100).rounded()),
             avgHr: hrs.isEmpty ? nil : avgInt(hrs), endedEarly: early, restBeforeSec: lastRestSec, startSec: stepStartSec)
+        // ocena prosta dla człowieka: w zakresie / mocniej / słabiej
+        let avgP = Double(res.avgPower)
+        let tolV = max(5, Double(st.powerLow + st.powerHigh) / 2 * 0.015)   // ±5 W – „idealnie” znaczy idealnie
+        if avgP > Double(st.powerHigh) + tolV { res.verdict = "high"; res.deltaW = res.avgPower - st.powerHigh }
+        else if avgP < Double(st.powerLow) - tolV { res.verdict = "low"; res.deltaW = st.powerLow - res.avgPower }
         let prev = series.last
         series.append(res)
         var sv = ["n": "\(res.n)", "total": "\(intervalCount)", "dur": Phrases.duration(res.durationSec),
+                  "vrd": res.verdict, "dW": "\(res.deltaW)", "verdict": Self.verdictText(res.verdict),
                   "avg": "\(res.avgPower)", "pct": "\(res.compliancePct)"]
         var text = Phrases.render(phrases["seriesEnd"] ?? "", sv)
         if let p = prev, let t = phrases["seriesPrev"] { text += " " + Phrases.render(t, ["prev": "\(p.avgPower)"]) }
@@ -489,6 +518,7 @@ final class WorkoutEngine {
 
     private func planDone(_ speak: Bool) {
         phase = .free
+        addLap(lastSecond + 1, "Po planie", "free")
         let list = series.map { "\($0.avgPower)" }.joined(separator: ", ")
         say("planDone", ["list": list.isEmpty ? "brak" : list], .summary, speak)
         if !replaying { onPlanFinished?(makeSummary(file: "")) }
@@ -643,6 +673,12 @@ final class WorkoutEngine {
 
     /// Przypomnienia na dłuższych jazdach: pić co 20 min, jeść co 40 min (co 30 przy mocnym planie).
     /// Nie w trakcie interwału – poczekamy na przerwę (najdłużej 10 min). Tak samo jak flex-engine.ts.
+    /// Planowany czas do końca planu (bieżący krok + następne).
+    private func planLeftSec() -> Int {
+        guard phase != .free, let st = step else { return 0 }
+        return max(0, st.durationSec - inStep) + script.steps.dropFirst(stepIdx + 1).reduce(0) { $0 + $1.durationSec }
+    }
+
     private func fuelTick(_ s: Int, _ speak: Bool) {
         guard phase != .autoPaused, s > 0 else { return }
         let total = script.steps.reduce(0) { $0 + $1.durationSec }
@@ -653,11 +689,14 @@ final class WorkoutEngine {
         let eatEvery = hard ? 1800 : 2400
         let st = phase == .free ? nil : step
         let working = st?.isInterval == true   // w trakcie pracy nie przeszkadzamy
+        // dopasowanie do sesji: po planie i na schłodzeniu nic; jeść tylko, gdy zostało ≥ 25 min, pić ≥ 10 min
+        if !free && (phase == .free || st?.type == "cooldown") { return }
+        let left = free ? Int.max : planLeftSec()
         func due(_ last: Int, _ every: Int) -> Bool { s - last >= every && (!working || s - last >= every + 600) }
-        if eatOn && due(lastEat, eatEvery) {
+        if eatOn && left >= 1500 && due(lastEat, eatEvery) {
             lastEat = s; lastDrink = s
             say("eat", [:], .info, speak)
-        } else if drinkOn && due(lastDrink, 1200) {
+        } else if drinkOn && left >= 600 && due(lastDrink, 1200) {
             lastDrink = s
             say("drink", [:], .info, speak)
         }
@@ -742,6 +781,10 @@ final class WorkoutEngine {
         }
     }
 
+    static func verdictText(_ v: String) -> String {
+        v == "high" ? "mocniej niż plan" : v == "low" ? "trochę poniżej planu" : "idealnie w zakresie"
+    }
+
     // MARK: - Podsumowanie
 
     func makeSummary(file: String) -> WorkoutSummary {
@@ -753,7 +796,7 @@ final class WorkoutEngine {
         return WorkoutSummary(
             file: file, durationSec: n, avgPower: n > 0 ? total / n : 0, normalizedPower: normalizedPower(),
             avgHr: hrs.isEmpty ? nil : avgInt(hrs), maxHr: hrs.max(), kJ: total / 1000,
-            compliancePct: evalSec > 0 ? weighted / evalSec : 0, series: series, efforts: efforts)
+            compliancePct: evalSec > 0 ? weighted / evalSec : 0, series: series, efforts: efforts, laps: laps)
     }
 
     /// Ręczne zakończenie (przycisk Stop) – w dowolnym momencie, także po planie.
@@ -796,7 +839,9 @@ final class WorkoutEngine {
             power: p, power3s: p == nil ? nil : p3, powerSmooth: st == nil ? nil : ps, hr: hr, cadence: cad, balanceL: bal,
             targetLow: st?.powerLow ?? 0, targetHigh: st?.powerHigh ?? 0,
             inRange: (st != nil && ps != nil) ? (ps! >= st!.powerLow && ps! <= st!.powerHigh) : nil,
-            lat: location?.lat, lon: location?.lon, lastSeries: series.last, falseStartLeft: falseStartLeft))
+            lat: location?.lat, lon: location?.lon, lastSeries: series.last, falseStartLeft: falseStartLeft,
+            stepAvgPower: st == nil || stepSecs.isEmpty ? nil : avgInt(stepSecs.map { P[$0] }),
+            vKmh: vSpeed * 3.6, vKm: vDist / 1000))
     }
 
     private func avgInt(_ a: [Int]) -> Int { a.isEmpty ? 0 : Int((Double(a.reduce(0, +)) / Double(a.count)).rounded()) }

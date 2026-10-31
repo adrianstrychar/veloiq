@@ -5,6 +5,8 @@ import type { WorkoutScript } from '@/lib/ride/workout-script';
 import type { WorkoutSummary } from '@/lib/ride/ride-engine';
 import type { Ride } from './useRide';
 import { IconSpark, hmmss, mmss } from './parts';
+import { verdictLabel, verdictColor } from './verdict';
+import { rideDistances } from '@/lib/ride/virtual-speed';
 
 export interface RecordedSample { s: number; p?: number; hr?: number; cad?: number; lat?: number; lon?: number }
 
@@ -57,8 +59,12 @@ export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onA
 
   const IF = ftp ? summary.normalizedPower / ftp : 0;
   const tss = ftp ? Math.round((summary.durationSec * summary.normalizedPower * IF) / (ftp * 3600) * 100) : 0;
+  const distKm = useMemo(() => (samples.length ? (rideDistances(samples).slice(-1)[0] ?? 0) / 1000 : 0), [samples]);
+  const f1 = (x: number) => x.toFixed(1).replace('.', ',');
   const stats: { l: string; v: string; u?: string }[] = [
     { l: 'Czas', v: hmmss(summary.durationSec) }, { l: 'NP', v: String(summary.normalizedPower), u: 'W' },
+    { l: 'Dystans', v: samples.length ? f1(distKm) : '–', u: 'km' },
+    { l: 'Śr. prędk.', v: samples.length && summary.durationSec ? f1(distKm / (summary.durationSec / 3600)) : '–', u: 'km/h' },
     { l: 'Śr. moc', v: String(summary.avgPower), u: 'W' }, { l: 'IF', v: IF.toFixed(2).replace('.', ',') },
     { l: 'TSS', v: String(tss) }, { l: 'Praca', v: String(summary.kJ), u: 'kJ' },
     { l: 'Śr. HR', v: summary.avgHr ? String(summary.avgHr) : '–' }, { l: 'Max HR', v: summary.maxHr ? String(summary.maxHr) : '–' },
@@ -166,10 +172,9 @@ export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onA
       {summary.series.length > 0 && (
         <section className={s.card} aria-label="Serie" style={{ gap: 6 }}>
           <span className={s.eyebrow}>Serie – plan vs wykonanie</span>
-          <div className={s.seriesHead}><span>#</span><span>Czas</span><span className={s.right}>Moc</span><span className={s.right}>Zakres</span><span className={s.right}>Przerwa</span></div>
+          <div className={s.seriesHead}><span>#</span><span>Czas</span><span className={s.right}>Moc</span><span className={s.right}>Ocena</span><span className={s.right}>Przerwa</span></div>
           {summary.series.map((x) => {
             const note = x.endedEarly ? `przerwana z ${mmss(x.plannedSec)}` : `plan ${mmss(x.plannedSec)}`;
-            const pctColor = x.compliancePct >= 85 ? 'var(--ok)' : x.compliancePct >= 70 ? 'var(--amber)' : 'var(--danger)';
             return (
               <div key={x.n} className={s.seriesRow}>
                 <span style={{ fontWeight: 700, color: 'var(--cyan)' }}>{x.n}</span>
@@ -178,7 +183,7 @@ export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onA
                   <span style={{ fontSize: 11, color: x.endedEarly ? 'var(--danger)' : 'var(--muted)' }}>{note}</span>
                 </span>
                 <span className={`${s.right} ${s.statValue}`} style={{ fontSize: 19 }}>{x.avgPower} W</span>
-                <span className={s.right} style={{ fontSize: 14, fontWeight: 600, color: pctColor }}>{x.compliancePct}%</span>
+                <span className={s.right} style={{ fontSize: 13, fontWeight: 600, color: verdictColor(x) }}>{verdictLabel(x, true)}</span>
                 <span className={s.right} style={{ fontSize: 14, color: 'var(--text-2)' }}>{x.restBeforeSec != null ? mmss(x.restBeforeSec) : '–'}</span>
               </div>
             );

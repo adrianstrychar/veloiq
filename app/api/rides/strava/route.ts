@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { refreshStravaToken } from '@/lib/strava';
-import { buildTcx } from '@/lib/ride/tcx';
+import { buildTcx, type TcxLap } from '@/lib/ride/tcx';
 import { veloiqActivityId } from '@/lib/ride/import-rides';
 import { syncStravaActivities, recalculateFitnessMetrics } from '@/lib/sync';
 import type { SavedSample } from '@/lib/ride/save-ride';
@@ -30,7 +30,8 @@ export async function POST(req: NextRequest) {
   }
 
   // jazda: wskazana albo ostatnia z telefonu
-  const base = () => supabase.from('rides').select('id, started_at, outdoor, workout_name, kj, samples_path, source').eq('user_id', user.id);
+  // '*' – kolumna laps (migracja 022) może jeszcze nie istnieć
+  const base = () => supabase.from('rides').select('*').eq('user_id', user.id);
   const { data: rows } = rideId
     ? await base().eq('id', rideId).limit(1)
     : await base().order('started_at', { ascending: false }).limit(1);
@@ -57,7 +58,8 @@ export async function POST(req: NextRequest) {
   }
 
   const name = (ride.workout_name as string | null) || 'Jazda';
-  const tcx = buildTcx({ startedAt: ride.started_at as string, samples, name, kJ: ride.kj as number | null });
+  const tcx = buildTcx({ startedAt: ride.started_at as string, samples, name, kJ: ride.kj as number | null,
+    laps: Array.isArray(ride.laps) ? (ride.laps as TcxLap[]) : null });
   const form = new FormData();
   form.append('file', new Blob([tcx], { type: 'application/xml' }), `veloiq-${ride.id}.tcx`);
   form.append('data_type', 'tcx');

@@ -11,6 +11,7 @@ import { computeBestEfforts } from '@/lib/strava/details';
 import { downsampleStreams } from '@/lib/strava/streams';
 import { recalculateFitnessMetrics, recalculateFtpEstimate, recalculateVo2Estimate } from '@/lib/sync';
 import type { SavedSample } from './save-ride';
+import { virtualDistances } from './virtual-speed';
 
 export const isVeloiqRideId = (id: number | string) => Number(id) < 0;
 export const veloiqActivityId = (startedAtIso: string) => -Math.floor(new Date(startedAtIso).getTime() / 1000);
@@ -65,6 +66,7 @@ export function buildActivityRow(ride: RideRow, samples: SavedSample[], athleteI
     const dt = Math.max(1, gps[i].s - gps[i - 1].s);
     if (d / dt * 3600 < 120) { km += d; maxSpeed = Math.max(maxSpeed, d * 1000 / dt); } // odrzuć skoki GPS
   }
+  if (!gps.length && n) km = (virtualDistances(watts).slice(-1)[0] ?? 0) / 1000;   // trenażer: dystans wirtualny (jak Zwift)
   const cads = samples.map((x) => x.cad ?? 0).filter((c) => c > 0);
   const avgCad = cads.length ? Math.round(cads.reduce((a, b) => a + b, 0) / cads.length) : null;
   const maxW = watts.length ? Math.max(...watts) : null;

@@ -5,6 +5,7 @@ import type { WorkoutScript } from '@/lib/ride/workout-script';
 import type { LiveSample } from '@/lib/ride/ride-engine';
 import type { Ride } from './useRide';
 import { NavCard } from './RouteCard';
+import { verdictLabel } from './verdict';
 import { Cue, IconNext, IconPause, IconPlay, IconStop, Metric, PowerGauge, ProgressStrip, StatusDot, hmmss, mmss } from './parts';
 
 const intervalNo = (plan: WorkoutScript | null, idx: number) =>
@@ -54,8 +55,15 @@ const STEP_NAMES: Record<string, string> = { warmup: 'Rozgrzewka', interval: 'In
 export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | null }) {
   const live = ride.live;
   const [confirmStop, setConfirmStop] = useState(false);
-  const { km, kmh } = useDistance(live);
+  const gps = useDistance(live);
   const totals = useTotals(live);
+  // dystans i prędkość: na zewnątrz z GPS, na trenażerze wirtualne (jak w Zwift)
+  const outdoorGps = !!live?.lat;
+  const km = outdoorGps ? gps.km : live?.vKm ?? 0;
+  const kmh = outdoorGps ? gps.kmh : live?.vKmh ?? 0;
+  const avgKmh = (live?.elapsed ?? 0) > 30 ? km / ((live?.elapsed ?? 1) / 3600) : kmh;
+  const hasDist = outdoorGps || live?.vKm != null;
+  const f1 = (x: number) => x.toFixed(1).replace('.', ',');
   useEffect(() => { if (!confirmStop) return; const t = setTimeout(() => setConfirmStop(false), 3000); return () => clearTimeout(t); }, [confirmStop]);
 
   const phase = ride.paused ? 'paused' : ride.autoPaused ? 'ridePaused' : live?.phase ?? 'running';
@@ -139,11 +147,11 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
       ) : phase === 'free' ? (
         <section className={s.grid2}>
           <Metric label="Czas" value={hmmss(live?.elapsed ?? 0)} />
-          {live?.lat
-            ? <Metric label="Dystans" value={km.toFixed(1).replace('.', ',')} unit="km" />
+          {hasDist
+            ? <Metric label="Dystans" value={f1(km)} unit="km" />
             : <Metric label="Praca" value={totals.kj} unit="kJ" />}
-          {live?.lat
-            ? <Metric label="Prędkość" value={kmh.toFixed(1).replace('.', ',')} unit="km/h" />
+          {hasDist
+            ? <Metric label="Prędkość" value={f1(kmh)} unit="km/h" sub={`śr. ${f1(avgKmh)}`} />
             : <Metric label="Śr. moc" value={totals.avg} unit="W" />}
           <Metric label="Tętno" value={live?.hr ?? '–'} unit="bpm" />
         </section>
@@ -170,8 +178,18 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
           )}
         </div>
         {work && phase !== 'autoPaused' && high > 0 && <PowerGauge power={p3} low={low} high={high} />}
+        {work && phase !== 'free' && live?.stepAvgPower != null && (live?.stepElapsed ?? 0) >= 5 && (() => {
+          const a = live.stepAvgPower!;
+          const c = high > 0 && a > high ? 'var(--over)' : low > 0 && a < low ? 'var(--under)' : 'var(--ok)';
+          return (
+            <div className={s.row} style={{ alignItems: 'baseline' }}>
+              <span className={s.metricLabel}>{type === 'interval' ? 'Średnia interwału' : 'Średnia odcinka'}</span>
+              <span className={s.statValue} style={{ fontSize: 26, color: c }}>{a}<span className={s.unit} style={{ fontSize: 14 }}> W</span></span>
+            </div>
+          );
+        })()}
         {live?.lastSeries && type !== 'interval' && phase !== 'free' && (
-          <span className={s.small}>Ostatnia seria {live.lastSeries.n}: <strong className={s.strong}>{live.lastSeries.avgPower} W</strong> · {mmss(live.lastSeries.durationSec)} · {live.lastSeries.compliancePct}% w zakresie</span>
+          <span className={s.small}>Ostatnia seria {live.lastSeries.n}: <strong className={s.strong}>{live.lastSeries.avgPower} W</strong> · {mmss(live.lastSeries.durationSec)} · {verdictLabel(live.lastSeries)}</span>
         )}
       </section>
 
@@ -186,8 +204,16 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
         <span className={s.small}>Plan zakończony ✓ · serie: {ride.planDone.series.map((x) => x.avgPower).join(', ') || '–'} W</span>
       )}
 
+      {phase !== 'free' && hasDist && (
+        <section className={s.grid3} aria-label="Dystans i prędkość">
+          <Metric label="Dystans" value={f1(km)} unit="km" />
+          <Metric label="Prędkość" value={f1(kmh)} unit="km/h" />
+          <Metric label="Śr. prędkość" value={f1(avgKmh)} unit="km/h" />
+        </section>
+      )}
+
       {phase === 'free' ? (
-        live?.lat ? (
+        hasDist ? (
           <section className={s.grid2} aria-label="Od startu">
             <Metric label="Śr. moc" value={totals.avg} unit="W" />
             <Metric label="Praca" value={totals.kj} unit="kJ" />
