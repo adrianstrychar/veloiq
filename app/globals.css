@@ -9,6 +9,17 @@
   --card-hover: #1a1a24;
   --border: #1e1e2e;
   --text-secondary: #8b8b9e;
+  /* pełny ekran jak w natywnej aplikacji: dolna nawigacja + wskaźnik home (iPhone) */
+  --nav-h: 76px;
+  --nav-total: calc(var(--nav-h) + env(safe-area-inset-bottom));
+  /* wysokość treści między paskiem statusu a nawigacją (main ma py-4 = 2rem) */
+  --content-h: calc(100dvh - env(safe-area-inset-top) - 2rem - var(--nav-total));
+}
+
+html {
+  overflow-x: hidden;            /* iOS 15 nie zna overflow: clip – bez tego da się „jechać w bok” */
+  overscroll-behavior: none;     /* bez gumowego odbicia całej strony */
+  background: var(--background);
 }
 
 body {
@@ -20,7 +31,41 @@ body {
   padding-top: env(safe-area-inset-top);
   /* siatka bezpieczeństwa: aplikacja iOS nie zmniejsza strony jak Safari – nic nie może wystawać w bok */
   overflow-x: clip;
+  overscroll-behavior: none;
+  overflow-wrap: break-word;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;    /* bez opóźnienia i zoomu podwójnym stuknięciem */
 }
+
+/* pasek statusu: przewijana treść znika pod nim (a nie przewija się pod zegarem) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: env(safe-area-inset-top);
+  background: var(--background);
+  z-index: 45;
+  pointer-events: none;
+}
+
+button, a, nav, [role="button"], label { -webkit-user-select: none; user-select: none; }
+
+/* iOS: pole tekstowe < 16 px = automatyczny zoom strony przy pisaniu (i przesuwanie w bok) */
+@supports (-webkit-touch-callout: none) {
+  input, textarea, select { font-size: max(16px, 1em) !important; }
+}
+
+/* powłoka zakładek: dokładnie ekran, dół zarezerwowany na nawigację (i mini-pasek treningu) */
+.app-shell {
+  min-height: calc(100dvh - env(safe-area-inset-top));
+  padding-bottom: var(--nav-total);   /* main ma jeszcze py-4 – odstęp nad nawigacją */
+}
+.app-shell:has([data-ride-minibar]) { padding-bottom: calc(var(--nav-total) + 64px); }
+
+/* czat: przypięty między paskiem statusu a nawigacją (przewija się tylko lista) */
+.chat-fixed { position: fixed; left: 0; right: 0; top: env(safe-area-inset-top); bottom: var(--nav-total); z-index: 10; }
+.app-shell:has([data-ride-minibar]) .chat-fixed { bottom: calc(var(--nav-total) + 64px); }
 
 @layer utilities {
   .text-balance {

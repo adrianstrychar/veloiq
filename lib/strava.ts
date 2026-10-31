@@ -165,19 +165,21 @@ export async function fetchStravaActivities(
   accessToken: string,
   after: number
 ): Promise<StravaActivity[]> {
-  const params = new URLSearchParams({
-    after: String(after),
-    per_page: '100',
-  });
-
-  const response = await fetch(
-    `https://www.strava.com/api/v3/athlete/activities?${params.toString()}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
-
-  if (!response.ok) {
-    throw new Error(`Strava activities fetch failed: ${response.status}`);
+  // Strava z `after` zwraca od najstarszych – bez stronicowania > 100 aktywności (też nie-rowerowych)
+  // ucinałoby NAJNOWSZE jazdy. Strony po 100, maks. 10 (1000 aktywności).
+  const all: StravaActivity[] = [];
+  for (let page = 1; page <= 10; page++) {
+    const params = new URLSearchParams({ after: String(after), per_page: '100', page: String(page) });
+    const response = await fetch(
+      `https://www.strava.com/api/v3/athlete/activities?${params.toString()}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!response.ok) {
+      throw new Error(`Strava activities fetch failed: ${response.status}`);
+    }
+    const batch = (await response.json()) as StravaActivity[];
+    all.push(...batch);
+    if (batch.length < 100) break;
   }
-
-  return response.json();
+  return all;
 }

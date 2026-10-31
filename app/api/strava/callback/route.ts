@@ -29,7 +29,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${appUrl}/login?error=not_authenticated`);
   }
 
-  const tokenData = await exchangeStravaCode(code);
+  let tokenData: Awaited<ReturnType<typeof exchangeStravaCode>>;
+  try {
+    tokenData = await exchangeStravaCode(code);
+  } catch {
+    // kod jednorazowy / Strava chwilowo niedostępna (np. 429) → czytelny powrót zamiast surowego 500
+    return NextResponse.redirect(`${appUrl}/login?error=strava_failed`);
+  }
 
   // Prefill z profilu Strava (best-effort — token/braki → null, onboarding dopyta).
   let sp = { weight: null as number | null, ftp: null as number | null, sex: null as 'M' | 'F' | null };
@@ -71,9 +77,12 @@ export async function GET(request: NextRequest) {
   }
 
   // Pierwszy sync aktywności i przeliczenie CTL/ATL/TSB (jak dotąd — backfill best_efforts leci w tle).
-  const result = await syncStravaActivities(supabase, athlete);
-  if (!result.skipped) {
-    await recalculateFitnessMetrics(supabase, athlete.id);
+  // Błąd synchronizacji nie blokuje logowania – tokeny są zapisane, sync dociągnie się później.
+  try {
+    const result = await syncStravaActivities(supabase, athlete);
+    if (!result.skipped) await recalculateFitnessMetrics(supabase, athlete.id);
+  } catch (e) {
+    console.error('[strava callback] sync failed', e);
   }
 
   // REDIRECT wg statusu onboardingu: niedokończony → /onboarding, gotowy → dashboard. Zero pętli

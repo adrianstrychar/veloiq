@@ -75,7 +75,7 @@ export function RideMiniBar() {
     : work && p < live.targetLow ? 'za słabo' : work ? 'w zakresie' : 'luźno';
   const color = state === 'w zakresie' || state === 'luźno' ? '#5B9B7E' : state === 'za mocno' ? '#D98A57' : state === 'za słabo' ? '#8C7BC0' : '#C99A4E';
   return (
-    <Link href={NAV_ROUTES.ride} className={s.miniBar} aria-label="Trening w toku – wróć do jazdy">
+    <Link href={NAV_ROUTES.ride} className={s.miniBar} data-ride-minibar="" aria-label="Trening w toku – wróć do jazdy">
       <span className={s.miniTag}>{free ? 'Swobodna' : live.stepType === 'interval' ? 'Interwał' : live.stepName}</span>
       <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15, minWidth: 0 }}>
         <span className={s.miniMain}>{free ? hmmss(live.elapsed) : mmss(live.stepRemaining)} · {p} W</span>

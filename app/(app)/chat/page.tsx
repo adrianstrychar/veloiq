@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useChatStore, type Message, type PendingCard } from '@/components/veloiq/ChatStore';
@@ -21,6 +22,7 @@ const mdComponents: Components = {
   ),
   th: ({ node, ...props }) => <th style={{ border: `1px solid ${C.border}`, padding: '4px 8px', textAlign: 'left', fontWeight: 600 }} {...props} />,
   td: ({ node, ...props }) => <td style={{ border: `1px solid ${C.border}`, padding: '4px 8px', verticalAlign: 'top' }} {...props} />,
+  pre: ({ node, ...props }) => <pre style={{ overflowX: 'auto', maxWidth: '100%', whiteSpace: 'pre-wrap' }} {...props} />,
 };
 
 const TEXTAREA_MAX = 120; // ~4 linie przy 16px; powyżej scroll wewnętrzny (część 2.8)
@@ -73,6 +75,7 @@ function StarterCard({ s, onClick }: { s: BriefStarter; onClick: () => void }) {
 }
 
 export default function ChatPage() {
+  const router = useRouter();   // po zapisie zmiany: odśwież dane (plan/kalendarz nie pokażą starej wersji)
   // Stan wątku (messages/input) ze store nad zakładkami — przeżywa nawigację.
   const { messages, setMessages, input, setInput, touch, ensureFresh } = useChatStore();
   const [loading, setLoading] = useState(false);
@@ -107,17 +110,29 @@ export default function ChatPage() {
   // Klawiatura (wymóg 1.3, iOS fallback): visualViewport — gdy dostępny, wysokość kontenera =
   // viewport widoczny − BottomNav (NAV_PX = pb-20 shella, 5rem). Listener z cleanupem. Bez vv
   // wysokość trzyma CSS calc(100dvh − 7rem). Klawiatura zmniejsza vv.height → input jedzie w górę.
+  // Pełny ekran jak w aplikacji: czat jest „przypięty” między paskiem statusu a nawigacją (position: fixed),
+  // strona pod spodem się nie przewija – przewija się tylko lista wiadomości. Klawiatura (visualViewport)
+  // podnosi dół kontenera nad klawiaturę.
   useEffect(() => {
+    const root = document.documentElement;
+    const prevOverflow = root.style.overflow;
+    root.style.overflow = 'hidden';
     const vv = window.visualViewport;
-    if (!vv) return;
-    const NAV_PX = 80;
     const apply = () => {
       const el = containerRef.current;
-      if (el) el.style.height = `${vv.height - NAV_PX}px`;
+      if (!el || !vv) return;
+      const kb = window.innerHeight - vv.height - vv.offsetTop;
+      el.style.bottom = kb > 120 ? `${kb}px` : '';
+      if (kb > 120) requestAnimationFrame(scrollListToBottom);
     };
     apply();
-    vv.addEventListener('resize', apply);
-    return () => vv.removeEventListener('resize', apply);
+    vv?.addEventListener('resize', apply);
+    vv?.addEventListener('scroll', apply);
+    return () => {
+      root.style.overflow = prevOverflow;
+      vv?.removeEventListener('resize', apply);
+      vv?.removeEventListener('scroll', apply);
+    };
   }, []);
 
   // Focus na polu (wymóg 1.5): po rAF przewiń listę do dołu, żeby klawiatura nie zasłoniła ostatniej.
@@ -173,6 +188,7 @@ export default function ChatPage() {
         ? data.pendings.map((p: Omit<PendingCard, 'status'>) => ({ ...p, status: 'pending' as const }))
         : [];
       setMessages([...nextMessages, { role: 'assistant', content: data.reply, pendings }]);
+      router.refresh();   // trener mógł zapisać zmianę („tak” w rozmowie)
     } catch {
       setError('Nie udało się połączyć z serwerem');
     } finally {
@@ -199,11 +215,16 @@ export default function ChatPage() {
       const data = await res.json();
 
       if (action === 'cancel') {
+        if (!res.ok || data.ok === false) {
+          updatePending(pending.change_id, { busy: false, resultMsg: data.error ?? 'Nie udało się odłożyć – spróbuj ponownie.' });
+          return;
+        }
         updatePending(pending.change_id, { status: 'cancelled', busy: false });
         return;
       }
       if (data.ok) {
         updatePending(pending.change_id, { status: 'committed', resultMsg: data.message, busy: false });
+        router.refresh();
         // Świadomość modelu: dopisz potwierdzenie do wątku (trafia do historii kolejnej tury).
         setMessages((prev) => [...prev, { role: 'assistant', content: `✓ ${data.message ?? 'Zapisano.'}` }]);
       } else {
@@ -230,7 +251,7 @@ export default function ChatPage() {
     // Wymóg 1.1: wysokość 100dvh (NIE 100vh) − chrome shella (BottomNav 5rem + py-4 2rem = 7rem).
     // Flex: header (shrink-0) + lista (flex-1, scroll) + input (shrink-0). visualViewport nadpisuje
     // height pikselami przy klawiaturze (efekt wyżej). Nie ruszamy app-shella.
-    <div ref={containerRef} className="flex flex-col max-w-md mx-auto" style={{ height: 'calc(100dvh - 7rem)' }}>
+    <div ref={containerRef} className="chat-fixed flex flex-col max-w-md mx-auto" style={{ padding: '0 16px', background: C.bg }}>
       {/* Self-contained CSS: bounce typingu + ukrycie scrollbara chipów (bez dotykania globals.css) */}
       <style>{`@keyframes veloChatBounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-4px);opacity:1}}.velo-noscroll::-webkit-scrollbar{display:none}`}</style>
 
@@ -251,7 +272,7 @@ export default function ChatPage() {
         ref={listRef}
         onScroll={onListScroll}
         className="flex-1 overflow-y-auto"
-        style={{ overscrollBehavior: 'contain', overflowAnchor: 'none', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}
+        style={{ overflowX: 'hidden', minHeight: 0, overscrollBehavior: 'contain', overflowAnchor: 'none', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}
       >
         {/* BRIEF DNIA + STARTERY (część 3.1-3.3): przed pierwszą wiadomością usera. Brief jako wiadomość
             trenera (etykieta "TRENER · BRIEF DNIA"); pod nim 4 startery. Fallback: sam hint, gdy brak briefu. */}
@@ -260,7 +281,7 @@ export default function ChatPage() {
             {briefText && (
               <div>
                 <CoachLabel suffix="Brief dnia" />
-                <div style={{ fontSize: '0.78rem', lineHeight: 1.65, color: C.text, fontFamily: F.body }}>
+                <div style={{ fontSize: '0.78rem', lineHeight: 1.65, color: C.text, fontFamily: F.body, overflowWrap: 'anywhere', minWidth: 0 }}>
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{briefText}</ReactMarkdown>
                 </div>
               </div>
@@ -277,14 +298,14 @@ export default function ChatPage() {
           <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: m.role === 'user' ? 'flex-end' : 'stretch' }}>
             {m.role === 'user' ? (
               // WIADOMOŚĆ UŻYTKOWNIKA (2.3): cichy dymek panelHi, radius 18 z dziubkiem 6 w prawym górnym, max 80%, do prawej
-              <div style={{ alignSelf: 'flex-end', maxWidth: '80%', background: C.panelHi, color: C.text, borderRadius: '18px 6px 18px 18px', padding: '9px 13px', fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+              <div style={{ alignSelf: 'flex-end', maxWidth: '80%', background: C.panelHi, color: C.text, borderRadius: '18px 6px 18px 18px', padding: '9px 13px', fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', minWidth: 0 }}>
                 {m.content}
               </div>
             ) : (
               // WIADOMOŚĆ TRENERA (2.2): bez dymka, etykieta TRENER, sam tekst (fs .78rem, lh 1.65)
               <div>
                 <CoachLabel />
-                <div style={{ fontSize: '0.78rem', lineHeight: 1.65, color: C.text, fontFamily: F.body }}>
+                <div style={{ fontSize: '0.78rem', lineHeight: 1.65, color: C.text, fontFamily: F.body, overflowWrap: 'anywhere', minWidth: 0 }}>
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{m.content}</ReactMarkdown>
                 </div>
               </div>
@@ -312,7 +333,7 @@ export default function ChatPage() {
       </div>
 
       {/* DOLNA STREFA: sam input (chipy usunięte całkowicie). Tło C.bg, top border, safe-area iPhone (1.4). */}
-      <div style={{ flexShrink: 0, background: C.bg, borderTop: `1px solid ${C.border}`, paddingBottom: 'calc(8px + env(safe-area-inset-bottom))' }}>
+      <div style={{ flexShrink: 0, background: C.bg, borderTop: `1px solid ${C.border}`, paddingBottom: 8 }}>
         {/* INPUT (2.7): pill radius 22, tło C.bg, border 1.5px (cyan w focusie) + przycisk okrągły 40px */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', padding: '12px 16px 0' }}>
           <textarea

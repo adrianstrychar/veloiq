@@ -12,6 +12,7 @@ import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { computeProgressStats, type ActivityStatRow } from '@/lib/progressStats';
 import { ftpDisplay, deriveFtpSource } from '@/lib/ftp';
 import { localTodayISO, mondayOfISO } from '@/lib/plan';
+import { userTodayISO } from '@/lib/timezone';
 import type { RacePriority } from '@/lib/race-taper';
 import { reconstructFtp, type ReconRide } from '@/lib/ftp-reconstruct';
 import { forecastFtpPeriodized, buildRateFromEnvelope, type RaceLite } from '@/lib/ftp-forecast';
@@ -73,7 +74,7 @@ export default async function DashboardPage() {
       .from('strava_activities')
       .select('activity_date, distance_km, name, duration_seconds, elevation_m, tss, start_date_local:raw_data->start_date_local')
       .eq('athlete_id', athleteId)
-      .gte('activity_date', '2026-01-01')
+      .gte('activity_date', `${userTodayISO().slice(0, 4)}-01-01`)
       .order('activity_date', { ascending: true }),
     // Jazdy z krzywą mocy — REKONSTRUKCJA historii FTP (silnik 28d wstecz, best_efforts; streams
     // niepotrzebne). intensity_factor = sygnał "twardej jazdy" do envelope dowodowego (hold vs zejście).
@@ -184,7 +185,7 @@ export default async function DashboardPage() {
   // Rekordy mocy per okres — best_efforts, bucketowane po dacie lokalnej (start_date_local ?? activity_date),
   // spójnie z RecordsCard. Okno okresu (tydzień/miesiąc/sezon) filtruje helper.
   const power = computePowerByPeriod(
-    (powerRides ?? []).map((r) => ({
+    (powerRides ?? []).filter((r) => r.type !== 'EBikeRide').map((r) => ({
       date: (typeof (r as { start_date_local?: unknown }).start_date_local === 'string'
         ? (r as { start_date_local: string }).start_date_local
         : (r.activity_date as string)).slice(0, 10),
@@ -193,8 +194,8 @@ export default async function DashboardPage() {
     todayDate
   );
 
-  // Cel sezonu — stała w configu (TODO: przenieść do configu/athletes.season_km_goal, bez UI w tym etapie).
-  const SEASON_KM_GOAL = 12000;
+  // Cel sezonu: z profilu (athletes.season_km_goal), domyślnie 12 000 km.
+  const SEASON_KM_GOAL = Number((athlete as { season_km_goal?: number | null } | null)?.season_km_goal) || 12000;
   const goal = computeGoal(progressStats.totalKm, SEASON_KM_GOAL, todayDate);
 
   // Plan bieżącego tygodnia → Dziś + Ten tydzień.

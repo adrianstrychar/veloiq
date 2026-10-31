@@ -84,14 +84,14 @@ export function WorkoutDetail({ day, ftp, onClose }: WorkoutDetailProps) {
   const steps = buildSessionSteps(wk.expanded, ftp);
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: C.bg, overflowY: 'auto', color: C.text }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: C.bg, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', color: C.text }}>
       {/* Sticky header */}
       <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'rgba(6,8,10,0.9)', backdropFilter: 'blur(16px)', borderBottom: `1px solid ${C.border}`, padding: 'calc(12px + env(safe-area-inset-top)) 18px 12px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <button onClick={onClose} aria-label="Zamknij" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 9, cursor: 'pointer', padding: '6px 10px', color: C.muted, fontSize: 16, lineHeight: 1 }}>×</button>
         <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.18em', color: tc }}>PLANOWANY TRENING</div>
       </div>
 
-      <div style={{ maxWidth: 560, margin: '0 auto', padding: '20px 16px 48px' }}>
+      <div style={{ maxWidth: 560, margin: '0 auto', padding: '20px 16px calc(48px + env(safe-area-inset-bottom))' }}>
         {/* Nagłówek */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
@@ -102,7 +102,7 @@ export function WorkoutDetail({ day, ftp, onClose }: WorkoutDetailProps) {
         </div>
 
         {/* Statystyki docelowe */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginBottom: 16 }}>
           {([['CZAS', fmtDur(day.dur_min), C.text], ['MOC śr', day.watt, C.cyan], ['HR', day.hr, C.red], ['TSS', String(day.tss), C.yellow]] as const).map(([l, v, c]) => (
             <div key={l} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 8px', textAlign: 'center' }}>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2, color: c }}>{v}</div>
@@ -156,7 +156,7 @@ export function WorkoutDetail({ day, ftp, onClose }: WorkoutDetailProps) {
           <>
             <SectionTitle color={tc}>Co zabrać ze sobą</SectionTitle>
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, marginBottom: 16 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10, marginBottom: 10 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                   <div style={{ fontSize: 22, flexShrink: 0 }}>💧</div>
                   <div>

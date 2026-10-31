@@ -12,6 +12,7 @@ import {
   type RaceContext,
 } from '@/lib/ai/dailyInsight';
 import type { RacePriority } from '@/lib/race-taper';
+import { userTodayISO } from '@/lib/timezone';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -99,7 +100,7 @@ export async function GET() {
   const athleteId = athlete.id as string;
 
   // "Dziś" = realna data serwera (plan/start liczymy od dziś, TSB z ostatniego wiersza PMC).
-  const today = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+  const today = new Date(userTodayISO() + 'T00:00:00Z');
   const todayIso = today.toISOString().slice(0, 10);
   const yesterday = new Date(today);
   yesterday.setUTCDate(today.getUTCDate() - 1);

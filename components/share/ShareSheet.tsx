@@ -99,7 +99,7 @@ export default function ShareSheet({ data, onClose }: { data: StickerData; onClo
   return (
     <div
       onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', overscrollBehavior: 'contain' }}
     >
       <div
         onClick={(e) => e.stopPropagation()}

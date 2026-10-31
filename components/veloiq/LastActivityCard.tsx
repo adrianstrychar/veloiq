@@ -117,7 +117,7 @@ export function LastActivityCard({ activity, ftp }: LastActivityCardProps) {
         </div>
 
         {/* Siatka 4 metryk */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)', gap: 8 }}>
           <Metric label="Dystans" value={data.distance_km != null ? `${Math.round(data.distance_km)}` : '—'} unit="km" color={C.cyan} />
           <Metric label="Wznosy" value={data.elevation_m != null ? `${data.elevation_m}` : '—'} unit="m" color={C.text} />
           <Metric label="Czas" value={data.duration_seconds != null ? hhmm(data.duration_seconds) : '—'} unit="" color={C.text} />

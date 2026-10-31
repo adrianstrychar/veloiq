@@ -41,7 +41,7 @@ export function SeasonGoalCard({ goal }: { goal: GoalStatus }) {
           </div>
           {/* mikro-podpis pod znacznikiem — wyjaśnia, co oznacza pionowa kreska */}
           <div style={{ position: 'relative', height: 10, marginTop: 5 }}>
-            <span style={{ position: 'absolute', left: `${goal.tickPct}%`, transform: 'translateX(-50%)', fontSize: 8, lineHeight: 1, color: C.muted, whiteSpace: 'nowrap' }}>zakładane tempo</span>
+            <span style={{ position: 'absolute', left: `${goal.tickPct}%`, transform: goal.tickPct > 85 ? 'translateX(-100%)' : goal.tickPct < 15 ? 'none' : 'translateX(-50%)', fontSize: 8, lineHeight: 1, color: C.muted, whiteSpace: 'nowrap' }}>zakładane tempo</span>
           </div>
         </div>
 

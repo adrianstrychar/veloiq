@@ -89,7 +89,7 @@ function StatCard({ label, value, color }: { label: string; value: string; color
   return (
     <div style={{
       background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
-      padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4,
+      padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0,
     }}>
       <div style={{ fontSize: 18, fontWeight: 700, color: color ?? C.text, lineHeight: 1 }}>{value}</div>
       <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -183,7 +183,7 @@ function PowerProfile({ efforts, ftp }: { efforts: Record<string, number> | null
   const keys = EFFORT_ORDER.filter((k) => efforts[k] != null);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8 }}>
       {keys.map((k) => {
         const watts = efforts[k];
         const pct = ftp ? Math.round((watts / ftp) * 100) : null;
@@ -246,7 +246,7 @@ function SingleLapCard({ cl, accent }: { cl: ClassifiedLap; accent: string }) {
           {cl.lap.name ?? `Lap ${cl.n}`}
         </span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
         <LapCell label="Moc"     value={cl.watts != null ? `${cl.watts} W` : '—'} color={C.cyan} />
         <LapCell label="HR"      value={cl.hr != null ? `${cl.hr} bpm` : '—'} />
         <LapCell label="Czas"    value={formatDuration(cl.durationSec)} />
@@ -263,7 +263,7 @@ function IntervalRow({ cl, accent }: { cl: ClassifiedLap; accent: string }) {
   const color = isRecovery ? C.muted : ftpColor(cl.pctFtp);
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: '20px 1fr auto auto', gap: 10, alignItems: 'center',
+      display: 'grid', gridTemplateColumns: '20px minmax(0, 1fr) auto auto', gap: 10, alignItems: 'center',
       padding: '7px 8px', borderRadius: 6, borderLeft: `3px solid ${accent}`,
       background: isRecovery ? 'transparent' : C.dim,
       opacity: isRecovery ? 0.55 : 1,
@@ -445,7 +445,7 @@ function ExtendedMetrics({ activity }: { activity: RideActivity }) {
   return (
     <div style={{
       background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
-      padding: '10px 12px', display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16, rowGap: 6,
+      padding: '10px 12px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', columnGap: 16, rowGap: 6,
     }}>
       {cells.map((c) => (
         <div key={c.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
@@ -564,7 +564,8 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
         position: 'fixed', inset: 0, zIndex: 50,
         background: 'rgba(0,0,0,0.6)',
         display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
-        overflowY: 'auto', padding: 'calc(16px + env(safe-area-inset-top)) 16px 16px',
+        overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain',
+        padding: 'calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom))',
       }}
     >
       <div
@@ -642,8 +643,8 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
           </div>
         )}
 
-        {/* Statystyki */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+        {/* Statystyki – 2 kolumny: na telefonie 4 nie mieszczą się w szerokości (przewijanie w bok) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
           <StatCard label="Dystans"   value={activity.distance_km != null ? `${activity.distance_km} km` : '—'} color={C.cyan} />
           <StatCard label="Wzniosy"   value={activity.elevation_m != null ? `${Math.round(activity.elevation_m)} m` : '—'} />
           <StatCard label="Czas"      value={activity.duration_seconds != null ? formatDuration(activity.duration_seconds) : '—'} />

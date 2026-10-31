@@ -55,7 +55,15 @@ export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onA
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveErr, setSaveErr] = useState<string>('');
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  useEffect(() => { ride.readRecording(summary.file).then((d) => setSamples(parseJsonl(d))).catch(() => setSamples([])); }, [ride, summary.file]);
+  // zapis sekundowy z telefonu – „Zapisz” dopiero, gdy jest wczytany (inaczej poszedłby pusty plik)
+  const [rec, setRec] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [recTry, setRecTry] = useState(0);
+  useEffect(() => {
+    setRec('loading');
+    ride.readRecording(summary.file)
+      .then((d) => { const x = parseJsonl(d); setSamples(x); setRec(x.length ? 'ok' : 'error'); })
+      .catch(() => { setSamples([]); setRec('error'); });
+  }, [ride, summary.file, recTry]);
 
   const IF = ftp ? summary.normalizedPower / ftp : 0;
   const tss = ftp ? Math.round((summary.durationSec * summary.normalizedPower * IF) / (ftp * 3600) * 100) : 0;
@@ -157,7 +165,7 @@ export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onA
         <section className={s.card} aria-label="Czas w strefach mocy" style={{ gap: 8 }}>
           <span className={s.eyebrow}>Czas w strefach · FTP {ftp} W</span>
           {zones.map((z) => (
-            <div key={z.n} style={{ display: 'grid', gridTemplateColumns: '28px 1fr 56px', gap: 10, alignItems: 'center' }}>
+            <div key={z.n} style={{ display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr) 56px', gap: 10, alignItems: 'center' }}>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>Z{z.n}</span>
               <span style={{ position: 'relative', height: 14, borderRadius: 4, backgroundColor: 'var(--surface-2)', overflow: 'hidden' }}>
                 <span style={{ position: 'absolute', inset: 0, width: `${Math.max(z.pct > 0 ? 2 : 0, z.pct)}%`, backgroundColor: z.color, borderRadius: 4 }} />
@@ -259,13 +267,15 @@ export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onA
       )}
 
       <section className={s.stack} style={{ gap: 10 }}>
-        <button type="button" className={s.btnPrimary} onClick={save} disabled={saving === 'saving' || saving === 'saved'}>
-          {saving === 'saving' ? 'Zapisuję…' : saving === 'saved' ? 'Zapisano ✓' : 'Zapisz w VeloIQ'}
+        {rec === 'error' && saving !== 'saved' && (
+          <div className={s.banner} role="alert">
+            Nie udało się odczytać zapisu jazdy z telefonu.{' '}
+            <button type="button" className={s.btnText} style={{ height: 32, padding: 0, color: 'var(--cyan)' }} onClick={() => setRecTry((n) => n + 1)}>Spróbuj ponownie</button>
+          </div>
+        )}
+        <button type="button" className={s.btnPrimary} onClick={save} disabled={saving === 'saving' || saving === 'saved' || rec !== 'ok'}>
+          {saving === 'saving' ? 'Zapisuję…' : saving === 'saved' ? 'Zapisano ✓' : rec === 'loading' ? 'Wczytuję zapis…' : 'Zapisz w VeloIQ'}
         </button>
-        <div className={s.grid2}>
-          <button type="button" className={s.btnGhost} disabled title="Wkrótce">Strava · wkrótce</button>
-          <button type="button" className={s.btnGhost} disabled title="Wkrótce">FIT · wkrótce</button>
-        </div>
         {saving === 'saved'
           ? <button type="button" className={s.btnText} onClick={() => onDone(false)}>Gotowe</button>
           : <button type="button" className={s.btnText} style={confirmDiscard ? { color: 'var(--danger)' } : undefined}

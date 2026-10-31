@@ -116,7 +116,7 @@ export function buildActivityRow(ride: RideRow, samples: SavedSample[], athleteI
       average_cadence: avgCad, average_speed: moving ? (km * 1000) / moving : 0, max_speed: maxSpeed,
       map: { summary_polyline: poly },
     },
-    synced_at: ride.started_at,
+    synced_at: new Date().toISOString(),
   };
 }
 

@@ -19,6 +19,7 @@ const config: CapacitorConfig = {
   ios: {
     contentInset: 'never',       // safe-area obsługuje CSS (env(safe-area-inset-*))
     backgroundColor: '#0A0A0F',
+    allowsLinkPreview: false,    // bez podglądu linku po przytrzymaniu (nawigacja, karty)
   },
 };
 

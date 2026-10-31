@@ -22,10 +22,20 @@ export interface CalActivity {
   sport_type?: string | null;
 }
 
-// Zakres dat query kalendarza = nawigowalny zakres siatki (Calendar MIN_MONTH..MAX_MONTH,
-// marzec–październik 2026). Nawigacja ‹ › nie wyjdzie poza ten zakres, więc puste miesiące
-// z powodu okna dat są niemożliwe z konstrukcji. Zmieniasz MIN/MAX w Calendar → zmień i to.
-export const CALENDAR_RANGE = { from: '2026-03-01', to: '2026-10-31' } as const;
+// Zakres dat kalendarza = nawigowalny zakres siatki (Calendar MIN_MONTH..MAX_MONTH): przesuwa się
+// razem z datą – 12 miesięcy wstecz i 14 do przodu (przyszłoroczne starty). Ta sama funkcja
+// w zapytaniu (strona) i w nawigacji ‹ › (komponent), więc pustych miesięcy z powodu okna nie ma.
+export function calendarRange(now: Date = new Date()) {
+  const y = now.getUTCFullYear(), m = now.getUTCMonth();
+  const first = new Date(Date.UTC(y, m - 12, 1));
+  const last = new Date(Date.UTC(y, m + 15, 0));
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    from: iso(first), to: iso(last),
+    min: { y: first.getUTCFullYear(), m: first.getUTCMonth() },
+    max: { y: last.getUTCFullYear(), m: last.getUTCMonth() },
+  };
+}
 
 // Dzień planu w kalendarzu: PlanDayView + outline (następny tydzień = zarys).
 export type CalPlanDay = PlanDayView & { outline?: boolean };

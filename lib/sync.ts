@@ -11,8 +11,9 @@ import { computeBestEfforts, syncActivityDetails } from '@/lib/strava/details';
 import { estimateFtp, decideFtpDisplayUpdate, FTP_HARD_IF, type EffortRide } from '@/lib/ftp-engine';
 import { estimateVo2 } from '@/lib/vo2-engine';
 import { shouldPromoteToEngine } from '@/lib/onboarding';
+import { rescalePlans } from '@/lib/plan-rescale';
 
-const SYNC_COOLDOWN_MINUTES = 60;
+const SYNC_COOLDOWN_MINUTES = 10;   // ręczny sync: krótko, żeby świeża jazda pojawiła się od razu
 const DEFAULT_LOOKBACK_DAYS = 90;
 
 // Okno silnika FTP: krzywa mocy z ostatnich 28 dni. Limit dociągnięć na jeden sync —
@@ -279,6 +280,14 @@ export async function recalculateFtpEstimate(
 
     const { error } = await supabase.from('athletes').update(updates).eq('id', athleteId);
     if (error) throw new Error(error.message);
+    // Nowe FTP → waty w planie (od dziś) przeliczone tak samo jak przy ręcznej zmianie FTP;
+    // inaczej rozgrzewki szłyby z nowego FTP, a interwały ze starych watów.
+    const prevFtp = ath?.ftp_watts != null ? Number(ath.ftp_watts) : null;
+    const newFtp = typeof updates.ftp_watts === 'number' ? updates.ftp_watts : null;
+    if (prevFtp && newFtp && prevFtp !== newFtp) {
+      try { await rescalePlans(supabase, athleteId, prevFtp, newFtp); }
+      catch (e) { console.error(`[ftp] rescale planu nieudany, athlete ${athleteId}:`, e instanceof Error ? e.message : e); }
+    }
   } catch (e) {
     console.error(
       `ftp estimate failed (sync kontynuowany), athlete ${athleteId}:`,
@@ -409,12 +418,28 @@ export async function syncStravaActivities(
     });
 
   if (rows.length > 0) {
-    const { error: upsertError } = await supabase
+    // TSS/IF liczone RAZ – z FTP z dnia jazdy. Kolejne synchronizacje (co do 90 dni wstecz) nie
+    // przeliczają ich z nowym FTP, inaczej zmiana FTP przepisywałaby historię (CTL/ATL/TSB „spadają”).
+    const { data: known } = await supabase
       .from('strava_activities')
-      .upsert(rows, { onConflict: 'strava_activity_id' });
+      .select('strava_activity_id')
+      .eq('athlete_id', athlete.id)
+      .in('strava_activity_id', rows.map((r) => r.strava_activity_id))
+      .not('tss', 'is', null);
+    const keep = new Set((known ?? []).map((k) => Number(k.strava_activity_id)));
+    const fresh = rows.filter((r) => !keep.has(Number(r.strava_activity_id)));
+    const existing = rows
+      .filter((r) => keep.has(Number(r.strava_activity_id)))
+      .map(({ tss: _t, intensity_factor: _i, ...rest }) => { void _t; void _i; return rest; });
 
-    if (upsertError) {
-      throw new Error(`upsert_failed: ${upsertError.message}`);
+    for (const batch of [fresh, existing]) {
+      if (!batch.length) continue;
+      const { error: upsertError } = await supabase
+        .from('strava_activities')
+        .upsert(batch, { onConflict: 'strava_activity_id' });
+      if (upsertError) {
+        throw new Error(`upsert_failed: ${upsertError.message}`);
+      }
     }
   }
 

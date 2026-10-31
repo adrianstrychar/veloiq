@@ -137,7 +137,7 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, on
     <>
       {view}
       {!ride.native && screen === 'live' && (
-        <div className={s.devBar} style={{ position: 'fixed', right: 12, top: 12, zIndex: 60, backgroundColor: '#1A1D23', padding: '6px 10px', borderRadius: 10, border: '1px solid #262A31' }}>
+        <div className={s.devBar} style={{ position: 'fixed', right: 12, top: 'calc(12px + env(safe-area-inset-top))', zIndex: 60, backgroundColor: '#1A1D23', padding: '6px 10px', borderRadius: 10, border: '1px solid #262A31' }}>
           Symulacja:
           {[1, 10, 30].map((x) => (
             <button key={x} type="button" className={simSpeed === x ? s.segBtnOn : s.segBtn} style={{ height: 32, padding: '0 10px' }}

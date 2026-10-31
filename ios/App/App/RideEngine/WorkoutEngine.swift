@@ -520,7 +520,7 @@ final class WorkoutEngine {
         phase = .free
         addLap(lastSecond + 1, "Po planie", "free")
         let list = series.map { "\($0.avgPower)" }.joined(separator: ", ")
-        say("planDone", ["list": list.isEmpty ? "brak" : list], .summary, speak)
+        say("planDone", ["list": list.isEmpty ? "–" : list], .summary, speak)
         if !replaying { onPlanFinished?(makeSummary(file: "")) }
     }
 
@@ -794,7 +794,7 @@ final class WorkoutEngine {
         let evalSec = series.reduce(0) { $0 + $1.durationSec }
         let weighted = series.reduce(0) { $0 + $1.compliancePct * $1.durationSec }
         return WorkoutSummary(
-            file: file, durationSec: n, avgPower: n > 0 ? total / n : 0, normalizedPower: normalizedPower(),
+            file: file, durationSec: n, avgPower: n > 0 ? Int((Double(total) / Double(n)).rounded()) : 0, normalizedPower: normalizedPower(),
             avgHr: hrs.isEmpty ? nil : avgInt(hrs), maxHr: hrs.max(), kJ: total / 1000,
             compliancePct: evalSec > 0 ? weighted / evalSec : 0, series: series, efforts: efforts, laps: laps)
     }

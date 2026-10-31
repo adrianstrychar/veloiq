@@ -4,6 +4,7 @@ import { createServerSupabaseClient } from '@/lib/supabase';
 import { aiErrorMessage } from '@/lib/ai/ai-error';
 import { buildDailyBriefPrompt, type BriefInputs } from '@/lib/ai/dailyBrief';
 import { computePowerByPeriod, POWER_DURATIONS, type PowerDuration } from '@/lib/dashboard-engagement';
+import { userTodayISO } from '@/lib/timezone';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const HAIKU = 'claude-haiku-4-5-20251001'; // tier #104 (spójnie z chat-intent)
@@ -44,7 +45,7 @@ export async function GET() {
   if (!athlete) return NextResponse.json({ error: 'athlete_not_found' }, { status: 404 });
   const athleteId = athlete.id as string;
 
-  const today = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+  const today = new Date(userTodayISO() + 'T00:00:00Z');
   const todayIso = today.toISOString().slice(0, 10);
   const sevenAgoIso = new Date(today.getTime() - 7 * 86400000).toISOString().slice(0, 10);
 
@@ -54,7 +55,7 @@ export async function GET() {
     supabase.from('fitness_metrics').select('tsb').eq('athlete_id', athleteId).order('date', { ascending: false }).limit(1).maybeSingle(),
     todayPlanFor(supabase, athleteId, today),
     supabase.from('race_calendar').select('name, date').eq('athlete_id', athleteId).gte('date', todayIso).order('date', { ascending: true }).limit(1).maybeSingle(),
-    supabase.from('strava_activities').select('activity_date, best_efforts, start_date_local:raw_data->start_date_local').eq('athlete_id', athleteId).not('best_efforts', 'is', null).order('activity_date', { ascending: true }),
+    supabase.from('strava_activities').select('activity_date, best_efforts, start_date_local:raw_data->start_date_local').eq('athlete_id', athleteId).neq('type', 'EBikeRide').not('best_efforts', 'is', null).order('activity_date', { ascending: true }),
   ]);
 
   const isRest = !todaySession || todaySession.type === 'OFF';

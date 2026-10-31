@@ -194,12 +194,16 @@ export async function upsertOverloadPending(
   // Idempotencja otwarć karty: świeży pending overload tego tygodnia → zwróć istniejący.
   const { data: existing } = await supabase
     .from('pending_changes')
-    .select('id, created_at, base_hash')
+    .select('id, created_at, base_hash, payload_json')
     .eq('athlete_id', athleteId).eq('kind', 'plan').eq('week_start', weekStart)
     .contains('payload_json', { source: 'overload' })
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
   const baseHash = sha256(JSON.stringify(planJson));
+  // zawodnik odrzucił korektę dla tego samego planu → nie proponuj jej ponownie
+  if (existing && existing.base_hash === baseHash && (existing.payload_json as { dismissed?: boolean } | null)?.dismissed) {
+    return null;
+  }
   if (existing && Date.now() - new Date(existing.created_at as string).getTime() < FRESH_MS && existing.base_hash === baseHash) {
     return { changeId: existing.id as string };
   }

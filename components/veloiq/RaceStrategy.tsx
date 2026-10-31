@@ -224,7 +224,7 @@ export default function RaceStrategyView({ race, initialStrategy, initialRoute }
       </div>
 
       {/* wk-meta — 4 kafle jak landing; POGODA "—" (Etap 3: geocoding location→lat/lon + Open-Meteo ≤16 dni, świeży fetch poza cache strategii) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', borderBottom: `1px solid ${L.border}` }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', borderBottom: `1px solid ${L.border}` }}>
         {[
           { v: s.meta.distance_km != null ? `${s.meta.distance_km} km` : '—', l: 'Dystans' },
           { v: s.meta.elevation_m != null ? `${s.meta.elevation_m} m` : '—', l: 'Przewyższenie' },
@@ -256,7 +256,7 @@ export default function RaceStrategyView({ race, initialStrategy, initialRoute }
 
         <Block title="Sprzęt · Opony i ciśnienie">
           <div style={{ padding: '0.85rem 1rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.6rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '0.5rem', marginBottom: '0.6rem' }}>
               {[{ l: 'PRZÓD', v: s.tires.front, c: L.gold }, { l: 'TYŁ', v: s.tires.rear, c: L.green }].map((t, i) => (
                 <div key={i} style={{ background: L.card, borderRadius: 6, padding: '0.55rem 0.7rem' }}>
                   <div style={{ fontSize: 9, color: L.dim, marginBottom: 2 }}>{t.l}</div>

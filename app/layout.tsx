@@ -44,7 +44,11 @@ export const metadata: Metadata = {
 // interactiveWidget: 'resizes-content' → Android Chrome NIE nakłada klawiatury na content
 // (zmienia layout viewport zamiast overlay), fundament stabilności czatu (ETAP CHAT, część 1.2).
 export const viewport: Viewport = {
-  themeColor: "#14161B",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,        // aplikacja: bez szczypania i przesuwania strony w bok po przybliżeniu
+  userScalable: false,
+  themeColor: "#0a0a0f",
   interactiveWidget: "resizes-content",
   viewportFit: "cover", // iOS: env(safe-area-inset-*) działa (pasek statusu, wskaźnik home)
 };

@@ -167,7 +167,8 @@ export async function syncActivityDetails(
     const streams = await streamRes.json();
     const watts: number[] | undefined = streams?.watts?.data;
     const time: number[] | undefined = streams?.time?.data;
-    if (watts && watts.length > 0) {
+    // e-bike: moc ze wspomaganiem silnika – nie trafia do krzywej mocy ani rekordów
+    if (watts && watts.length > 0 && detail.type !== 'EBikeRide' && detail.sport_type !== 'EBikeRide') {
       bestEfforts = computeBestEfforts(watts, time);
     }
   }

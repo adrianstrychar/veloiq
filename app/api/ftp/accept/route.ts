@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { rescalePlans } from '@/lib/plan-rescale';
 
 // Akceptacja estymaty FTP (tap w chip na kaflu FTP). Jedyna ścieżka, którą estymata
 // silnika staje się WYŚWIETLANYM ftp_watts — ustawia też ftp_updated_at, co od tej pory
@@ -11,7 +12,7 @@ export async function POST() {
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, ftp_estimate')
+    .select('id, ftp_estimate, ftp_watts')
     .eq('user_id', user.id)
     .single();
   if (!athlete) return NextResponse.json({ error: 'athlete_not_found' }, { status: 404 });
@@ -35,6 +36,10 @@ export async function POST() {
     ftp_watts: ftp,
     source: 'estimate',
   });
+
+  // waty w planie od dziś – z nowego FTP (jak przy ręcznej zmianie)
+  const prev = athlete.ftp_watts != null ? Number(athlete.ftp_watts) : null;
+  if (prev && prev !== ftp) await rescalePlans(supabase, athlete.id, prev, ftp).catch(() => 0);
 
   return NextResponse.json({ ok: true, ftp });
 }

@@ -52,7 +52,8 @@ export function DashboardHeader({
       const res = await fetch('/api/strava/sync');
       const d = await res.json().catch(() => ({}));
       if (d.skipped) {
-        setSync({ kind: 'done', at: new Date().toISOString(), color: C.muted });
+        // uczciwie: nic nie pobrano (ostatnia synchronizacja przed chwilą)
+        setSync({ kind: 'done', at: null, color: C.muted, msg: 'aktualne – sprawdzałem przed chwilą, spróbuj za kilka minut' });
         router.refresh();
       } else if (typeof d.synced === 'number') {
         setSync({ kind: 'done', at: new Date().toISOString(), color: C.green });
