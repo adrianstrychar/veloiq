@@ -45,7 +45,8 @@ final class EnzoNotifier: NSObject, UNUserNotificationCenterDelegate {
         case "lastMinute": return "Ostatnia minuta!"
         case "falseStart": return "Fałstart – interwał \(g("n")) czeka na start"
         case "seriesEnd":
-            var t = "Seria \(g("n"))/\(g("total")): \(g("avg")) W · \(g("pct"))%"
+            let vr = g("vrd") == "high" ? "↑ mocniej +\(g("dW")) W" : g("vrd") == "low" ? "↓ słabiej −\(g("dW")) W" : "✓ w zakresie"
+            var t = "Seria \(g("n"))/\(g("total")): \(g("avg")) W · \(vr)"
             if let d = v["hrUp"] { t += " · tętno +\(d)" }
             return t
         case "hrHigh": return "Tętno \(g("hr")) – za wysoko"
@@ -87,7 +88,7 @@ final class EnzoNotifier: NSObject, UNUserNotificationCenterDelegate {
         guard enabled, let body = Self.text(key, vars) else { return }
         let c = UNUserNotificationCenter.current()
         let content = UNMutableNotificationContent()
-        content.title = "Enzo"
+        content.title = "VeloIQ"
         content.body = body
         content.threadIdentifier = Self.thread
         content.sound = nil                                   // dźwięk robi Enzo

@@ -198,6 +198,7 @@ export class WebRideEngine implements RideEnginePlugin {
       stepIndex: e.stepIdx, stepName: free ? 'Jazda swobodna' : st?.name ?? '', stepType: free ? 'free' : st?.type ?? 'free',
       stepElapsed: L.stepElapsed, stepRemaining: L.stepRemaining, overrunSec: L.overrunSec, lastSeries: L.lastSeries,
       falseStartLeft: L.falseStartLeft || undefined,
+      stepAvgPower: L.stepAvgPower, vKmh: L.vKmh, vKm: L.vKm,
       power: this.last.p ?? undefined, power3s: p3, powerSmooth: free ? undefined : ps,
       hr: this.last.hr ?? undefined, cadence: this.last.cad ?? undefined, balanceL: 49,
       targetLow: L.targetLow, targetHigh: L.targetHigh,

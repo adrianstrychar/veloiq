@@ -51,8 +51,8 @@ export const WRITE_TOOL_DEFS: Anthropic.Tool[] = [
     input_schema: {
       type: 'object',
       additionalProperties: false,
-      properties: { change_id: { type: 'string', description: 'The change_id returned by the matching propose_* call.' } },
-      required: ['change_id'],
+      properties: { change_id: { type: 'string', description: 'The change_id returned by the matching propose_* call. If you no longer have it (e.g. the athlete just wrote "tak"), omit it — the most recent pending proposal is applied.' } },
+      required: [],
     },
   },
   {
@@ -93,8 +93,8 @@ export const WRITE_TOOL_DEFS: Anthropic.Tool[] = [
     input_schema: {
       type: 'object',
       additionalProperties: false,
-      properties: { change_id: { type: 'string', description: 'The change_id of the proposal being discarded.' } },
-      required: ['change_id'],
+      properties: { change_id: { type: 'string', description: 'The change_id of the proposal being discarded. Omit to discard the most recent pending proposal.' } },
+      required: [],
     },
   },
 ];
@@ -162,7 +162,7 @@ async function proposePlanChange({ supabase, athleteId }: ToolCtx, input: Record
   if (!comp.ok) return { ok: false, error: `Nie udało się przygotować zmiany: ${comp.error}` };
 
   // Stare pending atlety czyszczone przy każdym propose (dedup + unieważnienie porzuconych propozycji).
-  await supabase.from('pending_changes').delete().eq('athlete_id', athleteId);
+  await clearStalePendings(supabase, athleteId);
   const baseHash = sha256(JSON.stringify(plan.plan_json));
   const { data: pend, error } = await supabase
     .from('pending_changes')
@@ -230,8 +230,32 @@ function buildRaceDiff(op: 'add' | 'edit' | 'delete', before: RaceRow | null, af
   return ['Proponowana edycja startu:', ...lines, 'Napisz „tak", żeby zapisać zmiany.'].join('\n');
 }
 
+// Czyści porzucone propozycje z czatu – ale NIE korekty przeciążenia (osobna karta z własnym TTL)
+// i nie propozycje z tej samej odpowiedzi (np. plan + start w jednej turze → dwie karty, obie ważne).
+async function clearStalePendings(supabase: ToolCtx['supabase'], athleteId: string) {
+  await supabase.from('pending_changes').delete()
+    .eq('athlete_id', athleteId)
+    .not('payload_json', 'cs', JSON.stringify({ source: 'overload' }))
+    .lt('created_at', new Date(Date.now() - 60_000).toISOString());
+}
+
+// Propozycja do zatwierdzenia: po change_id, a gdy model go nie ma (zawodnik napisał samo „tak”) –
+// najnowsza oczekująca propozycja z czatu (bez korekt przeciążenia).
+async function findPending(supabase: ToolCtx['supabase'], athleteId: string, changeId: string, cols: string) {
+  if (changeId) {
+    // konkretna propozycja (przycisk / model podał id) – NIGDY nie podmieniamy jej na inną
+    const { data } = await supabase.from('pending_changes').select(cols).eq('id', changeId).eq('athlete_id', athleteId).maybeSingle();
+    return (data as unknown as Record<string, unknown> | null) ?? null;
+  }
+  const { data } = await supabase.from('pending_changes').select(cols)
+    .eq('athlete_id', athleteId)
+    .not('payload_json', 'cs', JSON.stringify({ source: 'overload' }))
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  return (data as unknown as Record<string, unknown> | null) ?? null;
+}
+
 async function insertPending(supabase: ToolCtx['supabase'], athleteId: string, row: Record<string, unknown>) {
-  await supabase.from('pending_changes').delete().eq('athlete_id', athleteId); // stare pending → out
+  await clearStalePendings(supabase, athleteId); // stare pending → out
   return supabase.from('pending_changes').insert({ athlete_id: athleteId, ...row }).select('id').single();
 }
 
@@ -309,22 +333,27 @@ async function proposeFtpChange({ supabase, athleteId }: ToolCtx, input: Record<
 }
 
 export async function cancelChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
-  const changeId = str(input.change_id);
-  if (!changeId) return { ok: false, error: 'Brak change_id.' };
-  const { data: pend } = await supabase.from('pending_changes').select('id').eq('id', changeId).eq('athlete_id', athleteId).maybeSingle();
+  const pend = await findPending(supabase, athleteId, str(input.change_id), 'id, payload_json');
   if (!pend) return { ok: true, cancelled: false, message: 'Nie ma już takiej oczekującej propozycji (mogła wygasnąć).' };
+  const payload = pend.payload_json as { source?: string } | null;
+  if (payload?.source === 'overload') {
+    // korekta przeciążenia: zapamiętaj „Odrzuć”, żeby ponowne otwarcie jazdy nie pokazało jej znowu
+    await supabase.from('pending_changes').update({ payload_json: { ...payload, dismissed: true } }).eq('id', pend.id);
+    return { ok: true, cancelled: true, message: 'Propozycja odrzucona.' };
+  }
   await supabase.from('pending_changes').delete().eq('id', pend.id);
   return { ok: true, cancelled: true, message: 'Propozycja odrzucona.' };
 }
 
 export async function commitChange({ supabase, athleteId }: ToolCtx, input: Record<string, unknown>) {
   const changeId = typeof input.change_id === 'string' ? input.change_id : '';
-  if (!changeId) return { ok: false, error: 'Brak change_id.' };
-
-  const { data: pend } = await supabase.from('pending_changes').select('*').eq('id', changeId).eq('athlete_id', athleteId).maybeSingle();
+  const pend = await findPending(supabase, athleteId, changeId, '*');
   if (!pend) return { ok: false, error: 'Ta zmiana wygasła albo została już zastosowana. Poproś o nową propozycję, jeśli chcesz coś zmienić.' };
 
   const isOverload = (pend.payload_json as { source?: string } | null)?.source === 'overload';
+  if ((pend.payload_json as { dismissed?: boolean } | null)?.dismissed) {
+    return { ok: false, error: 'Ta propozycja została odrzucona.' };
+  }
   const ttlMs = isOverload ? OVERLOAD_TTL_MS : PENDING_TTL_MS;
   if (Date.now() - new Date(pend.created_at as string).getTime() > ttlMs) {
     await supabase.from('pending_changes').delete().eq('id', pend.id);

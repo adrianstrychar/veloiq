@@ -80,7 +80,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+    <div className="flex items-center justify-center bg-background px-4" style={{ minHeight: 'calc(100dvh - env(safe-area-inset-top))', paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold">VeloIQ</h1>
@@ -116,7 +116,7 @@ export default function LoginPage() {
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="bg-background border border-border rounded-xl px-3 py-2 text-sm"
+              className="bg-background border border-border rounded-xl px-3 py-2 text-base"
             />
 
             {mode === 'password' && (
@@ -126,7 +126,7 @@ export default function LoginPage() {
                 placeholder="Hasło"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="bg-background border border-border rounded-xl px-3 py-2 text-sm"
+                className="bg-background border border-border rounded-xl px-3 py-2 text-base"
               />
             )}
 

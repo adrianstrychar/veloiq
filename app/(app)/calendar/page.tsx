@@ -4,7 +4,7 @@ import { type RaceRow } from '@/components/veloiq/Races';
 import { type CalActivity, type CalPlanDay } from '@/components/veloiq/Calendar';
 import { type PlanDayView } from '@/components/veloiq/Plan';
 import { CalendarView } from '@/components/veloiq/CalendarView';
-import { CALENDAR_RANGE } from '@/lib/calendar-events';
+import { calendarRange } from '@/lib/calendar-events';
 import { localTodayISO, mondayOfISO, addWeeks } from '@/lib/plan';
 
 // SLIM kolumny listy (P1-a dieta: 395 KB → kilkanaście KB): kalendarz pokazuje nazwę/kolor/
@@ -44,8 +44,8 @@ export default async function CalendarPage() {
       .eq('athlete_id', athleteId)
       // Okno dat = nawigowalny zakres siatki (MIN..MAX miesiąc w Calendar) — ‹ › nie wyjdzie
       // poza nie, więc okno nie może zrobić pustego miesiąca.
-      .gte('activity_date', CALENDAR_RANGE.from)
-      .lte('activity_date', CALENDAR_RANGE.to)
+      .gte('activity_date', calendarRange().from)
+      .lte('activity_date', calendarRange().to)
       .order('activity_date', { ascending: true }),
     supabase
       .from('weekly_plans')

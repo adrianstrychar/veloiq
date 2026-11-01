@@ -728,10 +728,10 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         }
         if has("poprzedni", "ostatnia seria", "ostatni interwal", "jak poszl", "jak mi poszl", "poprzednia seria") {
             guard let last = (st["series"] as? [[String: Any]])?.last else { play(lead("noSeries"), "Jeszcze nie było serii."); return true }
-            let avg = (last["avgPower"] as? Int) ?? 0, pct = (last["compliancePct"] as? Int) ?? 0
+            let avg = (last["avgPower"] as? Int) ?? 0, vrd = (last["verdict"] as? String) ?? "ok"
             var ids = lead("prevSeries")
-            if let d = enzo, let c = d.compose("seriesEnd", ["avg": "\(avg)", "pct": "\(pct)"]) { ids += c.dropFirst() }
-            play(ids, "Poprzednia seria: średnio \(avg) watów, \(pct)% w zakresie.")
+            if let d = enzo, let c = d.compose("seriesEnd", ["avg": "\(avg)", "vrd": vrd]) { ids += c.dropFirst() }
+            play(ids, "Poprzednia seria: średnio \(avg) watów – \(WorkoutEngine.verdictText(vrd)).")
             return true
         }
         // --- trasa GPX

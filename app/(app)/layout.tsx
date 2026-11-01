@@ -25,7 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <ChatProvider>
       <RideProvider>
-      <div className="min-h-screen pb-20">
+      <div className="app-shell">
         {/* Shell NIE narzuca szerokości — każda strona deklaruje własny kontener:
             mobilne widoki (plan/chat/kalendarz/wyścigi) = max-w-md mx-auto,
             dashboard = własny kontener ~1100px (dashboard.module.css .page).

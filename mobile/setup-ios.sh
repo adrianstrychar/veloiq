@@ -53,7 +53,13 @@ pset NSSpeechRecognitionUsageDescription string "VeloIQ zamienia Twoje pytanie d
 pset NSLocalNetworkUsageDescription string "VeloIQ w trybie deweloperskim ładuje aplikację z komputera w tej samej sieci."
 $PB -c "Print :NSAppTransportSecurity" "$PL" >/dev/null 2>&1 || $PB -c "Add :NSAppTransportSecurity dict" "$PL"
 $PB -c "Print :NSAppTransportSecurity:NSAllowsLocalNetworking" "$PL" >/dev/null 2>&1 || $PB -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PL"
-ok "Tryby tła + uprawnienia"
+# pełny ekran jak w natywnej aplikacji: iPhone tylko pionowo, jasny pasek statusu na ciemnym tle
+$PB -c "Delete :UISupportedInterfaceOrientations" "$PL" 2>/dev/null || true
+$PB -c "Add :UISupportedInterfaceOrientations array" "$PL"
+$PB -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" "$PL"
+pset UIViewControllerBasedStatusBarAppearance bool false
+pset UIStatusBarStyle string UIStatusBarStyleLightContent
+ok "Tryby tła + uprawnienia + orientacja pionowa"
 
 say "Main.storyboard → VeloIQBridgeViewController"
 SB="$APPDIR/Base.lproj/Main.storyboard"

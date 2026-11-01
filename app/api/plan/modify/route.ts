@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from '@/lib/supabase';
 import { type PlanDay, type ModifyContext } from '@/lib/ai/plan-generate';
 import { computePlanModification, applyPlanModification } from '@/lib/ai/plan-modify';
 import { localTodayISO } from '@/lib/plan';
+import { userTodayISO } from '@/lib/timezone';
 
 export async function POST(req: NextRequest) {
   const supabase = createServerSupabaseClient();
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
     .single();
   if (!athlete) return NextResponse.json({ ok: false, error: 'athlete_not_found' }, { status: 404 });
   const athleteId = athlete.id as string;
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = userTodayISO();
 
   const [{ data: plan }, { data: fm }, { data: race }] = await Promise.all([
     supabase.from('weekly_plans').select('id, plan_json').eq('athlete_id', athleteId).eq('week_start', weekStart).maybeSingle(),

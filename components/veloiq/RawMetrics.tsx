@@ -103,7 +103,7 @@ export function RawMetrics({ pmc }: { pmc: PmcRow[] }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* 3 kafle */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)', gap: 8 }}>
         <Tile label="CTL" sublabel="Forma"     value={String(Math.round(now.ctl))} color={C.cyan}   spark={spark14} data={pmc} k="ctl" />
         <Tile label="ATL" sublabel="Zmęczenie" value={String(Math.round(now.atl))} color={C.yellow} spark={spark14} data={pmc} k="atl" />
         <Tile label="TSB" sublabel="Świeżość"  value={tsbValue}                    color={tsbColor} spark={spark14} data={pmc} k="tsb" />

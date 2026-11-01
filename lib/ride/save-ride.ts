@@ -34,7 +34,7 @@ export async function saveRide(sb: SupabaseClient, input: SaveRideInput): Promis
   const tss = input.ftp && IF ? Math.round((sum.durationSec * sum.normalizedPower * IF) / (input.ftp * 3600) * 100) : null;
   const hasGps = input.samples.some((x) => x.lat != null);
 
-  const ins = await sb.from('rides').insert({
+  const row = {
     id,
     user_id: userId,
     started_at: input.startedAt.toISOString(),
@@ -56,7 +56,13 @@ export async function saveRide(sb: SupabaseClient, input: SaveRideInput): Promis
     efforts: sum.efforts,
     samples_path: path,
     source: input.source,
-  });
+    laps: sum.laps ?? null,
+  };
+  let ins = await sb.from('rides').insert(row);
+  if (ins.error && /laps/i.test(ins.error.message)) {
+    const { laps: _skip, ...noLaps } = row; void _skip;   // migracja 022 jeszcze nie uruchomiona
+    ins = await sb.from('rides').insert(noLaps);
+  }
   if (ins.error) {
     await sb.storage.from('rides').remove([path]); // nie zostawiaj osieroconego pliku
     throw ins.error;

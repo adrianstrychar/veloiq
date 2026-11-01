@@ -80,7 +80,7 @@ export function OnboardingForm({ prefill }: { prefill: Prefill }) {
   }
 
   return (
-    <div style={{ maxWidth: 420, margin: '0 auto', padding: '32px 20px', minHeight: '100vh' }}>
+    <div style={{ maxWidth: 420, margin: '0 auto', padding: '32px 20px', minHeight: 'calc(100dvh - env(safe-area-inset-top))', paddingBottom: 'calc(32px + env(safe-area-inset-bottom))' }}>
       <div style={{ fontSize: 22, fontWeight: 700, color: C.text, marginBottom: 6 }}>
         Cześć{prefill.name ? `, ${prefill.name.split(' ')[0]}` : ''}! 👋
       </div>

@@ -16,6 +16,7 @@ import {
 } from '@/lib/ai/plan-generate';
 import { estimateRaceDay, taperDaysFor, taperVolumeFactor, taperLast48hViolation, outlineTaperPlaceholders, type RacePriority } from '@/lib/race-taper';
 import { buildRecentLoad, recoveryViolation, RECOVERY_CONFIG, type RecentActivity, type PastRace } from '@/lib/recent-load';
+import { userTodayISO } from '@/lib/timezone';
 
 // dow (1=Pn..7=Nd) daty w tygodniu zaczynającym się od weekStart (Mon), albo null gdy poza tygodniem.
 function dowInWeek(weekStart: string, dateIso: string): number | null {
@@ -72,14 +73,17 @@ export async function POST(req: NextRequest) {
   if (!athlete) return NextResponse.json({ error: 'athlete_not_found' }, { status: 404 });
   const athleteId = athlete.id as string;
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = userTodayISO();
 
   // Anchor: week_start z body (przycisk "Wygeneruj" dla konkretnego tygodnia) albo bieżący tydzień.
   // PODNIESIONE PRZED fetch: okno historii (poniżej) liczy się względem planowanego tygodnia.
   const weekStartParam = typeof (body as Record<string, unknown>)?.week_start === 'string'
     ? String((body as Record<string, unknown>).week_start)
     : null;
-  const weekStart = weekStartParam ? mondayOf(new Date(weekStartParam)) : mondayOf(new Date());
+  if (weekStartParam && (!/^\d{4}-\d{2}-\d{2}$/.test(weekStartParam) || Number.isNaN(Date.parse(weekStartParam)))) {
+    return NextResponse.json({ error: 'invalid_week_start' }, { status: 400 });
+  }
+  const weekStart = weekStartParam ? mondayOf(new Date(weekStartParam)) : mondayOf(new Date(todayIso + 'T12:00:00Z'));
 
   // Okno historii: 14 dni wstecz od PIERWSZEGO planowanego dnia (max(weekStart, dziś)) + zapas na
   // wykrycie startu tuż sprzed okna. Bez tego generator nie miał ŻADNEGO kanału na fakt "dwa dni
@@ -374,9 +378,15 @@ export async function POST(req: NextRequest) {
     return supabase.from('weekly_plans').insert(row);
   }
 
+  // Następny tydzień nadpisujemy tylko, gdy to wciąż zarys (outline). Pełny plan – wygenerowany
+  // albo zmieniony przez zawodnika – zostaje nietknięty.
+  const { data: nextRow } = await supabase
+    .from('weekly_plans').select('plan_json').eq('athlete_id', athleteId).eq('week_start', nextWeek).maybeSingle();
+  const nextDaysNow = ((nextRow?.plan_json as { days?: { outline?: boolean }[] } | null)?.days) ?? [];
+  const keepNext = nextDaysNow.length > 0 && nextDaysNow.some((d) => !d.outline);
   const [curRes, nextRes] = await Promise.all([
     upsertWeek(weekStart, current.days, current.insight),
-    upsertWeek(nextWeek, next.days, next.insight),
+    keepNext ? Promise.resolve({ error: null }) : upsertWeek(nextWeek, next.days, next.insight),
   ]);
   const saveErr = curRes.error || nextRes.error;
   if (saveErr) {

@@ -12,6 +12,7 @@ struct WorkoutScript: Codable {
     let rules: WorkoutRules?
     let phrases: [String: String]?
     let briefing: RideBriefing?
+    let weightKg: Double?             // waga zawodnika – do wirtualnej prędkości na trenażerze (domyślnie 75)
 }
 
 /// Odprawa na rozgrzewce (z serwera): gotowość z PMC + model tętna HR = hrA + hrB·W z ostatnich jazd.
@@ -146,7 +147,7 @@ enum Phrases {
         "autoResume": "Wznawiam. Zostało {left}.",
         "earlyStop": "Interwał przerwany po {done}.",
         "falseStart": "Fałstart – nie liczę. Interwał {n} ruszy, gdy znów przyspieszysz.",
-        "seriesEnd": "Seria {n} z {total} zrobiona. {dur}, średnio {avg} watów, {pct} procent w zakresie.",
+        "seriesEnd": "Seria {n} z {total} zrobiona. {dur}, średnio {avg} watów – {verdict}.",
         "seriesPrev": "Poprzednia {prev}.",
         "hrUp": "Tętno o {d} uderzeń wyżej niż w pierwszej serii.",
         "intervalStart": "Interwał {n} z {total}. {dur}, cel {low} do {high} watów. Start!",
@@ -213,10 +214,13 @@ struct SeriesResult {
     let endedEarly: Bool
     let restBeforeSec: Int?
     let startSec: Int
+    var verdict: String = "ok"   // ok – w zakresie | high – mocniej niż plan | low – słabiej
+    var deltaW: Int = 0          // o ile poza zakresem (W)
 
     func toDict() -> [String: Any] {
         var d: [String: Any] = ["n": n, "durationSec": durationSec, "plannedSec": plannedSec, "avgPower": avgPower,
-                                "compliancePct": compliancePct, "endedEarly": endedEarly, "startSec": startSec]
+                                "compliancePct": compliancePct, "endedEarly": endedEarly, "startSec": startSec,
+                                "verdict": verdict, "deltaW": deltaW]
         if let v = avgHr { d["avgHr"] = v }
         if let v = restBeforeSec { d["restBeforeSec"] = v }
         return d
@@ -254,6 +258,9 @@ struct LiveSample {
     var lon: Double?
     var lastSeries: SeriesResult?
     var falseStartLeft: Int = 0  // s, w których można jeszcze odwołać start interwału (fałstart)
+    var stepAvgPower: Int? = nil // średnia moc bieżącego kroku (np. interwału)
+    var vKmh: Double = 0         // wirtualna prędkość (trenażer)
+    var vKm: Double = 0          // wirtualny dystans (trenażer)
 
     func toDict() -> [String: Any] {
         var d: [String: Any] = [
@@ -263,6 +270,9 @@ struct LiveSample {
         ]
         if let v = power { d["power"] = v }
         if falseStartLeft > 0 { d["falseStartLeft"] = falseStartLeft }
+        if let v = stepAvgPower { d["stepAvgPower"] = v }
+        d["vKmh"] = (vKmh * 10).rounded() / 10
+        d["vKm"] = (vKm * 100).rounded() / 100
         if let v = power3s { d["power3s"] = v }
         if let v = powerSmooth { d["powerSmooth"] = v }
         if let v = hr { d["hr"] = v }
@@ -276,6 +286,9 @@ struct LiveSample {
     }
 }
 
+/// Początek lapa = początek kroku planu (rozgrzewka, interwał, przerwa…) – struktura treningu na Stravie.
+struct LapMark { let startSec: Int; let name: String; let type: String }
+
 struct WorkoutSummary {
     var file: String
     var durationSec: Int
@@ -287,12 +300,14 @@ struct WorkoutSummary {
     var compliancePct: Int
     var series: [SeriesResult] = []
     var efforts: [EffortResult] = []
+    var laps: [LapMark] = []
 
     func toDict() -> [String: Any] {
         var d: [String: Any] = [
             "file": file, "durationSec": durationSec, "avgPower": avgPower,
             "normalizedPower": normalizedPower, "kJ": kJ, "compliancePct": compliancePct,
             "series": series.map { $0.toDict() }, "efforts": efforts.map { $0.toDict() },
+            "laps": laps.map { ["startSec": $0.startSec, "name": $0.name, "type": $0.type] },
         ]
         if let v = avgHr { d["avgHr"] = v }
         if let v = maxHr { d["maxHr"] = v }

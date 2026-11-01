@@ -4,6 +4,7 @@
 // DETERMINISTYCZNIE na istniejące endpointy pending (#62), z pominięciem modelu.
 // Stany jak karty propozycji w chacie: pending → zapisano / odrzucono / wygasło.
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { C } from '@/lib/theme';
 
 export interface OverloadCorrection {
@@ -21,6 +22,7 @@ type CardState =
 
 export default function OverloadCorrectionCard({ correction }: { correction: OverloadCorrection }) {
   const [st, setSt] = useState<CardState>({ s: 'pending', busy: false });
+  const router = useRouter();
 
   async function act(action: 'commit' | 'cancel') {
     if (st.s !== 'pending' || st.busy) return;
@@ -32,7 +34,7 @@ export default function OverloadCorrectionCard({ correction }: { correction: Ove
         setSt({ s: 'cancelled' });
         return;
       }
-      if (data.ok) setSt({ s: 'committed', message: data.message });
+      if (data.ok) { setSt({ s: 'committed', message: data.message }); router.refresh(); }
       else setSt({ s: 'expired', message: data.error ?? 'Propozycja nieaktualna — otwórz jazdę ponownie.' });
     } catch {
       setSt({ s: 'pending', busy: false });

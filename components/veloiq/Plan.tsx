@@ -156,7 +156,7 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
           <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{dowLabel(d.date)}</div>
           <div style={{ fontSize: 9, color: C.muted }}>{dateLabel(d.date)}</div>
         </div>
-        <div style={{ width: 50, display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div style={{ minWidth: 50, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={{ background: tc + '22', color: tc, border: `1px solid ${tc}55`, borderRadius: 4, padding: '2px 7px', fontSize: 9, fontWeight: 600, whiteSpace: 'nowrap' }}>
             {isRemoved ? 'OFF' : isRace ? '🏁 START' : d.type}
           </span>
@@ -721,7 +721,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
               <span><span style={{ color: C.cyan }}>●</span> pozostało (plan)</span>
             </div>
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
             {([
               ['SESJE', String(doneSessions), String(remSessions), `~${remSessions}`],
               ['CZAS', fmtDur(doneDurMin), `${durApprox ? '~' : ''}${fmtDur(remDurMin)}`, `~${fmtDur(remDurMin)}`],
@@ -833,7 +833,7 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
                   onKeyDown={(e) => e.key === 'Enter' && sendMod()}
                   placeholder="np. piątek potrzebuję wolny, weekend mocniej…"
                   disabled={chatLoading}
-                  style={{ flex: 1, background: C.bg, border: `1px solid ${C.green}55`, borderRadius: 10, padding: '11px 14px', color: C.text, fontSize: 13, outline: 'none' }}
+                  style={{ flex: 1, background: C.bg, border: `1px solid ${C.green}55`, borderRadius: 10, padding: '11px 14px', color: C.text, fontSize: 16, outline: 'none', minWidth: 0 }}
                 />
                 <button onClick={() => sendMod()} disabled={chatLoading}
                   style={{ background: C.green, border: 'none', borderRadius: 10, padding: '0 18px', color: C.bg, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>

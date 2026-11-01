@@ -81,6 +81,8 @@ export interface WorkoutScript {
   phrases?: Partial<Record<PhraseKey, string>>;
   /** Odprawa na rozgrzewce: gotowość z PMC i model tętna (HR = hrA + hrB·W) z ostatnich jazd. */
   briefing?: RideBriefing;
+  /** Waga zawodnika (kg) – wirtualna prędkość na trenażerze. Domyślnie 75. */
+  weightKg?: number;
 }
 
 export interface RideBriefing {

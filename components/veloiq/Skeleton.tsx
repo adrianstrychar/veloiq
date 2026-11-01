@@ -22,7 +22,7 @@ export function SkRow({ n, h, gap = 8 }: { n: number; h: number; gap?: number })
 
 export function SkGrid({ cols, n, h, gap = 8 }: { cols: number; n: number; h: number; gap?: number }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap }}>
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap }}>
       {Array.from({ length: n }, (_, i) => <SkBlock key={i} h={h} />)}
     </div>
   );

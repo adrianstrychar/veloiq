@@ -7,7 +7,7 @@ import { countryFlag, cleanLocation } from '@/lib/country-flag';
 import { RideAnalysis, type RideActivity } from './RideAnalysis';
 import { WorkoutDetail } from './WorkoutDetail';
 import { type RaceRow } from './Races';
-import { buildCalendarEvents, type CalActivity, type CalPlanDay, type CalEvent } from '@/lib/calendar-events';
+import { buildCalendarEvents, calendarRange, type CalActivity, type CalPlanDay, type CalEvent } from '@/lib/calendar-events';
 
 // Pełny wiersz jazdy do RideAnalysis — dociągany LAZY po kliknięciu (P1-a dieta: lista niesie
 // slim CalActivity bez jsonb). Ten sam zestaw kolumn co LastActivityCard.
@@ -27,9 +27,8 @@ interface CalendarProps {
   onRaceClick: () => void;
 }
 
-// Zakres nawigacji: marzec–październik 2026 (sezon).
-const MIN_MONTH = { y: 2026, m: 2 };  // marzec (0-idx)
-const MAX_MONTH = { y: 2026, m: 9 };  // październik
+// Zakres nawigacji: 12 miesięcy wstecz, 14 do przodu (calendarRange – to samo okno co zapytanie strony).
+const { min: MIN_MONTH, max: MAX_MONTH } = calendarRange();
 const MONTH_NAMES = [
   'styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec',
   'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień',
@@ -198,7 +197,7 @@ export function Calendar({ activities, races, planDays, ftp, onRaceClick }: Cale
       </div>
 
       {/* Nagłówki dni tygodnia */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4 }}>
         {WEEKDAYS.map((w) => (
           <div key={w} style={{ fontSize: 10, color: C.muted, textAlign: 'center', fontWeight: 600 }}>
             {w}
@@ -207,7 +206,7 @@ export function Calendar({ activities, races, planDays, ftp, onRaceClick }: Cale
       </div>
 
       {/* Siatka dni */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, position: 'relative' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4, position: 'relative' }}>
         {grid.map((dateKey, i) => {
           if (!dateKey) return <div key={`b${i}`} style={{ minHeight: 60 }} />;
 
@@ -243,11 +242,14 @@ export function Calendar({ activities, races, planDays, ftp, onRaceClick }: Cale
           return (
             <div
               key={dateKey}
-              onMouseEnter={() => hasEvent && setHovered(dateKey)}
+              // dymek tylko z myszką – na dotyku (iPhone) kliknięcie otwiera szczegóły, a dymek wystawałby za ekran
+              onMouseEnter={() => hasEvent && window.matchMedia('(hover: hover)').matches && setHovered(dateKey)}
               onMouseLeave={() => setHovered((h) => (h === dateKey ? null : h))}
               onClick={() => handleDayClick(dateKey)}
               style={{
                 minHeight: 60,
+                minWidth: 0,
+                overflowWrap: 'anywhere',
                 borderRadius: 8,
                 background: bg,
                 border,

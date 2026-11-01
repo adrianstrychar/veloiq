@@ -31,7 +31,7 @@
   --body: var(--font-body, 'Inter'), system-ui, sans-serif;
   --mono: var(--font-mono, 'IBM Plex Mono'), ui-monospace, monospace;
 
-  min-height: 100dvh;
+  min-height: var(--content-h, 100dvh);   /* dokładnie ekran między paskiem statusu a nawigacją */
   max-width: 480px;
   margin: 0 auto;
   box-sizing: border-box;
@@ -43,7 +43,7 @@
   gap: 12px;
   /* dół: miejsce na dolną nawigację aplikacji (BottomNav, 76 px) */
   /* góra: wcięcie paska statusu dodaje body (globals.css), main ma już py-4 */
-  padding: 4px 0 calc(env(safe-area-inset-bottom) + 96px);
+  padding: 4px 0;   /* miejsce na nawigację rezerwuje .app-shell (globals.css) */
   -webkit-font-smoothing: antialiased;
 }
 
@@ -92,8 +92,8 @@
 .metricSub { font-size: 12px; color: var(--muted); }
 .statValue { font-family: var(--display); font-size: 18px; font-weight: 700; line-height: 1.05; }
 
-.bigTimer { font-family: var(--display); font-size: 76px; font-weight: 700; line-height: 0.9; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.bigPower { font-family: var(--display); font-size: 88px; font-weight: 700; line-height: 0.85; font-variant-numeric: tabular-nums; }
+.bigTimer { font-family: var(--display); font-size: clamp(56px, 19vw, 76px); font-weight: 700; line-height: 0.9; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.bigPower { font-family: var(--display); font-size: clamp(64px, 22vw, 88px); font-weight: 700; line-height: 0.85; font-variant-numeric: tabular-nums; }
 .unit { font-size: 18px; color: var(--muted); font-weight: 600; }
 
 .bar { height: 8px; background-color: var(--surface-2); border-radius: 4px; overflow: hidden; }
@@ -170,7 +170,7 @@
 .nav {
   touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
-  height: calc(76px + env(safe-area-inset-bottom)); padding: 0 4px env(safe-area-inset-bottom);
+  height: var(--nav-total, calc(76px + env(safe-area-inset-bottom))); padding: 0 4px env(safe-area-inset-bottom);
   background-color: rgba(8, 14, 22, 0.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid #262A31;
   display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: end;

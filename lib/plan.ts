@@ -1,5 +1,6 @@
 import { C } from '@/lib/theme';
 import { sessionStructure } from '@/lib/workout';
+import { userTodayISO } from './timezone';
 
 // Helpery planu treningowego (ETAP 5.2) — kolory stref/typów, formatowanie, daty.
 
@@ -27,12 +28,10 @@ export function fmtDur(min: number): string {
 
 // Dzisiejsza data w STREFIE LOKALNEJ jako ISO 'YYYY-MM-DD' (nie UTC — unika
 // przesunięcia o dzień blisko północy).
+// „Dziś” w strefie użytkownika (Europe/Warsaw) – identycznie na serwerze (Vercel = UTC) i w telefonie.
+// Wcześniej serwer liczył w UTC: w poniedziałek 0:30 plan/pulpit pokazywały jeszcze niedzielę i stary tydzień.
 export function localTodayISO(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return userTodayISO();
 }
 
 // Poniedziałek tygodnia zawierającego datę ISO (liczone w UTC-noon, bezpiecznie).

@@ -2,9 +2,14 @@
 
 // Error boundary zakładek aplikacji (dashboard/plan/calendar/races/chat). Wcześniej goły crash
 // Next — teraz komunikat po polsku + retry przez reset() (ponawia render segmentu bez pełnego reloadu).
+import { startTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { C } from '@/lib/theme';
 
 export default function AppError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  const router = useRouter();
+  // sam reset() renderuje ten sam (zepsuty) wynik serwera – najpierw pobierz dane od nowa
+  const retry = () => startTransition(() => { router.refresh(); reset(); });
   return (
     <div style={{
       background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
@@ -18,7 +23,7 @@ export default function AppError({ error, reset }: { error: Error & { digest?: s
       </div>
       {error.digest && <div style={{ fontSize: 9, color: C.muted }}>kod: {error.digest}</div>}
       <button
-        onClick={reset}
+        onClick={retry}
         style={{
           background: C.cyan, color: C.bg, border: 'none', borderRadius: 9,
           padding: '10px 22px', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginTop: 4,
