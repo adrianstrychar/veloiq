@@ -124,6 +124,21 @@ final class DirectorVoice: NSObject {
         return has("w.\(r5(w))") ? ["w.\(r5(w))"] : []
     }
 
+    /// Podsumowanie po jeździe: „Podsumujmy trening.” + każda seria („Interwał drugi z czterech.
+    /// trzysta dziesięć watów. Idealnie w zakresie.”) + rada na następny raz.
+    func debriefIds(_ series: [(n: Int, total: Int, avg: Int, vrd: String)], tip: String) -> [String] {
+        var out: [String] = []
+        if let l = lead("debrief") { out.append(l) }
+        for x in series {
+            if has("int.\(x.n).\(x.total)") { out.append("int.\(x.n).\(x.total)") }
+            out += watts("\(x.avg)")
+            out += pick("vrd." + x.vrd)
+        }
+        let ev = ["even": "tipEven", "fade": "tipFade", "high": "tipHigh", "low": "tipLow", "ok": "tipOk"][tip] ?? "tipOk"
+        if let l = lead(ev) { out.append(l) }
+        return out
+    }
+
     /// nil = nic nie mów; [] = brak nagrania (użyj głosu systemowego).
     func compose(_ key: String, _ vars: [String: String]) -> [String]? {
         if Self.silent.contains(key) { return nil }

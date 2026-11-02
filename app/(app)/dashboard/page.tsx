@@ -19,6 +19,8 @@ import { forecastFtpPeriodized, buildRateFromEnvelope, type RaceLite } from '@/l
 import { Link2 } from 'lucide-react';
 import { RecordsCard } from '@/components/veloiq/RecordsCard';
 import { PowerShelfCard } from '@/components/veloiq/PowerShelfCard';
+import { PowerProfileCard } from '@/components/veloiq/PowerProfileCard';
+import { computePowerProfile } from '@/lib/power-profile';
 import { SeasonGoalCard } from '@/components/veloiq/SeasonGoalCard';
 import { TodayCard, type TodayPlan } from '@/components/veloiq/TodayCard';
 import { WeekCard, type WeekDay } from '@/components/veloiq/WeekCard';
@@ -314,6 +316,18 @@ export default async function DashboardPage() {
 
         {/* 8. Rekordy mocy */}
         <PowerShelfCard power={power} />
+
+        {/* 8b. Profil mocy: krzywa 12 mies. vs 4 tyg., typ kolarza, słabsza strona, CP/W′ */}
+        <div className={styles.span2}>
+          <PowerProfileCard profile={computePowerProfile(
+            (powerRides ?? []).filter((r) => r.type !== 'EBikeRide').map((r) => ({
+              date: String(r.activity_date).slice(0, 10),
+              best_efforts: (r as { best_efforts?: Record<string, number | null> | null }).best_efforts ?? null,
+            })),
+            todayISO,
+            (athlete as { weight_kg?: number | null } | null)?.weight_kg != null ? Number((athlete as { weight_kg: number }).weight_kg) : null,
+          )} />
+        </div>
 
         {/* 9. Cel sezonu (span2, slim strip) */}
         <div className={styles.span2}>

@@ -1,11 +1,12 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import s from './ride.module.css';
 import type { WorkoutScript } from '@/lib/ride/workout-script';
 import type { WorkoutSummary } from '@/lib/ride/ride-engine';
 import type { Ride } from './useRide';
 import { IconSpark, hmmss, mmss } from './parts';
 import { verdictLabel, verdictColor } from './verdict';
+import { buildDebrief } from '@/lib/ride/debrief';
 import { rideDistances } from '@/lib/ride/virtual-speed';
 
 export interface RecordedSample { s: number; p?: number; hr?: number; cad?: number; lat?: number; lon?: number }
@@ -42,6 +43,20 @@ interface Props {
 }
 
 export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onAskCoach, onExportStrava, onDone }: Props) {
+  // Podsumowanie Enzo: seria po serii + jedna rada; Enzo mówi je raz, od razu po treningu
+  const debrief = useMemo(() => buildDebrief(summary.series), [summary.series]);
+  const total = plan ? plan.steps.filter((x) => x.type === 'interval').length : summary.series.length;
+  const playDebrief = () => debrief && ride.debrief({
+    series: debrief.lines.map((l) => ({ n: l.n, total: Math.max(total, l.n), avg: l.avgPower, vrd: l.endedEarly ? 'low' : l.verdict })),
+    tip: debrief.tip, text: debrief.text,
+  });
+  const spoke = useRef(false);
+  useEffect(() => {
+    if (!debrief || spoke.current) return;
+    spoke.current = true;
+    const t = setTimeout(playDebrief, 1500);   // po komunikacie końca planu
+    return () => clearTimeout(t);
+  }, [debrief]); // eslint-disable-line react-hooks/exhaustive-deps
   const [strava, setStrava] = useState<{ st: 'idle' | 'sending' | 'done' | 'error'; msg?: string; url?: string }>({ st: 'idle' });
   const exportStrava = async () => {
     if (!onExportStrava || strava.st === 'sending') return;
@@ -174,6 +189,24 @@ export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onA
             </div>
           ))}
           <span className={s.small} style={{ fontSize: 12 }}>{zones.map((z) => `Z${z.n} ${z.name}`).join(' · ')}</span>
+        </section>
+      )}
+
+      {debrief && (
+        <section className={s.cue} aria-label="Podsumowanie Enzo" style={{ flexDirection: 'column', gap: 8 }}>
+          <div className={s.row} style={{ alignItems: 'center' }}>
+            <span className={s.eyebrowCyan}>Enzo podsumowuje</span>
+            <button type="button" className={s.btnText} style={{ height: 32, padding: 0, color: 'var(--cyan)', fontSize: 14 }} onClick={playDebrief}>▶ Odsłuchaj</button>
+          </div>
+          {debrief.lines.map((l) => (
+            <span key={l.n} style={{ fontSize: 14 }}>
+              Seria {l.n} · <strong className={s.strong}>{l.avgPower} W</strong> ·{' '}
+              <span style={{ color: l.endedEarly ? 'var(--amber)' : verdictColor({ verdict: l.verdict } as never) }}>
+                {l.endedEarly ? 'przerwana' : verdictLabel({ verdict: l.verdict, deltaW: l.deltaW } as never)}
+              </span>
+            </span>
+          ))}
+          <span style={{ fontSize: 15, fontWeight: 600 }}>{debrief.tipText}</span>
         </section>
       )}
 

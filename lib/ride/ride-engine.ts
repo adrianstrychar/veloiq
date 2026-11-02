@@ -104,6 +104,8 @@ export interface RideEnginePlugin {
   discardRecovered(): Promise<void>;
 
   testVoice(options: { text: string }): Promise<void>;
+  /** Podsumowanie Enzo po jeździe: seria po serii + rada (głos Enzo z klipów, inaczej synteza tekstu). */
+  debrief(options: { series: { n: number; total: number; avg: number; vrd: string }[]; tip: string; text: string }): Promise<void>;
   /** Głosy pl-PL zainstalowane w telefonie (lepsze: Ustawienia → Dostępność → Treść mówiona → Głosy). */
   getVoices(options?: { language?: string }): Promise<{ voices: VoiceInfo[]; current?: string; rate: number; mode?: VoiceMode; packs?: { id: string; name: string }[] }>;
   /** Wybór głosu i tempa (0.35–0.65, domyślnie 0.5) – zapamiętywane w telefonie. */

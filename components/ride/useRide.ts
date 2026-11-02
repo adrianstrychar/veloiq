@@ -99,6 +99,7 @@ export function useRide() {
     connect: (o: { hrId?: string; powerId?: string; power2Id?: string }) => run(() => engine.connect(o)),
     zeroOffset: () => run(() => engine.zeroOffset()),
     testVoice: (text: string) => run(() => engine.testVoice({ text })),
+    debrief: (o: { series: { n: number; total: number; avg: number; vrd: string }[]; tip: string; text: string }) => run(() => engine.debrief(o)),
     voice,
     loadVoices: () => engine.getVoices().then(setVoiceState).catch(() => {}),
     setVoice: (o: { id?: string; rate?: number; mode?: VoiceMode; name?: string }) => run(async () => {
