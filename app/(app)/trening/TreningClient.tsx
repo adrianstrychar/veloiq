@@ -8,8 +8,9 @@ import { RideApp } from '@/components/ride/RideApp';
 import { saveRide } from '@/lib/ride/save-ride';
 import { isNativeRide } from '@/lib/ride/ride-client';
 import type { RideBriefing, WorkoutScript } from '@/lib/ride/workout-script';
+import type { RacePacing } from '@/lib/ride/race-pacing';
 
-export function TreningClient({ plan, planLabel, ftp, firstName, briefing }: { plan: WorkoutScript | null; planLabel?: string; ftp: number; firstName?: string; briefing?: RideBriefing }) {
+export function TreningClient({ plan, planLabel, ftp, firstName, briefing, racePacing }: { plan: WorkoutScript | null; planLabel?: string; ftp: number; firstName?: string; briefing?: RideBriefing; racePacing?: RacePacing }) {
   const router = useRouter();
   const ride = useRideContext();
   // imię dla Dyrektora (rzadko, w kluczowych momentach)
@@ -23,6 +24,7 @@ export function TreningClient({ plan, planLabel, ftp, firstName, briefing }: { p
       planLabel={planLabel}
       ftp={ftp}
       briefing={briefing}
+      racePacing={racePacing}
       onSave={async (summary, samples, script, settings, startedAt) => {
         const saved = await saveRide(sb, {
           summary, samples, script, startedAt, outdoor: settings.outdoor, ftp,

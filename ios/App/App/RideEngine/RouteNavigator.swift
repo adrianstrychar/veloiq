@@ -5,7 +5,11 @@ import Foundation
 /// start, szczyt), kilometry do mety i meta. Wywoływane na engineQueue przy każdej pozycji GPS.
 final class RouteNavigator {
     struct Cue { let d: Double; let dir: String }
-    struct Climb { let start: Double; let end: Double; let gain: Double; let grade: Double }
+    struct Climb {
+        let start: Double; let end: Double; let gain: Double; let grade: Double
+        // tryb startowy (strategia wyścigu): cel mocy i taktyka na tym podjeździe
+        var low: Int? = nil, high: Int? = nil, tier: String? = nil
+    }
 
     let name: String
     let total: Double
@@ -49,7 +53,8 @@ final class RouteNavigator {
         }
         climbs = ((json["climbs"] as? [[String: Any]]) ?? []).compactMap { c in
             guard let s = (c["start"] as? NSNumber)?.doubleValue, let e = (c["end"] as? NSNumber)?.doubleValue else { return nil }
-            return Climb(start: s, end: e, gain: (c["gain"] as? NSNumber)?.doubleValue ?? 0, grade: (c["grade"] as? NSNumber)?.doubleValue ?? 0)
+            return Climb(start: s, end: e, gain: (c["gain"] as? NSNumber)?.doubleValue ?? 0, grade: (c["grade"] as? NSNumber)?.doubleValue ?? 0,
+                         low: (c["low"] as? NSNumber)?.intValue, high: (c["high"] as? NSNumber)?.intValue, tier: c["tier"] as? String)
         }
     }
 
@@ -153,7 +158,9 @@ final class RouteNavigator {
         for (i, c) in climbs.enumerated() {
             let said = climbSaid[i] ?? 0
             let len = c.end - c.start
-            let vars = ["len": String(format: "%.1f", len / 1000), "grade": String(format: "%.0f", c.grade.rounded()), "gain": "\(Int(c.gain))"]
+            var vars = ["len": String(format: "%.1f", len / 1000), "grade": String(format: "%.0f", c.grade.rounded()), "gain": "\(Int(c.gain))"]
+            if let lo = c.low, let hi = c.high { vars["low"] = "\(lo)"; vars["high"] = "\(hi)" }
+            if let t = c.tier { vars["tier"] = t }
             if said < 1 && progress < c.start && c.start - progress <= 1000 {
                 climbSaid[i] = 1; onSay?("navClimb", vars)
             } else if said < 2 && progress >= c.start && progress < c.end - 200 {
@@ -186,8 +193,11 @@ final class RouteNavigator {
             d["nextTurn"] = ["dir": cues[i].dir, "in": Int(max(0, cues[i].d - progress))] as [String: Any]
         }
         if let c = climbs.first(where: { $0.end > progress }) {
-            d["nextClimb"] = ["in": Int(max(0, c.start - progress)), "len": Int(c.end - c.start), "grade": c.grade,
-                              "gain": Int(c.gain), "onIt": progress >= c.start] as [String: Any]
+            var nc: [String: Any] = ["in": Int(max(0, c.start - progress)), "len": Int(c.end - c.start), "grade": c.grade,
+                                     "gain": Int(c.gain), "onIt": progress >= c.start]
+            if let lo = c.low, let hi = c.high { nc["low"] = lo; nc["high"] = hi }
+            if let t = c.tier { nc["tier"] = t }
+            d["nextClimb"] = nc
         }
         return d
     }

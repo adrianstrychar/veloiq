@@ -9,7 +9,7 @@ const KEY = 'veloiq.route.v1';
 export function loadSavedRoute(): RideRoute | null {
   try { const r = localStorage.getItem(KEY); return r ? (JSON.parse(r) as RideRoute) : null; } catch { return null; }
 }
-function saveRoute(r: RideRoute | null) {
+export function saveRoute(r: RideRoute | null) {
   try { if (r) localStorage.setItem(KEY, JSON.stringify(r)); else localStorage.removeItem(KEY); } catch { /* pełna pamięć – trasa i tak działa w tej jeździe */ }
 }
 
@@ -115,7 +115,7 @@ export interface NavState {
   enabled?: boolean;   // false = wyłączona w trakcie jazdy
   muted?: boolean;     // długo poza trasą – Enzo milczy do powrotu
   nextTurn?: { dir: string; in: number };
-  nextClimb?: { in: number; len: number; grade: number; gain: number; onIt: boolean };
+  nextClimb?: { in: number; len: number; grade: number; gain: number; onIt: boolean; low?: number; high?: number; tier?: string };
 }
 
 /** Karta nawigacji na ekranie jazdy. */
@@ -160,6 +160,17 @@ export function NavCard({ nav, route, pos, onToggle }: {
         <span className={s.small}>
           {nav.nextClimb.onIt ? 'Na podjeździe' : `Podjazd za ${m(nav.nextClimb.in)}`}: {(nav.nextClimb.len / 1000).toFixed(1)} km · {nav.nextClimb.grade}% · +{nav.nextClimb.gain} m
         </span>
+      )}
+      {/* tryb startowy: cel mocy na podjazd ze strategii */}
+      {nav?.nextClimb?.low && nav.nextClimb.high && nav.nextClimb.in < 5000 && (
+        <div className={s.row} style={{ alignItems: 'baseline' }}>
+          <span className={s.metricLabel}>
+            {nav.nextClimb.tier === 'oszczedz' ? 'Cel · oszczędzaj' : nav.nextClimb.tier === 'atak' ? 'Cel · atak' : nav.nextClimb.tier === 'full' ? 'Cel · na maksa' : 'Cel na podjazd'}
+          </span>
+          <span className={s.statValue} style={{ fontSize: nav.nextClimb.onIt ? 30 : 22, color: 'var(--cyan)' }}>
+            {nav.nextClimb.low}–{nav.nextClimb.high}<span className={s.unit} style={{ fontSize: 14 }}> W</span>
+          </span>
+        </div>
       )}
       <RouteMap route={route} pos={pos} done={nav?.progress} height={110} />
       {onToggle && (

@@ -4,6 +4,9 @@
 // Generacja przez POST /api/races/[id]/strategy (cache po fingerprincie). Paleta z landingu,
 // NIE motyw aplikacji — świadomie (landing to źródło prawdy wizualnej dla tej sekcji).
 import { useRef, useState } from 'react';
+import Link from 'next/link';
+import { routeFromGpx } from '@/lib/ride/gpx';
+import { saveRoute } from '@/components/ride/RouteCard';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis } from 'recharts';
 import type { RaceStrategy, PacingTier } from '@/lib/ai/race-strategy';
 import type { RouteAnalysis } from '@/lib/route/detect-climbs';
@@ -152,6 +155,8 @@ export default function RaceStrategyView({ race, initialStrategy, initialRoute }
     setUploading(true); setUploadError(null);
     try {
       const fd = new FormData(); fd.append('file', file);
+      // trasa także do nawigacji w „Jedź” (tryb startowy: Enzo poda cele mocy na podjazdach)
+      try { saveRoute({ ...routeFromGpx(await file.text()), raceId: String(race.id) }); } catch { /* nawigacja opcjonalna */ }
       const res = await fetch(`/api/races/${race.id}/gpx`, { method: 'POST', body: fd });
       const data = await res.json().catch(() => null);
       if (res.ok && data?.analysis) {
@@ -296,6 +301,13 @@ export default function RaceStrategyView({ race, initialStrategy, initialRoute }
           <Block title="AI rekomenduje · Twoje mocne strony">
             <StratRows items={s.strengths.map((x) => ({ left: x.km, tip: x.tip }))} />
           </Block>
+        )}
+
+        {/* Jazda z tą strategią: Enzo prowadzi trasą startu i podaje waty na każdy podjazd */}
+        {route && (
+          <Link href="/trening" style={{ display: 'block', textAlign: 'center', minHeight: 44, lineHeight: '44px', borderRadius: 8, background: L.accent, color: '#04212B', fontSize: 15, fontWeight: 600, textDecoration: 'none' }}>
+            ▶ Jedź trasę startu z Enzo
+          </Link>
         )}
 
         {/* Wgranie/zmiana trasy GPX — przelicza strategię per realny podjazd */}

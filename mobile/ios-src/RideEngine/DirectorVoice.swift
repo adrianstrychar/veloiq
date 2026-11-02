@@ -141,6 +141,16 @@ final class DirectorVoice: NSObject {
             if has(c) { out.append(c) }
             let g = "grade.\(min(15, max(2, Int((num(vars["grade"]) ?? 0).rounded()))))"
             if has(g) { out.append(g) }
+            // tryb startowy: cel mocy ze strategii („Plan na podjazd: trzymaj od 280 do 300 watów”)
+            if vars["low"] != nil, let p = lead("climbPlan") {
+                let r = range(vars["low"], vars["high"])
+                if !r.isEmpty { out.append(p); out += r }
+            }
+            // …i taktyka na starcie podjazdu (oszczędzaj / atak / na maksa)
+            if key == "navClimbStart", let t = vars["tier"] {
+                let ev = t == "oszczedz" ? "climbSave" : t == "atak" ? "climbAttack" : t == "full" ? "climbFull" : ""
+                if !ev.isEmpty, let l = lead(ev) { out.append(l) }
+            }
             return out
         }
         if key == "navLeft" {

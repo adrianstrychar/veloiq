@@ -15,6 +15,7 @@ import { SummaryScreen, describeSaveError, parseJsonl, type RecordedSample } fro
 import { hmmss } from './parts';
 import { loadSavedRoute } from './RouteCard';
 import type { RideRoute } from '@/lib/ride/gpx';
+import { applyRaceTargets, type RacePacing } from '@/lib/ride/race-pacing';
 
 type Screen = 'home' | 'sensors' | 'pre' | 'live' | 'summary';
 
@@ -28,6 +29,8 @@ export interface RideAppProps {
   onAskCoach?: () => void;
   /** Eksport ostatnio zapisanej jazdy na Stravę. */
   onExportStrava?: () => Promise<{ url?: string; pending?: boolean; already?: boolean }>;
+  /** Najbliższy start ze strategią – tryb startowy (cele mocy na podjazdach trasy GPX). */
+  racePacing?: RacePacing;
 }
 
 const SETTINGS_KEY = 'veloiq.ride.settings';
@@ -42,7 +45,7 @@ const readCurrent = (): { script: WorkoutScript | null; startedAt: string } | nu
 const writeCurrent = (c: { script: WorkoutScript | null; startedAt: string } | null) => { try { if (c) localStorage.setItem(CURRENT_KEY, JSON.stringify(c)); else localStorage.removeItem(CURRENT_KEY); } catch { /* brak storage */ } };
 const writePending = (p: Pending | null) => { try { if (p) localStorage.setItem(PENDING_KEY, JSON.stringify(p)); else localStorage.removeItem(PENDING_KEY); } catch { /* brak storage */ } };
 
-export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, onExportStrava }: RideAppProps) {
+export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, onExportStrava, racePacing }: RideAppProps) {
   const ride = useRideContext(); // wspólny stan z layoutu (mini-pasek, nawigacja)
   const [screen, setScreen] = useState<Screen>('home');
   const [settings, setSettings] = useState<RideSettings>(DEFAULT_SETTINGS);
@@ -54,6 +57,9 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, on
   useEffect(() => { setPending(readPending()); }, []);
   const [route, setRoute] = useState<RideRoute | null>(null);
   useEffect(() => { setRoute(loadSavedRoute()); }, []);
+  // tryb startowy domyślnie włączony, gdy wczytana trasa pochodzi z tego startu (wgrana w „Starty”)
+  const [raceOn, setRaceOn] = useState(false);
+  useEffect(() => { if (racePacing && route?.raceId === racePacing.raceId) setRaceOn(true); }, [racePacing, route?.raceId]);
 
   // ustawienia per użytkownik (wygoda – nic krytycznego)
   useEffect(() => {
@@ -105,7 +111,9 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, on
     setScript(sc.steps.length ? sc : null);
     setStartedAt(now);
     writeCurrent({ script: sc.steps.length ? sc : null, startedAt: now.toISOString() });
-    ride.start(briefing ? { ...sc, briefing } : sc, settings, undefined, route); // odprawa Enzo + trasa GPX
+    // tryb startowy: podjazdy trasy z celem mocy i taktyką ze strategii
+    const rideRoute = raceOn && racePacing && route && settings.outdoor ? applyRaceTargets(route, racePacing.phases, ftp) : route;
+    ride.start(briefing ? { ...sc, briefing } : sc, settings, undefined, rideRoute); // odprawa Enzo + trasa GPX
   };
 
   const dateLabel = new Date().toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -141,7 +149,9 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, on
     <HomeScreen ride={ride} plan={plan} planLabel={planLabel} dateLabel={dateLabel[0].toUpperCase() + dateLabel.slice(1)}
       settings={settings} onSettings={updateSettings}
       onStart={() => setScreen('pre')} onFree={() => start(freeRideScript(ftp))} onSensors={() => setScreen('sensors')}
-      route={route} onRoute={setRoute} />
+      route={route} onRoute={setRoute}
+      race={racePacing} raceOn={raceOn} onRaceOn={setRaceOn}
+      onRaceRide={() => racePacing && start({ ...freeRideScript(ftp), name: racePacing.name })} />
     </>
   );
 

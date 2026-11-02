@@ -6,6 +6,7 @@ import { IconBolt, IconHeart, IconPlay, Profile, StatusDot, hmmss, scriptStats }
 import { VoiceSettings } from './VoiceSettings';
 import { RouteCard } from './RouteCard';
 import type { RideRoute } from '@/lib/ride/gpx';
+import type { RacePacing } from '@/lib/ride/race-pacing';
 
 interface Props {
   ride: Ride;
@@ -19,9 +20,14 @@ interface Props {
   onSensors: () => void;
   route: RideRoute | null;
   onRoute: (r: RideRoute | null) => void;
+  /** Tryb startowy: najbliższy start ze strategią (cele mocy na podjazdach). */
+  race?: RacePacing;
+  raceOn?: boolean;
+  onRaceOn?: (v: boolean) => void;
+  onRaceRide?: () => void;
 }
 
-export function HomeScreen({ ride, plan, planLabel, dateLabel, settings, onSettings, onStart, onFree, onSensors, route, onRoute }: Props) {
+export function HomeScreen({ ride, plan, planLabel, dateLabel, settings, onSettings, onStart, onFree, onSensors, route, onRoute, race, raceOn, onRaceOn, onRaceRide }: Props) {
   const st = plan ? scriptStats(plan) : null;
   const power = ride.sensors.power;
   const hr = ride.sensors.hr;
@@ -92,6 +98,35 @@ export function HomeScreen({ ride, plan, planLabel, dateLabel, settings, onSetti
             className={settings.outdoor === o.v ? s.segBtnOn : s.segBtn} onClick={() => onSettings({ ...settings, outdoor: o.v })}>{o.l}</button>
         ))}
       </div>
+
+      {settings.outdoor && race && (
+        <section className={s.card} aria-label="Tryb startowy">
+          <span className={s.eyebrowCyan}>Tryb startowy</span>
+          <span className={s.strong} style={{ fontSize: 18 }}>
+            {race.name} · {new Date(race.date + 'T12:00:00').toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })}
+          </span>
+          {route ? (
+            <>
+              <label className={s.toggleRow}>
+                <span className={s.stack} style={{ gap: 2 }}>
+                  <span style={{ fontSize: 15 }}>Prowadź według strategii</span>
+                  <span className={s.small}>
+                    Enzo poda cel mocy na {route.climbs.length} {route.climbs.length === 1 ? 'podjeździe' : 'podjazdach'} trasy „{route.name}”
+                    {race.phases.length ? ' – ze strategii startu.' : ' – z Twojego FTP (strategia jeszcze niegotowa).'}
+                  </span>
+                </span>
+                <input type="checkbox" className={s.checkbox} checked={!!raceOn} onChange={() => onRaceOn?.(!raceOn)} />
+              </label>
+              {raceOn && route.raceId && route.raceId !== race.raceId && (
+                <span className={s.small} style={{ color: 'var(--amber)' }}>Uwaga: wczytana trasa nie pochodzi z tego startu.</span>
+              )}
+              {raceOn && <button type="button" className={s.btnPrimary} onClick={onRaceRide}><IconPlay size={16} />Jedź trasę startu z Enzo</button>}
+            </>
+          ) : (
+            <span className={s.small}>Wgraj poniżej plik GPX trasy startu – Enzo zapowie każdy podjazd i poda, ile watów trzymać.</span>
+          )}
+        </section>
+      )}
 
       {settings.outdoor
         ? <RouteCard route={route} onRoute={onRoute} />
