@@ -20,6 +20,9 @@ import { Link2 } from 'lucide-react';
 import { RecordsCard } from '@/components/veloiq/RecordsCard';
 import { PowerShelfCard } from '@/components/veloiq/PowerShelfCard';
 import { PowerProfileCard } from '@/components/veloiq/PowerProfileCard';
+import { WhoopCard } from '@/components/veloiq/WhoopCard';
+import { syncWhoopIfStale } from '@/lib/whoop';
+import { loadWhoop, type WhoopState } from '@/lib/whoop-summary';
 import { computePowerProfile } from '@/lib/power-profile';
 import { SeasonGoalCard } from '@/components/veloiq/SeasonGoalCard';
 import { TodayCard, type TodayPlan } from '@/components/veloiq/TodayCard';
@@ -27,7 +30,7 @@ import { WeekCard, type WeekDay } from '@/components/veloiq/WeekCard';
 import { computeRecords, computePowerByPeriod, computeGoal, type Period, type PeriodRecords } from '@/lib/dashboard-engagement';
 import styles from './dashboard.module.css';
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams?: { whoop?: string } }) {
   const supabase = createServerSupabaseClient();
 
   const {
@@ -43,6 +46,9 @@ export default async function DashboardPage() {
   const athleteId = athlete?.id;
   // jazdy nagrane w VeloIQ, których jeszcze nie ma na liście (np. zapis bez internetu) – szybkie, gdy nic nowego
   if (user && athleteId) await importMissingRides(supabase, user.id, athleteId as string).catch(() => 0);
+  // WHOOP: dociągnij świeże dane (gdy starsze niż 30 min), potem stan na dziś – gotowość i karta
+  if (athleteId) await syncWhoopIfStale(supabase, athleteId as string).catch(() => undefined);
+  const whoop: WhoopState | null = athleteId ? await loadWhoop(supabase, athleteId as string, userTodayISO()).catch(() => null) : null;
   const stravaConnected = !!athlete?.strava_id;
   const todayISO = localTodayISO();
 
@@ -127,7 +133,7 @@ export default async function DashboardPage() {
     tsb: Number(r.tsb),
   }));
 
-  const readiness = computeReadiness(metricRows);
+  const readiness = computeReadiness(metricRows, whoop?.today ? { recovery: whoop.today.recovery, hrvLow: whoop.today.hrvLow, sleepShort: whoop.today.sleepShort } : null);
 
   const pmc: PmcRow[] = metricRows.map((r) => {
     const d = new Date(r.date);
@@ -282,6 +288,9 @@ export default async function DashboardPage() {
         <TodayCard plan={todayPlan} dayDate={todayISO}
           doneTss={(lastActivity as { activity_date?: string; tss?: number | null } | null)?.activity_date === todayISO
             ? ((lastActivity as { tss?: number | null }).tss ?? 0) : null} />
+
+        {/* 2b. WHOOP (span2) – regeneracja, HRV, sen (albo zaproszenie do połączenia) */}
+        <WhoopCard state={whoop} flash={searchParams?.whoop ?? null} className={styles.span2} />
 
         {/* 3. AI Insight (span2) */}
         <div className={styles.span2}>

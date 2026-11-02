@@ -659,6 +659,7 @@ final class WorkoutEngine {
         if let b = script.briefing {
             if let r = b.readiness { d["readiness"] = Int(r.rounded()) }
             if let s = b.readyState { d["readyState"] = s }
+            if let rc = b.recovery { d["recovery"] = Int(rc.rounded()) }
         }
         return d
     }
@@ -711,8 +712,15 @@ final class WorkoutEngine {
     private func briefingTick(_ s: Int, _ speak: Bool) {
         guard let b = script.briefing else { return }
         if s == Self.briefReadySec, let r = b.readiness {
-            say("readiness", ["pct": "\(Int(r.rounded()))", "level": b.readyColor ?? "yellow", "state": b.readyState ?? "",
-                              "heavy": (b.yTss ?? 0) >= 150 ? "1" : "0"], .info, speak)
+            var v: [String: String] = ["pct": "\(Int(r.rounded()))", "level": b.readyColor ?? "yellow", "state": b.readyState ?? "",
+                                       "heavy": (b.yTss ?? 0) >= 150 ? "1" : "0"]
+            if let rec = b.recovery, let lv = b.recLevel {
+                let low = b.hrvLow == true, short = b.sleepShort == true
+                v["rec"] = "\(Int(rec.rounded()))"; v["whoop"] = lv
+                v["hrvLow"] = low ? "1" : "0"; v["sleepShort"] = short ? "1" : "0"
+                v["whoopTxt"] = " Regeneracja WHOOP \(Int(rec.rounded())) procent." + (low ? " Zmienność tętna niższa niż zwykle." : short ? " Za mało snu." : "")
+            }
+            say("readiness", v, .info, speak)
         }
         if s == Self.briefCondSec, let a = b.hrA, let k = b.hrB {
             var pw = 0.0, hr = 0.0, n = 0

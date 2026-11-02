@@ -90,6 +90,10 @@ export interface RideBriefing {
   readyColor?: 'green' | 'yellow' | 'red';
   readyState?: string;                   // „Dobra gotowość”…
   yTss?: number;                         // TSS wczoraj
+  recovery?: number;                     // regeneracja WHOOP dziś 0–100 (gdy połączony)
+  recLevel?: 'green' | 'yellow' | 'red';
+  hrvLow?: boolean;                      // HRV ≥ 15 % poniżej normy 30 dni
+  sleepShort?: boolean;                  // < 6 h snu albo < 70 % potrzeby
   hrA?: number; hrB?: number;            // oczekiwane tętno przy mocy W: hrA + hrB·W
 }
 

@@ -179,6 +179,16 @@ final class DirectorVoice: NSObject {
             let r = min(100, max(20, r5(num(vars["pct"]) ?? 0)))
             let lv = vars["level"] ?? "yellow"
             var out: [String] = has("rd.\(r)") ? ["rd.\(r)"] : []
+            // z WHOOP: zamiast oceny z PMC – regeneracja z liczbą i werdykt WHOOP (+ HRV / sen)
+            if let w = vars["whoop"], !w.isEmpty {
+                let rc = min(100, max(5, r5(num(vars["rec"]) ?? 0)))
+                if has("rec.\(rc)"), let wl = lead(w == "green" ? "whoopGreen" : (w == "red" ? "whoopRed" : "whoopYellow")) {
+                    out += ["rec.\(rc)", wl]
+                    if vars["hrvLow"] == "1", let l = lead("hrvLow") { out.append(l) }
+                    else if vars["sleepShort"] == "1", let l = lead("sleepShort") { out.append(l) }
+                    return out
+                }
+            }
             if let l = lead(lv == "green" ? "readyGreen" : (lv == "red" ? "readyRed" : "readyYellow")) { out.append(l) }
             if vars["heavy"] == "1", let l = lead("yHeavy") { out.append(l) }
             return out

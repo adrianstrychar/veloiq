@@ -2,9 +2,11 @@
 // nie recenzentem. Domyślnie tłumaczy PO CO dzisiejszy trening (w kontekście wczoraj + fazy).
 // Korekta = WYJĄTEK z twardym uzasadnieniem z danych (TSB, rampa CTL) + ASYMETRIA:
 // ku odpoczynkowi przy przemęczeniu — dozwolona; ku wysiłkowi — prawie nigdy, w taperze NIGDY.
-// Bez WHOOP jedyne "dane" to PMC (TSB/rampa) + kalendarz startów (okno taperu z race-taper #58).
+// Dane: PMC (TSB/rampa) + kalendarz startów (okno taperu z race-taper #58) + (opcjonalnie) poranna
+// regeneracja WHOOP: czerwona = sygnał ku odpoczynkowi; zielona NIGDY nie jest licencją na docisk.
 import { taperDaysFor, type RacePriority } from '@/lib/race-taper';
 import { firstName } from '@/lib/name';
+import { whoopLine, type WhoopToday } from '@/lib/whoop-summary';
 
 export interface DailyInsightMetrics {
   date: string;
@@ -64,7 +66,8 @@ export function computeDirectives(
   m: DailyInsightMetrics,
   today: PlanDaySlim | null,
   yesterday: YesterdayContext | null,
-  race: RaceContext | null
+  race: RaceContext | null,
+  whoop?: WhoopToday | null
 ): Directives {
   const taperVeto = !!race && race.inTaper;
   const nearRaceReminder = !!race && race.nearRace;
@@ -82,7 +85,9 @@ export function computeDirectives(
     m.tsb >= HIGH_TSB_FOR_PUSH &&
     m.ctlRamp <= 0 &&
     todayEasy &&
-    !yesterdayHard;
+    !yesterdayHard &&
+    // WHOOP: docisk tylko przy zielonej regeneracji (albo bez WHOOP)
+    (whoop?.recovery == null || whoop.recovery >= 67);
 
   return { taperVeto, nearRaceReminder, pushConsiderable };
 }
@@ -130,9 +135,10 @@ export function enforceInsightSafety(
   m: DailyInsightMetrics,
   today: PlanDaySlim | null,
   yesterday: YesterdayContext | null,
-  race: RaceContext | null
+  race: RaceContext | null,
+  whoop?: WhoopToday | null
 ): { text: string; vetoed: boolean } {
-  const d = computeDirectives(m, today, yesterday, race);
+  const d = computeDirectives(m, today, yesterday, race, whoop);
   if (race && race.priority === 'A' && d.taperVeto && mentionsPushIntensity(text)) {
     return { text: taperFallback(race), vetoed: true };
   }
@@ -144,9 +150,10 @@ export function buildDailyInsightPrompt(
   today: PlanDaySlim | null,
   yesterday: YesterdayContext | null,
   race: RaceContext | null,
-  name?: string | null // pełne name z profilu; builder bierze firstName (brak → zwrot bez imienia)
+  name?: string | null, // pełne name z profilu; builder bierze firstName (brak → zwrot bez imienia)
+  whoop?: WhoopToday | null
 ): { system: string; user: string } {
-  const d = computeDirectives(m, today, yesterday, race);
+  const d = computeDirectives(m, today, yesterday, race, whoop);
 
   // Tylko pierwszy człon imienia; reguła: DOKŁADNIE ta forma, bez zdrobnień i bez nazwiska.
   const nm = firstName(name);
@@ -171,11 +178,23 @@ export function buildDailyInsightPrompt(
         'Przypomnij o nadchodzącym starcie i trzymaniu planu. NIE namawiaj do dodatkowych bodźców.'
     );
   }
+  if (whoop?.recovery != null && whoop.recovery < 34) {
+    rules.push(
+      `WHOOP: SŁABA REGENERACJA (${whoop.recovery}%)${whoop.hrvLow ? ', HRV wyraźnie poniżej normy' : ''}${whoop.sleepShort ? ', za mało snu' : ''}. ` +
+        'To twardy sygnał ku odpoczynkowi: zaproponuj lżejszą wersję dzisiejszego treningu (krócej, strefa 1–2) albo odpoczynek, jeśli plan jest mocny. Powiedz krótko DLACZEGO (regeneracja z WHOOP).'
+    );
+  } else if (whoop?.recovery != null && whoop.recovery < 67 && (whoop.hrvLow || whoop.sleepShort)) {
+    rules.push(
+      `WHOOP: regeneracja średnia (${whoop.recovery}%)${whoop.hrvLow ? ', HRV poniżej normy' : ''}${whoop.sleepShort ? ', krótki sen' : ''}. Trzymaj plan, ale bez dokładania; możesz wspomnieć o śnie/odpoczynku.`
+    );
+  }
   if (d.pushConsiderable) {
     rules.push(
       'Wyjątek — docisk dozwolony DELIKATNIE: TSB bardzo wysoki, forma nie rośnie, dzisiejszy dzień jest lekki bez wyraźnego powodu i nie ma startu w pobliżu. ' +
         'Możesz zasugerować odrobinę więcej bodźca — jako OPCJĘ, nie nakaz. Nie każ się niszczyć.'
     );
+  } else if (whoop?.recovery != null && whoop.recovery < 34) {
+    rules.push('NIE sugeruj zwiększania intensywności.');
   } else {
     rules.push('NIE sugeruj zwiększania intensywności. Broń dzisiejszego planu i wytłumacz jego sens w kontekście wczoraj i fazy sezonu.');
   }
@@ -223,6 +242,7 @@ export function buildDailyInsightPrompt(
     todayLine,
     yesterdayLine,
     raceLine,
+    whoop ? `WHOOP (rano): ${whoopLine(whoop)}.` : 'WHOOP: brak danych na dziś.',
     '',
     'Napisz maksymalnie dwa zdania: domyślnie wytłumacz po co dziś ten trening (broń planu w kontekście wczoraj i fazy). Sugeruj zmianę tylko jeśli dane twardo to uzasadniają, z asymetrią ku odpoczynkowi.',
   ].join('\n');

@@ -88,7 +88,7 @@ export const FLEX_PHRASES: Record<string, string> = {
   hrHigh: 'Tętno {hr}, powyżej zakresu. Zwolnij trochę.',
   hrRecovered: 'Tętno spadło do {hr}. Jesteś gotowy.',
   status: 'Średnio {avg} watów.{hrTxt}',
-  readiness: 'Gotowość dziś {pct} procent. {state}.',
+  readiness: 'Gotowość dziś {pct} procent. {state}.{whoopTxt}',
   condition: 'Kondycja dziś {sign}{n}.',
   count: '{word}',
   drink: 'Pij! Kilka łyków.',
@@ -571,8 +571,13 @@ export class FlexEngine {
     const b = this.script.briefing;
     if (!b) return;
     if (s === BRIEF_READY_SEC && b.readiness != null) {
+      const rec = b.recovery != null && b.recLevel ? Math.round(b.recovery) : null;
       this.say('readiness', { pct: Math.round(b.readiness), level: b.readyColor ?? 'yellow', state: b.readyState ?? '',
-        heavy: (b.yTss ?? 0) >= 150 ? 1 : 0 }, 'info', speak);
+        heavy: (b.yTss ?? 0) >= 150 ? 1 : 0,
+        ...(rec != null ? {
+          rec, whoop: b.recLevel!, hrvLow: b.hrvLow ? 1 : 0, sleepShort: b.sleepShort ? 1 : 0,
+          whoopTxt: ` Regeneracja WHOOP ${rec} procent.${b.hrvLow ? ' Zmienność tętna niższa niż zwykle.' : b.sleepShort ? ' Za mało snu.' : ''}`,
+        } : {}) }, 'info', speak);
     }
     if (s === BRIEF_COND_SEC && b.hrA != null && b.hrB != null) {
       const idx: number[] = [];

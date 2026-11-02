@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { syncStravaActivities, recalculateFitnessMetrics } from '@/lib/sync';
+import { syncWhoop, type WhoopConnection } from '@/lib/whoop';
 
 // Cron sync (Vercel, dziennie 05:00 UTC). Autoryzacja: Bearer CRON_SECRET (Vercel wstrzykuje
 // ten nagłówek automatycznie, jeśli env CRON_SECRET jest ustawiony w projekcie).
@@ -41,5 +42,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, count: results.length, results });
+  // WHOOP: ostatnie 3 dni każdego połączonego konta (brak tabeli = migracja 024 jeszcze nie puszczona)
+  const whoop: { athlete_id: string; ok: boolean; error?: string }[] = [];
+  const { data: conns } = await supabase
+    .from('whoop_connections')
+    .select('athlete_id, access_token, refresh_token, expires_at, last_sync_at, sync_error')
+    .or('sync_error.is.null,sync_error.neq.reauth');
+  for (const c of (conns ?? []) as WhoopConnection[]) {
+    const r = await syncWhoop(supabase, c.athlete_id, { days: 3, conn: c }).catch((e) => ({ ok: false, error: String(e) }));
+    whoop.push({ athlete_id: c.athlete_id, ok: r.ok, ...(r.ok ? {} : { error: (r as { error?: string }).error }) });
+  }
+
+  return NextResponse.json({ ok: true, count: results.length, results, whoop });
 }

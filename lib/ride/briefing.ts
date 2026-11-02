@@ -1,5 +1,6 @@
 // Odprawa na rozgrzewce (Enzo po kilku minutach jazdy), w stylu „gotowość / kondycja” z Garmina.
-// 1) Gotowość dziś — ta sama liczba co pierścień na pulpicie (PMC: forma + świeżość).
+// 1) Gotowość dziś — ta sama liczba co pierścień na pulpicie (PMC: forma + świeżość; z WHOOP
+//    także poranna regeneracja – Enzo mówi wtedy też, co pokazuje WHOOP).
 // 2) Model tętna z ostatnich jazd: HR = hrA + hrB·W (regresja po jazdach wytrzymałościowych).
 //    Na rozgrzewce silnik porównuje faktyczne tętno przy danej mocy z modelem → „kondycja dziś +3”.
 
@@ -7,10 +8,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { shiftISO, userTodayISO } from '@/lib/timezone';
 import type { RideBriefing } from './workout-script';
+import { loadWhoop } from '@/lib/whoop-summary';
 
 export async function buildBriefing(supabase: SupabaseClient, athleteId: string): Promise<RideBriefing | undefined> {
   const today = userTodayISO();
-  const [{ data: pmc }, { data: rides }] = await Promise.all([
+  const [{ data: pmc }, { data: rides }, whoop] = await Promise.all([
     supabase.from('fitness_metrics').select('date, ctl, atl, tsb, daily_tss').eq('athlete_id', athleteId).order('date', { ascending: true }),
     supabase.from('strava_activities')
       .select('avg_watts, avg_hr, duration_seconds, intensity_factor, type')
@@ -20,16 +22,24 @@ export async function buildBriefing(supabase: SupabaseClient, athleteId: string)
       .gte('duration_seconds', 1800)
       .neq('type', 'EBikeRide')
       .limit(60),
+    loadWhoop(supabase, athleteId, today).catch(() => null),
   ]);
+  const wt = whoop?.today ?? null;
 
   const out: RideBriefing = {};
   const rows: MetricRow[] = (pmc ?? []).filter((r) => r.date <= today)
     .map((r) => ({ date: r.date as string, ctl: Number(r.ctl), atl: Number(r.atl), tsb: Number(r.tsb) }));
-  const rd = computeReadiness(rows);
+  const rd = computeReadiness(rows, wt ? { recovery: wt.recovery, hrvLow: wt.hrvLow, sleepShort: wt.sleepShort } : null);
   if (rd) {
     out.readiness = rd.raceReady;
     out.readyColor = rd.color;
     out.readyState = rd.state;
+  }
+  if (wt?.recovery != null && wt.level) {
+    out.recovery = wt.recovery;
+    out.recLevel = wt.level;
+    if (wt.hrvLow) out.hrvLow = true;
+    if (wt.sleepShort) out.sleepShort = true;
   }
   const y = (pmc ?? []).find((r) => r.date === shiftISO(today, -1));
   if (y?.daily_tss != null) out.yTss = Math.round(Number(y.daily_tss));

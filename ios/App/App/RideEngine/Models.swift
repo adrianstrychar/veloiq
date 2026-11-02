@@ -21,6 +21,10 @@ struct RideBriefing: Codable {
     let readyColor: String?
     let readyState: String?
     let yTss: Double?
+    let recovery: Double?      // regeneracja WHOOP dziś 0–100 (gdy połączony)
+    let recLevel: String?      // green | yellow | red
+    let hrvLow: Bool?
+    let sleepShort: Bool?
     let hrA: Double?
     let hrB: Double?
 }
@@ -173,7 +177,7 @@ enum Phrases {
         "hrHigh": "Tętno {hr}, powyżej zakresu. Zwolnij trochę.",
         "hrRecovered": "Tętno spadło do {hr}. Jesteś gotowy.",
         "status": "Średnio {avg} watów.{hrTxt}",
-        "readiness": "Gotowość dziś {pct} procent. {state}.",
+        "readiness": "Gotowość dziś {pct} procent. {state}.{whoopTxt}",
         "condition": "Kondycja dziś {sign}{n}.",
         "count": "{word}",
         "drink": "Pij! Kilka łyków.",

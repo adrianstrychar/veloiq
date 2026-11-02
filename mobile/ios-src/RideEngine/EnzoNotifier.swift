@@ -57,7 +57,7 @@ final class EnzoNotifier: NSObject, UNUserNotificationCenterDelegate {
                 t += " · tętno \(h)" + (["ok": " ✓", "high": " ↑", "low": " ↓"][g("hrState")] ?? "")
             }
             return t
-        case "readiness": return "Gotowość \(g("pct"))% – \(g("state"))"
+        case "readiness": return "Gotowość \(g("pct"))% – \(g("state"))" + (v["rec"].map { " · WHOOP \($0)%" } ?? "")
         case "condition": return "Kondycja dziś \(g("sign"))\(g("n"))"
         case "drink": return "Pij!"
         case "eat": return "Jedz – żel/baton"

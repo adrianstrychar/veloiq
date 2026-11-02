@@ -5,6 +5,7 @@ import { fetchPlanView, renderPlanAnchor } from '@/lib/plan-view';
 import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { taperDaysFor, type RacePriority } from '@/lib/race-taper';
 import { firstName } from '@/lib/name';
+import { loadWhoop, whoopLine } from '@/lib/whoop-summary';
 
 interface AthleteRow {
   id: string;
@@ -224,7 +225,7 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
   // Plan bieżącego tygodnia dołącza do tej samej równoległej partii — jest ALWAYS-ON, bo zostawiony
   // za narzędziem powodował, że model improwizował sesję sprzeczną z zakładką Plan.
   const tomorrowISO = shiftISO(todayISO, 1);
-  const [{ data: fmRows }, { data: nextRace }, planView] = await Promise.all([
+  const [{ data: fmRows }, { data: nextRace }, planView, whoop] = await Promise.all([
     athleteId
       ? supabase.from('fitness_metrics').select('date, ctl, atl, tsb').eq('athlete_id', athleteId).order('date', { ascending: true })
       : Promise.resolve({ data: null }),
@@ -234,11 +235,13 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
     athleteId
       ? fetchPlanView(supabase, athleteId, mondayOfISO(todayISO), todayISO)
       : Promise.resolve(null),
+    athleteId ? loadWhoop(supabase, athleteId, todayISO).catch(() => null) : Promise.resolve(null),
   ]);
+  const wt = whoop?.today ?? null;
   const rows = (fmRows ?? []) as MetricRow[];
   const now = rows.length ? rows[rows.length - 1] : null;
   const weekAgo = rows.length ? rows[Math.max(0, rows.length - 8)] : null;
-  const readiness = rows.length ? computeReadiness(rows) : null;
+  const readiness = rows.length ? computeReadiness(rows, wt ? { recovery: wt.recovery, hrvLow: wt.hrvLow, sleepShort: wt.sleepShort } : null) : null;
 
   const ctl = now ? Math.round(now.ctl) : 0;
   const atl = now ? Math.round(now.atl) : 0;
@@ -284,7 +287,9 @@ ${nameRule}
 ${ftpLine}
 DZIŚ: ${todayISO} (${dayName})
 FORMA DZIŚ: CTL ${ctl} | ATL ${atl} | TSB ${tsb}${trend !== null ? ` | Trend CTL ${trend >= 0 ? '+' : ''}${trend}/tydzień` : ''}${
-    readiness ? `\nGOTOWOŚĆ: ${readiness.raceReady}% (${readiness.state}) | Świeżość ${readiness.freshPct}%` : ''
+    readiness ? `\nGOTOWOŚĆ: ${readiness.raceReady}% (${readiness.state}) | Świeżość ${readiness.freshPct}%${readiness.recoveryPct != null ? ` | Regeneracja WHOOP ${readiness.recoveryPct}%` : ''}` : ''
+  }${
+    wt ? `\nWHOOP DZIŚ RANO: ${whoopLine(wt)}` : whoop?.connected ? '\nWHOOP: połączony, dzisiejsza regeneracja jeszcze niepoliczona (pojawia się po pobudce).' : ''
   }
 ${raceLine}
 ${planBlock ?? 'PLAN TYGODNIA: brak planu na bieżący tydzień w aplikacji — powiedz to wprost i wskaż zakładkę Plan (tam można go wygenerować). NIE układaj planu w czacie.'}
