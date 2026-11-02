@@ -452,6 +452,8 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
       const d = await res.json();
       if (!res.ok || !d.ok) throw new Error(d.error ?? 'modify failed');
       setOverride((o) => ({ ...o, [weekStart]: d.days as PlanDayView[] }));
+      // zmieniony plan = nowa baza; suwak wraca do pozycji neutralnej (serwer zeruje user_hours)
+      if (weekStart === weeks[currentIdx]?.weekStart) setHours(computeBaseHours(d.days as PlanDayView[], activitiesByDate));
       // Karta planu = STAN tygodnia (insight); czat = opis SAMEJ zmiany (change) — różne natury.
       if (d.insight) setOverrideInsight((o) => ({ ...o, [weekStart]: d.insight as string }));
       setChat((c) => [...c, { role: 'ai', text: (d.change as string) ?? (d.insight as string) ?? 'Plan zaktualizowany.' }]);
@@ -844,21 +846,20 @@ export function Plan({ weeks, currentIdx, todayISO, ftp, ctl, activitiesByDate, 
           )}
         </>
       ) : (
-        // Stan pusty — brak planu dla tego tygodnia.
-        // TODO 5.7: tutaj przycisk "Wygeneruj plan" (client) → POST /api/plan/generate.
+        // Stan pusty — brak planu dla tego tygodnia (miniony tydzień: bez generowania).
         <div style={{ ...card, padding: '28px 18px', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
           <div style={{ fontSize: 28 }}>📋</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Brak planu na ten tydzień</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{isPast ? 'Ten tydzień był bez planu' : 'Brak planu na ten tydzień'}</div>
           <div style={{ fontSize: 12, color: C.muted, maxWidth: 280, lineHeight: 1.5 }}>
-            Plan dla tego tygodnia nie został jeszcze wygenerowany.
+            {isPast ? 'Jazdy z tego tygodnia znajdziesz w kalendarzu.' : 'Plan dla tego tygodnia nie został jeszcze wygenerowany.'}
           </div>
-          <button
+          {!isPast && <button
             onClick={() => generatePlan(week.weekStart)}
             disabled={genLoading}
             style={{ marginTop: 4, background: C.cyan, border: 'none', borderRadius: 10, padding: '10px 18px', color: C.bg, fontWeight: 600, fontSize: 13, cursor: genLoading ? 'default' : 'pointer', opacity: genLoading ? 0.6 : 1 }}
           >
             {genLoading ? 'Generuję…' : '⚡ Wygeneruj plan'}
-          </button>
+          </button>}
         </div>
       )}
 

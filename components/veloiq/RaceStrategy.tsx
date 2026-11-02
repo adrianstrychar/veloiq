@@ -224,14 +224,13 @@ export default function RaceStrategyView({ race, initialStrategy, initialRoute }
       </div>
 
       {/* wk-meta — 4 kafle jak landing; POGODA "—" (Etap 3: geocoding location→lat/lon + Open-Meteo ≤16 dni, świeży fetch poza cache strategii) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', borderBottom: `1px solid ${L.border}` }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', borderBottom: `1px solid ${L.border}` }}>
         {[
           { v: s.meta.distance_km != null ? `${s.meta.distance_km} km` : '—', l: 'Dystans' },
           { v: s.meta.elevation_m != null ? `${s.meta.elevation_m} m` : '—', l: 'Przewyższenie' },
           { v: s.meta.surface, l: 'Nawierzchnia' },
-          { v: '—', l: 'Pogoda', tip: 'Dostępna bliżej startu (~2 tyg.)' },
         ].map((m, i) => (
-          <div key={i} title={m.tip} style={{ padding: '0.7rem 0.6rem', borderRight: i < 3 ? `1px solid ${L.border}` : 'none', textAlign: 'center' }}>
+          <div key={i} style={{ padding: '0.7rem 0.6rem', borderRight: i < 2 ? `1px solid ${L.border}` : 'none', textAlign: 'center' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: L.white }}>{m.v}</div>
             <div style={{ fontSize: 9, color: L.dim, textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 2 }}>{m.l}</div>
           </div>

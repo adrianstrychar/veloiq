@@ -58,6 +58,7 @@ export default async function DashboardPage() {
       .select('strava_activity_id, name, activity_date, type, distance_km, elevation_m, duration_seconds, tss, avg_watts, avg_hr, best_efforts, laps, details_synced_at, synced_at, avg_cadence, normalized_power, intensity_factor, calories, avg_speed:raw_data->average_speed, max_speed:raw_data->max_speed, kilojoules:raw_data->kilojoules')
       .eq('athlete_id', athleteId)
       .order('activity_date', { ascending: false })
+      .order('raw_data->>start_date', { ascending: false })   // dwie jazdy jednego dnia → ta późniejsza
       .limit(1)
       .maybeSingle(),
     // sprawdź czy są aktywności z tętnem (potrzebne do deriveFtpSource)
@@ -105,7 +106,8 @@ export default async function DashboardPage() {
     (athlete as any)?.training_mode ?? null,
     (athlete as any)?.has_power_meter ?? false,
     (athlete as any)?.ftp_watts ?? null,
-    !!hrCheck
+    !!hrCheck,
+    (athlete as any)?.ftp_source ?? null,
   );
   const ftpData = ftpDisplay(
     ftpSource,
@@ -275,11 +277,13 @@ export default async function DashboardPage() {
         {readiness && <ReadinessModule readiness={readiness} pmc={pmc} />}
 
         {/* 2. Dziś — zaplanowana sesja (pasek stref, bez tekstu struktury) */}
-        <TodayCard plan={todayPlan} dayDate={todayISO} />
+        <TodayCard plan={todayPlan} dayDate={todayISO}
+          doneTss={(lastActivity as { activity_date?: string; tss?: number | null } | null)?.activity_date === todayISO
+            ? ((lastActivity as { tss?: number | null }).tss ?? 0) : null} />
 
         {/* 3. AI Insight (span2) */}
         <div className={styles.span2}>
-          {readiness && <DailyInsight fallback={readiness.advice} />}
+          {readiness && <DailyInsight key={(lastActivity as { synced_at?: string | null } | null)?.synced_at ?? 'none'} fallback={readiness.advice} />}
         </div>
 
         {/* 4. Ten tydzień — słupki plan vs wykonane + streak */}

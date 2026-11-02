@@ -1,3 +1,4 @@
+import { userTodayISO } from '@/lib/timezone';
 // CTL/ATL/TSB calculations (sekcja 11)
 
 // TSS dla aktywności z miernikiem mocy
@@ -51,11 +52,10 @@ export function interpretTSB(tsb: number): {
   return { label: 'Przetrenowany', color: '#FF4757', emoji: '🔴' };
 }
 
-// Dzisiejsza data w STREFIE LOKALNEJ (spójnie z activity_date = start_date_local).
-// Zwraca YYYY-MM-DD odpowiadające lokalnemu kalendarzowi, nie UTC.
+// Dzisiejsza data w strefie zawodnika (Europe/Warsaw) – na serwerze (UTC) też, inaczej między
+// północą a 1–2 w nocy ostatni dzień formy byłby „wczorajszy”.
 function localTodayISO(): string {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  return userTodayISO();
 }
 
 // Pełne przeliczenie historii CTL/ATL/TSB z listy aktywności.

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { createHash } from 'crypto';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { aiErrorMessage } from '@/lib/ai/ai-error';
 import {
@@ -139,6 +140,16 @@ export async function GET() {
 
   const { system, user: userMsg } = buildDailyInsightPrompt(metrics, todayPlan, yesterdayCtx, race, (athlete as { name?: string | null }).name ?? null);
 
+  // Cache: ten sam stan (forma, plan dziś/wczoraj, start) = ten sam tekst – bez wywołania AI przy każdym
+  // wejściu na pulpit. Nowa jazda/sync zmienia dane wejściowe → nowy klucz → świeży tekst.
+  // Kolumny z migracji 023; bez nich (błąd zapytania) po prostu bez cache.
+  const cacheKey = createHash('sha256').update(system + '\n' + userMsg).digest('hex');
+  const { data: cache, error: cacheErr } = await supabase
+    .from('athletes').select('daily_insight_text, daily_insight_key').eq('id', athleteId).maybeSingle();
+  if (!cacheErr && cache?.daily_insight_key === cacheKey && cache.daily_insight_text) {
+    return NextResponse.json({ insight: cache.daily_insight_text, cached: true });
+  }
+
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
@@ -149,6 +160,9 @@ export async function GET() {
     const raw = response.content[0]?.type === 'text' ? response.content[0].text : '';
     // HARD-CHECK NA WYJŚCIU: w oknie taperu A docisk/intensywność → podmiana na fallback (gwarancja w kodzie).
     const { text: insight } = enforceInsightSafety(raw, metrics, todayPlan, yesterdayCtx, race);
+    if (!cacheErr && insight) {
+      await supabase.from('athletes').update({ daily_insight_text: insight, daily_insight_key: cacheKey }).eq('id', athleteId);
+    }
     return NextResponse.json({ insight });
   } catch (err: unknown) {
     // Czytelny komunikat zamiast surowego err.message — klient (DailyInsight) i tak ma

@@ -12,6 +12,7 @@ import { estimateFtp, decideFtpDisplayUpdate, FTP_HARD_IF, type EffortRide } fro
 import { estimateVo2 } from '@/lib/vo2-engine';
 import { shouldPromoteToEngine } from '@/lib/onboarding';
 import { rescalePlans } from '@/lib/plan-rescale';
+import { dedupeVeloiqRides } from '@/lib/ride/dedupe';
 
 const SYNC_COOLDOWN_MINUTES = 10;   // ręczny sync: krótko, żeby świeża jazda pojawiła się od razu
 const DEFAULT_LOOKBACK_DAYS = 90;
@@ -417,6 +418,13 @@ export async function syncStravaActivities(
       };
     });
 
+  // Aktywności usunięte przez zawodnika w VeloIQ nie wracają (tabela z migracji 023; brak tabeli = nic nie filtrujemy).
+  const { data: tomb } = await supabase.from('deleted_activities').select('strava_activity_id').eq('athlete_id', athlete.id);
+  const removedIds = new Set((tomb ?? []).map((t) => Number(t.strava_activity_id)));
+  if (removedIds.size) {
+    for (let i = rows.length - 1; i >= 0; i--) if (removedIds.has(Number(rows[i].strava_activity_id))) rows.splice(i, 1);
+  }
+
   if (rows.length > 0) {
     // TSS/IF liczone RAZ – z FTP z dnia jazdy. Kolejne synchronizacje (co do 90 dni wstecz) nie
     // przeliczają ich z nowym FTP, inaczej zmiana FTP przepisywałaby historię (CTL/ATL/TSB „spadają”).
@@ -451,6 +459,8 @@ export async function syncStravaActivities(
       .eq('athlete_id', athlete.id).lt('strava_activity_id', 0);
     const del = (local ?? []).filter((x) => x.uploaded_as != null && got.has(Number(x.uploaded_as))).map((x) => x.strava_activity_id);
     if (del.length) await supabase.from('strava_activities').delete().eq('athlete_id', athlete.id).in('strava_activity_id', del);
+    // ta sama jazda nagrana w VeloIQ i np. Garminem (Strava) – zostaje wersja ze Stravy
+    await dedupeVeloiqRides(supabase, athlete.id);
   } catch (e) {
     console.error('usuwanie kopii VeloIQ po imporcie ze Stravy:', e instanceof Error ? e.message : e);
   }

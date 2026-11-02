@@ -19,6 +19,7 @@ function localDateOf(a: { activity_date: string; start_date_local?: string | nul
 
 interface PlanJson {
   days: PlanDayView[];
+  base_days?: PlanDayView[];   // oryginał tygodnia przed suwakiem godzin (days = przeskalowane, zapisane)
   insight?: string;
 }
 
@@ -112,7 +113,8 @@ export default async function PlanPage({ searchParams }: { searchParams: { date?
     return {
       weekStart: ws,
       kind: weekKind(ws, currentWeek),
-      days: pj?.days ?? null,
+      // suwak liczy z oryginału; wynik = zapisane plan_json.days (to samo widzi reszta aplikacji)
+      days: pj?.base_days ?? pj?.days ?? null,
       insight: pj?.insight ?? '',
       userHours: userHoursByStart.get(ws) ?? null,
     };

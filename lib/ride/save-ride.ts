@@ -4,6 +4,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { WorkoutSummary } from './ride-engine';
 import type { WorkoutScript } from './workout-script';
+import { calculateTSSfromHR } from '@/lib/fitness';
 
 export interface SavedSample { s: number; p?: number; hr?: number; cad?: number; lat?: number; lon?: number }
 
@@ -30,8 +31,12 @@ export async function saveRide(sb: SupabaseClient, input: SaveRideInput): Promis
   if (up.error) throw up.error;
 
   const sum = input.summary;
-  const IF = input.ftp ? sum.normalizedPower / input.ftp : null;
-  const tss = input.ftp && IF ? Math.round((sum.durationSec * sum.normalizedPower * IF) / (input.ftp * 3600) * 100) : null;
+  // Z mocą: TSS z NP i FTP. Bez mocy (sam pas tętna): TSS z tętna jak przy jazdach ze Stravy,
+  // inaczej jazda nie liczyłaby się do formy (CTL/ATL). IF tylko, gdy jest moc.
+  const IF = input.ftp && sum.normalizedPower > 0 ? sum.normalizedPower / input.ftp : null;
+  const hrTss = !IF && sum.avgHr && sum.maxHr ? calculateTSSfromHR(sum.durationSec, sum.avgHr, sum.maxHr) : null;
+  const tss = input.ftp && IF ? Math.round((sum.durationSec * sum.normalizedPower * IF) / (input.ftp * 3600) * 100)
+    : hrTss != null ? Math.round(hrTss) : null;
   const hasGps = input.samples.some((x) => x.lat != null);
 
   const row = {

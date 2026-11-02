@@ -96,8 +96,11 @@ export function deriveFtpSource(
   trainingMode: string | null,
   hasPowerMeter: boolean | null,
   ftpWatts: number | null,
-  hasHrActivities: boolean
+  hasHrActivities: boolean,
+  ftpOrigin?: string | null
 ): FtpSource {
+  // FTP wpisane ręcznie przez zawodnika – zawsze pokazujemy je (także w trybie tętna/podstawowym)
+  if (ftpOrigin === 'manual' && ftpWatts) return 'measured';
   // Jeśli training_mode jest ustawiony — ufamy mu wprost
   if (trainingMode === 'power' && ftpWatts) return 'measured';
   if (trainingMode === 'hr' || trainingMode === 'basic') {

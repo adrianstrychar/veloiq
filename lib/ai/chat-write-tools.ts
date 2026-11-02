@@ -198,6 +198,8 @@ const intOrNull = (v: unknown) => (v != null && Number.isFinite(Number(v)) ? Mat
 function daysAwayLabel(dateISO: string, today: string): string {
   const d = Math.ceil((new Date(`${dateISO}T12:00:00Z`).getTime() - new Date(`${today}T12:00:00Z`).getTime()) / 86400000);
   if (d === 0) return 'dziś';
+  if (d === 1) return 'jutro';
+  if (d === -1) return 'wczoraj';
   return d > 0 ? `za ${d} dni` : `${-d} dni temu`;
 }
 function raceLines(r: Partial<RaceFields>, today: string): string[] {

@@ -21,18 +21,20 @@ function durLabel(min: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}` : `${m} min`;
 }
 
-export function TodayCard({ plan, dayDate }: { plan: TodayPlan | null; dayDate: string }) {
+export function TodayCard({ plan, dayDate, doneTss }: { plan: TodayPlan | null; dayDate: string; doneTss?: number | null }) {
   const isRest = !plan || plan.type === 'OFF';
+  const isRace = plan?.type === 'RACE';
+  const done = doneTss != null;
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: RADIUS.card, padding: '1.05rem 1.15rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <CardLabel style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: isRest ? C.muted : C.green }} />
-          Dziś · {isRest ? 'wolne' : 'trening'}
+          Dziś · {isRest ? 'wolne' : isRace ? 'start' : done ? 'wykonane ✓' : 'trening'}
         </CardLabel>
         {!isRest && plan && (
           <span style={{ fontSize: 10.5, color: C.yellow, fontWeight: 700, fontFamily: F.display, fontVariantNumeric: 'tabular-nums' }}>
-            {durLabel(plan.durMin)} · {plan.tss} TSS
+            {done ? `${Math.round(doneTss!)}/${plan.tss} TSS` : `${durLabel(plan.durMin)} · ${plan.tss} TSS`}
           </span>
         )}
       </div>
@@ -50,9 +52,24 @@ export function TodayCard({ plan, dayDate }: { plan: TodayPlan | null; dayDate: 
               z > 0 ? <div key={i} style={{ width: `${(z / (plan.zones.reduce((a, b) => a + b, 0) || 1)) * 100}%`, background: ZONE_COLORS[i] }} /> : null
             )}
           </div>
-          <Link href={`/plan?date=${dayDate}`} style={{ display: 'inline-block', marginTop: 15, background: C.cyan, color: C.bg, borderRadius: 9, padding: '0.5rem 1.05rem', fontSize: 11.5, fontWeight: 700, textDecoration: 'none' }}>
-            Zobacz szczegóły →
-          </Link>
+          <div style={{ display: 'flex', gap: 8, marginTop: 15, flexWrap: 'wrap' }}>
+            {isRace ? (
+              <Link href="/races" style={{ background: C.cyan, color: C.bg, borderRadius: 9, padding: '0.5rem 1.05rem', fontSize: 11.5, fontWeight: 700, textDecoration: 'none' }}>
+                Strategia startu →
+              </Link>
+            ) : (
+              <>
+                {!done && (
+                  <Link href="/trening" style={{ background: C.cyan, color: C.bg, borderRadius: 9, padding: '0.5rem 1.05rem', fontSize: 11.5, fontWeight: 700, textDecoration: 'none' }}>
+                    ▶ Jedź teraz
+                  </Link>
+                )}
+                <Link href={`/plan?date=${dayDate}`} style={{ background: 'transparent', color: C.cyan, border: `1px solid ${C.cyan}66`, borderRadius: 9, padding: '0.5rem 1.05rem', fontSize: 11.5, fontWeight: 700, textDecoration: 'none' }}>
+                  Szczegóły →
+                </Link>
+              </>
+            )}
+          </div>
         </>
       )}
     </div>

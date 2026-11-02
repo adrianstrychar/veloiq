@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { applyWeekHours } from '@/lib/plan-hours';
 
 // Auto-zapis ręcznie wybranych godzin suwakiem dla bieżącego tygodnia (debounce po stronie UI).
 // UPDATE jednego pola — generate/modify robią co innego (AI), to czysta persystencja wyboru.
@@ -25,16 +26,8 @@ export async function POST(req: Request) {
   // UPDATE (nie upsert): plan_json jest NOT NULL, więc wiersz musi już istnieć.
   // .select() zwraca zmienione wiersze — jeśli pusto, plan zniknął/zregenerował się
   // w międzyczasie (race). NIE raportuj sukcesu, gdy nic nie zostało zapisane.
-  const { data: updated, error } = await supabase
-    .from('weekly_plans')
-    .update({ user_hours: hours })
-    .eq('athlete_id', athlete.id)
-    .eq('week_start', weekStart)
-    .select('id');
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!updated || updated.length === 0) {
-    return NextResponse.json({ error: 'plan_not_found' }, { status: 409 });
-  }
-
+  // Zapis wyboru + przeskalowanych dni (plan_json.days) – reszta aplikacji widzi ten sam plan co suwak.
+  const res = await applyWeekHours(supabase, athlete.id as string, weekStart, hours);
+  if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status });
   return NextResponse.json({ ok: true });
 }

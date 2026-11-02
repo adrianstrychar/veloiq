@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { C } from '@/lib/theme';
 import { formatPolishDate, formatDuration } from '@/lib/format';
@@ -81,6 +82,43 @@ function SectionTitle({ children }: { children: string }) {
       letterSpacing: '2px', fontWeight: 600, marginBottom: 10,
     }}>
       {children}
+    </div>
+  );
+}
+
+function DeleteRide({ activityId, onDeleted }: { activityId: number | string; onDeleted: () => void }) {
+  const router = useRouter();
+  const [st, setSt] = useState<'idle' | 'confirm' | 'busy'>('idle');
+  const [err, setErr] = useState<string | null>(null);
+  const isStrava = Number(activityId) > 0;
+  useEffect(() => { if (st !== 'confirm') return; const t = setTimeout(() => setSt('idle'), 4000); return () => clearTimeout(t); }, [st]);
+  async function run() {
+    if (st === 'idle') { setSt('confirm'); setErr(null); return; }
+    if (st !== 'confirm') return;
+    setSt('busy');
+    try {
+      const res = await fetch(`/api/activities/${activityId}/delete`, { method: 'POST' });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.ok) { setErr(d.error ?? 'Nie udało się usunąć.'); setSt('idle'); return; }
+      onDeleted();
+      router.refresh();
+    } catch {
+      setErr('Brak połączenia – spróbuj ponownie.'); setSt('idle');
+    }
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+      <button onClick={run} disabled={st === 'busy'}
+        style={{
+          background: st === 'confirm' ? '#3a1d1d' : 'transparent', border: `1px solid ${st === 'confirm' ? '#D98A8A' : C.border}`,
+          color: '#D98A8A', borderRadius: 10, height: 44, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+        }}>
+        {st === 'busy' ? 'Usuwam…' : st === 'confirm' ? 'Na pewno? Stuknij jeszcze raz' : 'Usuń trening'}
+      </button>
+      <span style={{ fontSize: 11, color: C.muted, textAlign: 'center' }}>
+        {isStrava ? 'Usuwa z VeloIQ (na Stravie zostaje). Forma i FTP przeliczą się bez tej jazdy.' : 'Usuwa jazdę nagraną w VeloIQ. Forma i FTP przeliczą się bez niej.'}
+      </span>
+      {err && <span role="alert" style={{ fontSize: 12, color: '#D98A8A', textAlign: 'center' }}>{err}</span>}
     </div>
   );
 }
@@ -681,6 +719,9 @@ export function RideAnalysis({ activity, activityId, ftp, onClose }: RideAnalysi
             </div>
           )}
         </div>
+
+        {/* Usunięcie treningu (np. dubel albo jazda testowa) – dwa stuknięcia */}
+        <DeleteRide activityId={activityId} onDeleted={onClose} />
       </div>
 
       {/* Share story (Instagram sticker) — bottom sheet nad kartą */}

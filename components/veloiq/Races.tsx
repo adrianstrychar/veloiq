@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { C } from '@/lib/theme';
 import { computeRacePrep, type CtlPoint } from '@/lib/race-prep';
 import type { RacePriority } from '@/lib/race-taper';
@@ -53,8 +54,10 @@ const RACE_PRIORITIES = new Set(['A', 'B', 'C']);
 export function Races({ races, ctlSeries, today, nextRaceStrategy, nextRaceRoute }: RacesProps) {
   // Najbliższy start = pierwsza data >= dziś (lista przychodzi posortowana rosnąco).
   const nextRace = races.find((r) => daysUntil(r.date) >= 0);
-  // Cel sezonu = priority 'A' z najdalszą datą (MŚ Nannup).
-  const goalRace = races
+  // Cel sezonu = priority 'A' z najdalszą datą (MŚ Nannup) – tylko spośród NADCHODZĄCYCH startów.
+  const upcoming = races.filter((r) => daysUntil(r.date) >= 0);
+  const past = races.filter((r) => daysUntil(r.date) < 0).reverse();   // zakończone: od najnowszego
+  const goalRace = upcoming
     .filter((r) => r.priority === 'A')
     .reduce<RaceRow | null>((acc, r) => (!acc || r.date > acc.date ? r : acc), null);
 
@@ -75,8 +78,12 @@ export function Races({ races, ctlSeries, today, nextRaceStrategy, nextRaceRoute
 
   if (races.length === 0) {
     return (
-      <div style={{ color: C.muted, fontSize: 13, textAlign: 'center', padding: '32px 0' }}>
+      <div style={{ color: C.muted, fontSize: 13, textAlign: 'center', padding: '32px 0', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
         Brak zaplanowanych startów.
+        <Link href="/chat" style={{ color: C.bg, background: C.cyan, borderRadius: 10, padding: '10px 16px', fontWeight: 600, fontSize: 14, textDecoration: 'none' }}>
+          Dodaj start z Trenerem
+        </Link>
+        <span style={{ fontSize: 12 }}>Napisz np. „dodaj start: Gran Fondo Kraków 14 czerwca, 160 km, priorytet A”.</span>
       </div>
     );
   }
@@ -97,10 +104,10 @@ export function Races({ races, ctlSeries, today, nextRaceStrategy, nextRaceRoute
 
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 18, fontWeight: 700, color: C.text }}>Starty</span>
-        <span style={{ fontSize: 12, color: C.muted }}>{races.length} w kalendarzu</span>
+        <span style={{ fontSize: 12, color: C.muted }}>{upcoming.length} przed Tobą{past.length ? ` · ${past.length} zakończone` : ''}</span>
       </header>
 
-      {races.map((race) => {
+      {[...upcoming, ...past].map((race) => {
         const days = daysUntil(race.date);
         const isNext = nextRace?.id === race.id;
         const isGoal = goalRace?.id === race.id;
@@ -142,7 +149,7 @@ export function Races({ races, ctlSeries, today, nextRaceStrategy, nextRaceRoute
                 )}
               </div>
               <span style={{ fontSize: isNext ? 12 : 10, color: isPast ? C.muted : accent, fontWeight: 600 }}>
-                {isPast ? 'zakończony' : days === 0 ? 'DZIŚ' : `za ${days} dni`}
+                {isPast ? 'zakończony' : days === 0 ? 'DZIŚ' : days === 1 ? 'jutro' : `za ${days} dni`}
               </span>
             </div>
 

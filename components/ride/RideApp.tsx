@@ -35,6 +35,11 @@ const PENDING_KEY = 'veloiq.ride.pending'; // zakończony, jeszcze niezapisany t
 
 interface Pending { summary: WorkoutSummary; script: WorkoutScript; startedAt: string; outdoor: boolean }
 const readPending = (): Pending | null => { try { const v = localStorage.getItem(PENDING_KEY); return v ? JSON.parse(v) : null; } catch { return null; } };
+// trwający trening: plan i godzina startu poza stanem ekranu – przełączenie zakładki odmontowuje „Jedź”,
+// a jazda trwa dalej (zapis z właściwą godziną startu i właściwym planem, także po awarii aplikacji)
+const CURRENT_KEY = 'veloiq.ride.current.v1';
+const readCurrent = (): { script: WorkoutScript | null; startedAt: string } | null => { try { const v = localStorage.getItem(CURRENT_KEY); return v ? JSON.parse(v) : null; } catch { return null; } };
+const writeCurrent = (c: { script: WorkoutScript | null; startedAt: string } | null) => { try { if (c) localStorage.setItem(CURRENT_KEY, JSON.stringify(c)); else localStorage.removeItem(CURRENT_KEY); } catch { /* brak storage */ } };
 const writePending = (p: Pending | null) => { try { if (p) localStorage.setItem(PENDING_KEY, JSON.stringify(p)); else localStorage.removeItem(PENDING_KEY); } catch { /* brak storage */ } };
 
 export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, onExportStrava }: RideAppProps) {
@@ -60,13 +65,18 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, on
   };
 
   // trening trwa (także po wznowieniu z awarii) → ekran na żywo; koniec → podsumowanie
-  useEffect(() => { if (ride.active) setScreen('live'); }, [ride.active]);
+  useEffect(() => {
+    if (!ride.active) return;
+    const c = readCurrent();
+    if (c) { setScript(c.script); setStartedAt(new Date(c.startedAt)); }
+    setScreen('live');
+  }, [ride.active]);
   useEffect(() => {
     if (!ride.summary) return;
     setScreen('summary');
     // zabezpieczenie: dopóki nie zapiszesz, trening wraca na ekranie startowym (także po zamknięciu aplikacji)
     const p: Pending = { summary: ride.summary, script: script ?? freeRideScript(ftp), startedAt: startedAt.toISOString(), outdoor: settings.outdoor };
-    writePending(p); setPending(p);
+    writePending(p); setPending(p); writeCurrent(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ride.summary]);
 
@@ -91,8 +101,10 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, on
   }, [screen]);
 
   const start = (sc: WorkoutScript) => {
+    const now = new Date();
     setScript(sc.steps.length ? sc : null);
-    setStartedAt(new Date());
+    setStartedAt(now);
+    writeCurrent({ script: sc.steps.length ? sc : null, startedAt: now.toISOString() });
     ride.start(briefing ? { ...sc, briefing } : sc, settings, undefined, route); // odprawa Enzo + trasa GPX
   };
 

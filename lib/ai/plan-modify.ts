@@ -239,6 +239,11 @@ export async function applyPlanModification(
 ): Promise<void> {
   await supabase
     .from('weekly_plans')
-    .update({ plan_json: { days: result.days, insight: result.insight }, weekly_tss_target: result.tssTarget })
+    // zmiana planu = nowa baza tygodnia; ręczny wybór godzin suwaka przestaje obowiązywać
+    // (inaczej plan zbudowany z już przeskalowanych dni zostałby przeskalowany drugi raz)
+    .update({ plan_json: { days: result.days, insight: result.insight }, weekly_tss_target: result.tssTarget, user_hours: null })
     .eq('id', planId);
+  // brief dnia w czacie opisywał stary plan → wygeneruje się od nowa
+  const { data: p } = await supabase.from('weekly_plans').select('athlete_id').eq('id', planId).maybeSingle();
+  if (p?.athlete_id) await supabase.from('athletes').update({ daily_brief_date: null }).eq('id', p.athlete_id);
 }
