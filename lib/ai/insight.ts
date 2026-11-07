@@ -1,6 +1,6 @@
 import { buildSessionStructure, type LapInput, type SessionElement } from '@/lib/laps';
 import { parseStructure, sessionStructure } from '@/lib/workout';
-import { isOU, isBlocks, ouBlockMin, describeStructure as describeDayStructure, type DayStructure } from '@/lib/structure';
+import { isOU, isBlocks, isOwnSession, ouBlockMin, describeStructure as describeDayStructure, type DayStructure } from '@/lib/structure';
 import type { FormSignals } from '@/lib/ai/insight-context';
 import type { RaceDay } from '@/lib/race-day';
 
@@ -37,7 +37,9 @@ export interface PlannedWorkout {
 // i rozgrzewką/schłodzeniem, żeby AI nie krytykowało przerw zrobionych zgodnie z planem.
 function describePlannedStructure(type: string, s: DayStructure): string {
   const ss = sessionStructure(type);
-  const frame = `rozgrzewka ~${ss.warmupDefault} min, schłodzenie ~${ss.cooldownDefault} min`;
+  const frame = isOwnSession(s)
+    ? 'cały trening wg rozpiski zawodnika (rozgrzewka i schłodzenie są w niej, nic nie doklejano)'
+    : `rozgrzewka ~${ss.warmupDefault} min, schłodzenie ~${ss.cooldownDefault} min`;
   if (isBlocks(s)) {
     return `część główna: ${describeDayStructure(s)} (kroki o niskiej mocy to PLANOWE przerwy/wypełnienie — nie krytykuj ich), ${frame}`;
   }

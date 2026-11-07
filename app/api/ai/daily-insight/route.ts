@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { createHash } from 'crypto';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { aiErrorMessage } from '@/lib/ai/ai-error';
 import {
@@ -13,6 +14,7 @@ import {
 } from '@/lib/ai/dailyInsight';
 import type { RacePriority } from '@/lib/race-taper';
 import { userTodayISO } from '@/lib/timezone';
+import { loadWhoop } from '@/lib/whoop-summary';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -106,7 +108,7 @@ export async function GET() {
   yesterday.setUTCDate(today.getUTCDate() - 1);
   const yesterdayIso = yesterday.toISOString().slice(0, 10);
 
-  const [{ data: rows }, todayPlan, yPlan, yExec, race] = await Promise.all([
+  const [{ data: rows }, todayPlan, yPlan, yExec, race, whoop] = await Promise.all([
     supabase
       .from('fitness_metrics')
       .select('date, ctl, atl, tsb')
@@ -116,7 +118,9 @@ export async function GET() {
     planDayFor(supabase, athleteId, yesterday),
     executedFor(supabase, athleteId, yesterdayIso),
     nextRace(supabase, athleteId, todayIso, today),
+    loadWhoop(supabase, athleteId, todayIso).catch(() => null),
   ]);
+  const whoopToday = whoop?.today ?? null;
 
   if (!rows || rows.length === 0) {
     return NextResponse.json({ error: 'no_metrics' }, { status: 404 });
@@ -137,7 +141,17 @@ export async function GET() {
     ctlRamp,
   };
 
-  const { system, user: userMsg } = buildDailyInsightPrompt(metrics, todayPlan, yesterdayCtx, race, (athlete as { name?: string | null }).name ?? null);
+  const { system, user: userMsg } = buildDailyInsightPrompt(metrics, todayPlan, yesterdayCtx, race, (athlete as { name?: string | null }).name ?? null, whoopToday);
+
+  // Cache: ten sam stan (forma, plan dziś/wczoraj, start) = ten sam tekst – bez wywołania AI przy każdym
+  // wejściu na pulpit. Nowa jazda/sync zmienia dane wejściowe → nowy klucz → świeży tekst.
+  // Kolumny z migracji 023; bez nich (błąd zapytania) po prostu bez cache.
+  const cacheKey = createHash('sha256').update(system + '\n' + userMsg).digest('hex');
+  const { data: cache, error: cacheErr } = await supabase
+    .from('athletes').select('daily_insight_text, daily_insight_key').eq('id', athleteId).maybeSingle();
+  if (!cacheErr && cache?.daily_insight_key === cacheKey && cache.daily_insight_text) {
+    return NextResponse.json({ insight: cache.daily_insight_text, cached: true });
+  }
 
   try {
     const response = await anthropic.messages.create({
@@ -148,7 +162,10 @@ export async function GET() {
     });
     const raw = response.content[0]?.type === 'text' ? response.content[0].text : '';
     // HARD-CHECK NA WYJŚCIU: w oknie taperu A docisk/intensywność → podmiana na fallback (gwarancja w kodzie).
-    const { text: insight } = enforceInsightSafety(raw, metrics, todayPlan, yesterdayCtx, race);
+    const { text: insight } = enforceInsightSafety(raw, metrics, todayPlan, yesterdayCtx, race, whoopToday);
+    if (!cacheErr && insight) {
+      await supabase.from('athletes').update({ daily_insight_text: insight, daily_insight_key: cacheKey }).eq('id', athleteId);
+    }
     return NextResponse.json({ insight });
   } catch (err: unknown) {
     // Czytelny komunikat zamiast surowego err.message — klient (DailyInsight) i tak ma

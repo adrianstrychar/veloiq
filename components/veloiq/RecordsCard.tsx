@@ -31,8 +31,9 @@ const nf1 = new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 1, maximumFr
 const nf0 = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 0 });
 
 function hoursLabel(sec: number): string {
-  const h = Math.floor(sec / 3600);
-  const m = Math.round((sec % 3600) / 60);
+  const tm = Math.round(sec / 60);   // najpierw całe minuty – inaczej 2:59:40 → „2:60”
+  const h = Math.floor(tm / 60);
+  const m = tm % 60;
   return `${h}:${String(m).padStart(2, '0')}`;
 }
 

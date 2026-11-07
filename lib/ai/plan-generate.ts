@@ -7,6 +7,7 @@ import {
   structureWatt,
   isStructuredType,
   maxSessionMin,
+  isOwnSession,
   type DayStructure,
 } from '@/lib/structure';
 import { sessionStructure } from '@/lib/workout';
@@ -268,6 +269,7 @@ export function buildModifyPrompt(
     `(3) BLOKI — dla WSZYSTKIEGO innego i dla KAŻDEGO typu poza OFF (także Z1/Z2/LONG): {"blocks":[{"repeat":N,"name":"opcjonalnie","steps":[{"sec":sekundy,"w":waty,"name":"opcjonalnie","cad":[min,max] opcjonalnie}]}]}. Blok = repeat × kolejne kroki; przerwy to zwykłe kroki o niskiej mocy (np. {"sec":300,"w":${Math.round(ctx.ftp * 0.5)}}). Czas w SEKUNDACH, waty absolutne (FTP ${ctx.ftp}W). Bloki opisują CAŁĄ część główną od końca rozgrzewki do początku schłodzenia — także jazdę spokojną między akcentami.`,
     `Przykłady bloków: Z2 90 min z 6 sprintami 15 s co 10 min → rozgrzewka (serwer) + {"blocks":[{"repeat":6,"name":"Sprinty","steps":[{"sec":15,"w":${Math.round(ctx.ftp * 2.4)},"name":"Sprint"},{"sec":585,"w":${Math.round(ctx.ftp * 0.65)}}]},{"repeat":1,"steps":[{"sec":300,"w":${Math.round(ctx.ftp * 0.65)}}]}]}. Piramida → jeden blok z krokami o rosnącej/malejącej mocy. 40/20 × 10 → {"repeat":10,"steps":[{"sec":40,"w":…},{"sec":20,"w":…}]}. Kadencja (np. siłowe 60–70 rpm) → pole "cad" w kroku.`,
     `Rozgrzewkę i schłodzenie dolicza SERWER (minuty: Z1 0/0, Z2 15/10, SST 20/10, THR/OU/VO2 25/10, LONG 20/10) — NIE umieszczaj ich w structure. dur_min dni ze structure SERWER liczy jako rozgrzewka + suma bloków + schłodzenie; tss oszacuj spójnie z tą rozpiską.`,
+    'WYJĄTEK – WŁASNY TRENING ZAWODNIKA: gdy zawodnik podaje (wkleja) KOMPLETNĄ rozpiskę swojego treningu (z własną rozgrzewką/schłodzeniem albo wprost bez nich, np. "zrób mi dziś taki trening: 10 min rozgrzewki, …"), odwzoruj ją 1:1 kształtem BLOKI, WŁĄCZNIE z jego rozgrzewką i schłodzeniem jako zwykłymi krokami, i ustaw w structure "own": true → serwer NIC nie dokleja (dur_min = suma bloków). Nie dodawaj od siebie rozgrzewki, schłodzenia ani przerw, których nie podał. Gdy prosi tylko o zmianę części głównej / typu sesji – bez "own" (serwer dolicza jak zwykle).',
     'TWARDA REGUŁA TREŚCI: jeśli prośba dotyczy ZAWARTOŚCI sesji (interwały, ich liczba/długość/moc, przerwy, sprinty, tempo, kadencja, kolejność bloków) — MUSISZ odwzorować ją w structure tego dnia, w razie potrzeby kształtem BLOKI. Zmiana samej nazwy NIC nie zmienia w treningu i jest BŁĘDEM.',
     'Dni NIEZMIENIANE: przepisz structure BEZ ZMIAN (ten sam kształt i liczby). Dni zmieniane na SST/THR/OU/VO2: structure OBOWIĄZKOWE. Dni Z1/Z2/LONG bez akcentów: structure null; z akcentami: BLOKI.',
     'Label: NIE wymyślaj — dla dni ze structure serwer generuje go z rozpiski. Dla dni bez structure: krótka nazwa typu, MAX ~3 słowa, bez opisu treści.',
@@ -409,7 +411,8 @@ export function validateWeek(
           const p = parseDayStructure(d.structure, type);
           if (!p.ok) return { ok: false, error: `dzień ${dow} (${type}): structure — ${p.error}` };
           const ss = sessionStructure(type);
-          const rec = reconcileStructureDuration(p.structure, ss.warmupDefault, ss.cooldownDefault, maxSessionMin(type));
+          const own = isOwnSession(p.structure); // własny trening zawodnika: bez doklejanej rozgrzewki/schłodzenia
+          const rec = reconcileStructureDuration(p.structure, own ? 0 : ss.warmupDefault, own ? 0 : ss.cooldownDefault, maxSessionMin(type), own ? 20 : undefined);
           if (rec.error) return { ok: false, error: `dzień ${dow} (${type}): ${rec.error}` };
           durMin = rec.durMin; // reconcile: dur_min = suma segmentów, nie wartość modelu
           structure = p.structure;

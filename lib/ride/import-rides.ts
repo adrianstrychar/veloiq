@@ -12,6 +12,7 @@ import { downsampleStreams } from '@/lib/strava/streams';
 import { recalculateFitnessMetrics, recalculateFtpEstimate, recalculateVo2Estimate } from '@/lib/sync';
 import type { SavedSample } from './save-ride';
 import { virtualDistances } from './virtual-speed';
+import { dedupeVeloiqRides } from './dedupe';
 
 export const isVeloiqRideId = (id: number | string) => Number(id) < 0;
 export const veloiqActivityId = (startedAtIso: string) => -Math.floor(new Date(startedAtIso).getTime() / 1000);
@@ -153,6 +154,8 @@ export async function importMissingRides(supabase: SupabaseClient, userId: strin
       console.error(`[rides] import ${r.id} nieudany:`, e instanceof Error ? e.message : e);
     }
   }
+  // ta sama jazda jest już ze Stravy (np. z Garmina) → kopia VeloIQ znika, dane podpięte pod Stravę
+  if (added) added -= Math.min(added, await dedupeVeloiqRides(supabase, athleteId).catch(() => 0));
   if (added) {
     await recalculateFitnessMetrics(supabase, athleteId);
     await recalculateFtpEstimate(supabase, athleteId);

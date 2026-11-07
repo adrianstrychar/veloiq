@@ -104,6 +104,22 @@ export function ReadinessModule({ readiness, pmc }: ReadinessModuleProps) {
             </div>
             <div style={{ fontSize: 9, color: C.muted, marginTop: 3 }}>{freshLabel}</div>
           </div>
+          {/* Regeneracja (WHOOP) – tylko z połączonym WHOOP i dzisiejszym wynikiem */}
+          {readiness.recoveryPct != null && (() => {
+            const rc = readiness.recoveryPct >= 67 ? C.green : readiness.recoveryPct >= 34 ? C.yellow : C.red;
+            return (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>Regeneracja</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: rc }}>{readiness.recoveryPct}%</span>
+                </div>
+                <div style={{ background: C.dim, borderRadius: 5, height: 9, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${readiness.recoveryPct}%`, background: rc, borderRadius: 5, transition: 'width 1s ease' }} />
+                </div>
+                <div style={{ fontSize: 9, color: C.muted, marginTop: 3 }}>WHOOP · HRV, tętno spoczynkowe i sen</div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 

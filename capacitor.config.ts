@@ -15,6 +15,8 @@ const config: CapacitorConfig = {
   server: {
     url,
     cleartext: url.startsWith('http://'), // tylko dla dev po Wi-Fi
+    // logowanie WHOOP (OAuth) zostaje w aplikacji – inaczej otworzyłoby się w Safari bez sesji VeloIQ
+    allowNavigation: ['whoop.com', '*.whoop.com'],
   },
   ios: {
     contentInset: 'never',       // safe-area obsługuje CSS (env(safe-area-inset-*))

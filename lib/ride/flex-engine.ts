@@ -33,9 +33,10 @@ export interface FlexRules {
   resumeSec: number;        // ile sekund nad progiem = wznowienie (2)
   earlyStopPct: number;     // spadek poniżej % dolnej granicy = odpuszczam (0.6)
   earlyStopSec: number;     // ile sekund = przerwanie interwału (15)
-  effortStartPct: number;   // jazda swobodna: start wysiłku, % FTP (0.9)
-  effortEndPct: number;     // koniec wysiłku (0.75)
-  effortMinSec: number;     // minimalny wysiłek do zapisania (60)
+  effortStartPct: number;   // jazda swobodna: start wysiłku, % FTP (średnia 30 s; 0.88)
+  effortEndPct: number;     // koniec wysiłku – średnia 30 s poniżej (0.72)
+  effortMinSec: number;     // minimalny wysiłek do zapisania (120)
+  effortGapSec: number;     // tyle s słabiej, zanim wysiłek się skończy – krótsze odpuszczenie nie dzieli (45)
   // reguły korekt (jak w trybie sztywnym)
   smoothingSec: number; outOfRangeSec: number; cooldownSec: number; graceSec: number;
   praiseAfterSec: number; cadenceGraceSec: number; hrDriftBpm: number;
@@ -48,7 +49,7 @@ export interface FlexRules {
 export const DEFAULT_FLEX_RULES: FlexRules = {
   armLeadSec: 60, autoStartPct: 0.85, autoStartSec: 6, waitRemindSec: 120,
   autoPauseWatts: 30, autoPauseSec: 5, resumeSec: 2, earlyStopPct: 0.6, earlyStopSec: 40, earlyStopAvgSec: 10,
-  effortStartPct: 0.9, effortEndPct: 0.75, effortMinSec: 60,
+  effortStartPct: 0.88, effortEndPct: 0.72, effortMinSec: 120, effortGapSec: 45,
   smoothingSec: 10, outOfRangeSec: 15, cooldownSec: 60, graceSec: 10, praiseAfterSec: 90, cadenceGraceSec: 20, hrDriftBpm: 5,
   corrWindowMinSec: 20, corrWindowMaxSec: 60, corrGraceMinSec: 20, corrGraceMaxSec: 60, cooldownMaxSec: 180,
   deadbandW: 10, deadbandPct: 0.03, minDeltaW: 10,
@@ -88,7 +89,7 @@ export const FLEX_PHRASES: Record<string, string> = {
   hrHigh: 'Tętno {hr}, powyżej zakresu. Zwolnij trochę.',
   hrRecovered: 'Tętno spadło do {hr}. Jesteś gotowy.',
   status: 'Średnio {avg} watów.{hrTxt}',
-  readiness: 'Gotowość dziś {pct} procent. {state}.',
+  readiness: 'Gotowość dziś {pct} procent. {state}.{whoopTxt}',
   condition: 'Kondycja dziś {sign}{n}.',
   count: '{word}',
   drink: 'Pij! Kilka łyków.',
@@ -159,7 +160,7 @@ export class FlexEngine {
 
   readonly series: SeriesResult[] = [];
   readonly efforts: Effort[] = [];
-  private inEffort = false; private effortStart = 0;
+  private inEffort = false; private effortStart = 0; private effortPending = -1;
   private intervalNumbers: (number | null)[] = [];
   private intervalCount = 0;
   readonly laps: LapMark[] = [];
@@ -181,12 +182,19 @@ export class FlexEngine {
     this.vs = new VirtualSpeed((script as { weightKg?: number }).weightKg ?? 75);
   }
 
-  /** Czy interwał startuje automatycznie (wykrywanie po mocy). Pierwszy krok nigdy. */
+  /** Czy interwał startuje automatycznie (wykrywanie po mocy). Pierwszy krok nigdy.
+   *  Domyślnie KAŻDY interwał (także 10-s sprint) czeka, aż ruszysz – poza interwałem tuż po innym
+   *  interwale (over-under, piramida): tam zmiana z zegarem, bo moc poprzedniego „odpaliłaby” start. */
   isAuto(idx: number): boolean {
     const st = this.script.steps[idx];
     if (!st || idx === 0 || st.type !== 'interval') return false;
     if (st.start) return st.start === 'auto';
-    return st.durationSec >= 60;
+    return this.script.steps[idx - 1]?.type !== 'interval';
+  }
+
+  /** Ile sekund nad progiem = start. Krótkie interwały (sprinty) szybciej – start i tak liczy się od pierwszej sekundy wysiłku. */
+  private startNeedSec(durationSec: number): number {
+    return durationSec < 30 ? Math.min(this.rules.autoStartSec, Math.max(2, Math.floor(durationSec / 4))) : this.rules.autoStartSec;
   }
 
   get step(): WorkoutStep | undefined { return this.script.steps[this.stepIdx]; }
@@ -305,7 +313,7 @@ export class FlexEngine {
       } else {
         this.startRun = 0; this.startDips = 0;
       }
-      if (this.startRun >= this.rules.autoStartSec) {
+      if (this.startRun >= this.startNeedSec(next.durationSec)) {
         const startSec = this.startRunAt;
         const snap = { idx: this.stepIdx, startSec: this.stepStartSec, secs: [...this.stepSecs], rest: this.lastRestSec };
         this.lastRestSec = startSec - this.stepStartSec;
@@ -571,8 +579,13 @@ export class FlexEngine {
     const b = this.script.briefing;
     if (!b) return;
     if (s === BRIEF_READY_SEC && b.readiness != null) {
+      const rec = b.recovery != null && b.recLevel ? Math.round(b.recovery) : null;
       this.say('readiness', { pct: Math.round(b.readiness), level: b.readyColor ?? 'yellow', state: b.readyState ?? '',
-        heavy: (b.yTss ?? 0) >= 150 ? 1 : 0 }, 'info', speak);
+        heavy: (b.yTss ?? 0) >= 150 ? 1 : 0,
+        ...(rec != null ? {
+          rec, whoop: b.recLevel!, hrvLow: b.hrvLow ? 1 : 0, sleepShort: b.sleepShort ? 1 : 0,
+          whoopTxt: ` Regeneracja WHOOP ${rec} procent.${b.hrvLow ? ' Zmienność tętna niższa niż zwykle.' : b.sleepShort ? ' Za mało snu.' : ''}`,
+        } : {}) }, 'info', speak);
     }
     if (s === BRIEF_COND_SEC && b.hrA != null && b.hrB != null) {
       const idx: number[] = [];
@@ -625,24 +638,40 @@ export class FlexEngine {
   }
 
   // ------------------------------------------------------------------ jazda swobodna
+  /** Jazda swobodna: wykrywanie DŁUŻSZYCH wysiłków (≥ 2 min). Start i koniec po średniej z 30 s, a koniec
+   *  dopiero po 45 s słabszej jazdy – chwilowe odpuszczenie (np. 300 → 235 W, światła, zakręt) nie dzieli wysiłku. */
   private freeTick(s: number, _p: number, speak: boolean) {
     const ftp = this.script.ftp;
-    if (!ftp || s < 9) return;
+    if (!ftp || s < 29) return;
+    const R = this.rules;
     const avg10 = mean(this.P.slice(s - 9, s + 1));
-    if (!this.inEffort && avg10 >= ftp * this.rules.effortStartPct) { this.inEffort = true; this.effortStart = s - 9; }
-    else if (this.inEffort && avg10 < ftp * this.rules.effortEndPct) {
-      this.inEffort = false;
-      let a = this.effortStart, b = s;
-      const thr = ftp * 0.8;
-      while (a < b && this.P[a] < thr) a++;
-      while (b > a && this.P[b] < thr) b--;
-      const dur = b - a + 1;
-      if (dur >= this.rules.effortMinSec) {
-        const avg = Math.round(mean(this.P.slice(a, b + 1)));
-        this.efforts.push({ startSec: a, durationSec: dur, avgPower: avg });
-        this.say('effort', { dur: durationPl(dur), avg }, 'effort', speak);
-      }
+    const avg30 = mean(this.P.slice(s - 29, s + 1));
+    if (!this.inEffort) {
+      if (avg30 >= ftp * R.effortStartPct) { this.inEffort = true; this.effortStart = s - 29; this.effortPending = -1; }
+      return;
     }
+    if (this.effortPending < 0) {
+      if (avg30 < ftp * R.effortEndPct) this.effortPending = s;
+      return;
+    }
+    if (avg10 >= ftp * 0.8) { this.effortPending = -1; return; }  // wrócił do mocy (≥ 80% FTP) → ten sam wysiłek
+    if (s - this.effortPending < R.effortGapSec) return;
+    this.inEffort = false; this.effortPending = -1;
+    const e = this.effortBetween(this.effortStart, s);
+    if (e) {
+      this.efforts.push(e);
+      this.say('effort', { dur: durationPl(e.durationSec), avg: e.avgPower }, 'effort', speak);
+    }
+  }
+
+  /** Wysiłek w [a, b] przycięty do sekund ≥ 80% FTP; null = krótszy niż minimum. */
+  private effortBetween(a: number, b: number): Effort | null {
+    const thr = (this.script.ftp ?? 0) * 0.8;
+    while (a < b && this.P[a] < thr) a++;
+    while (b > a && this.P[b] < thr) b--;
+    const dur = b - a + 1;
+    if (dur < this.rules.effortMinSec) return null;
+    return { startSec: a, durationSec: dur, avgPower: Math.round(mean(this.P.slice(a, b + 1))) };
   }
 
   // ------------------------------------------------------------------ pomocnicze
@@ -693,7 +722,8 @@ export class FlexEngine {
       file, durationSec: n, avgPower: n ? Math.round(total / n) : 0, normalizedPower: np,
       avgHr: hrs.length ? Math.round(mean(hrs)) : undefined, maxHr: hrs.length ? Math.max(...hrs) : undefined,
       kJ: Math.floor(total / 1000), compliancePct: evalSec ? Math.floor(weighted / evalSec) : 0,
-      series: [...this.series], efforts: [...this.efforts], laps: [...this.laps],
+      // wysiłek trwający w chwili zakończenia jazdy też się liczy
+      series: [...this.series], efforts: [...this.efforts, ...(this.inEffort && this.script.ftp ? [this.effortBetween(this.effortStart, n - 1)].filter((e): e is Effort => !!e) : [])], laps: [...this.laps],
     };
   }
 

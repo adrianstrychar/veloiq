@@ -9,6 +9,7 @@ import { mondayOfISO } from '@/lib/plan';
 import { userTodayISO, dayNamePl, shiftISO } from '@/lib/timezone';
 import { findDiscrepancies, type MyRace } from '@/lib/race-verify';
 import { fetchPlanView } from '@/lib/plan-view';
+import { loadWhoop } from '@/lib/whoop-summary';
 
 // Brak kolumny wieku w athletes → zawodnik M19-34 (30 lat) → reguła dystansu = Gran Fondo (max zakresu).
 // Zmiana progu 55+ (Medio) = tu jedna stała.
@@ -69,7 +70,7 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
   {
     name: 'get_fitness_status',
     description:
-      "The athlete's CURRENT form: CTL (fitness), ATL (fatigue), TSB (freshness/form), 7-day CTL trend, plus computed readiness (race-readiness %, freshness %, verdict, advice). Use for 'how's my form', 'am I fresh', 'should I go hard today', TSB/CTL questions.",
+      "The athlete's CURRENT form: CTL (fitness), ATL (fatigue), TSB (freshness/form), 7-day CTL trend, plus computed readiness (race-readiness %, freshness %, WHOOP recovery % when connected, verdict, advice). Use for 'how's my form', 'am I fresh', 'should I go hard today', TSB/CTL questions.",
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -108,7 +109,7 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
   {
     name: 'get_checkin',
     description:
-      "Latest wellness/recovery: this week's check-in (resting HR, sleep, HRV, fatigue score, legs feeling, motivation, notes) and the most recent daily biometrics (RHR, HRV, sleep, recovery score). Use for 'how's my recovery', 'did I sleep enough', RHR/HRV/fatigue questions.",
+      "Latest wellness/recovery: this week's check-in (resting HR, sleep, HRV, fatigue score, legs feeling, motivation, notes) and the most recent daily biometrics (RHR, HRV, sleep, recovery score), plus WHOOP data when connected: today's recovery %, HRV vs 30-day norm, resting HR vs norm, sleep duration/stages/need/performance, and up to 14 days of WHOOP history (recovery, HRV, RHR, sleep, day strain 0-21, non-cycling WHOOP workouts). Use for 'how's my recovery', 'did I sleep enough', 'what does WHOOP say', strain, RHR/HRV/fatigue questions.",
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -262,7 +263,9 @@ async function getFitnessStatus({ supabase, athleteId }: ToolCtx) {
   if (!rows || rows.length === 0) return { found: false, message: 'Brak danych formy — zsynchronizuj Stravę, żeby policzyć CTL/ATL/TSB.' };
   const now = rows[rows.length - 1];
   const weekAgo = rows[Math.max(0, rows.length - 8)];
-  const readiness = computeReadiness(rows as MetricRow[]);
+  const w = await loadWhoop(supabase, athleteId, userTodayISO()).catch(() => null);
+  const wt = w?.today ?? null;
+  const readiness = computeReadiness(rows as MetricRow[], wt ? { recovery: wt.recovery, hrvLow: wt.hrvLow, sleepShort: wt.sleepShort } : null);
   return {
     date: now.date,
     ctl: Math.round(now.ctl),
@@ -270,7 +273,7 @@ async function getFitnessStatus({ supabase, athleteId }: ToolCtx) {
     tsb: Math.round(now.tsb),
     ctl_trend_7d: r1(now.ctl - weekAgo.ctl),
     readiness: readiness
-      ? { raceReady: readiness.raceReady, freshPct: readiness.freshPct, fitnessPct: readiness.fitnessPct, state: readiness.state, advice: readiness.advice }
+      ? { raceReady: readiness.raceReady, freshPct: readiness.freshPct, fitnessPct: readiness.fitnessPct, whoopRecoveryPct: readiness.recoveryPct, state: readiness.state, advice: readiness.advice }
       : null,
   };
 }
@@ -328,7 +331,22 @@ async function getCheckin({ supabase, athleteId }: ToolCtx) {
     supabase.from('weekly_checkins').select('week_start, rhr_bpm, sleep_hours, hrv, fatigue_score, legs_feeling, motivation, notes').eq('athlete_id', athleteId).gte('week_start', monday).maybeSingle(),
     supabase.from('daily_biometrics').select('date, rhr_bpm, hrv_ms, sleep_hours, recovery_score').eq('athlete_id', athleteId).order('date', { ascending: false }).limit(1).maybeSingle(),
   ]);
-  return { week: week ?? null, latest_daily: daily ?? null };
+  const today = userTodayISO();
+  const w = await loadWhoop(supabase, athleteId, today).catch(() => null);
+  const whoop = w?.connected || w?.history.length
+    ? {
+        connected: !!w?.connected,
+        needs_reconnect: !!w?.needsReauth,
+        last_sync_at: w?.lastSyncAt ?? null,
+        today: w?.today ?? null, // null = dzisiejsza regeneracja jeszcze niepoliczona (przed pobudką)
+        history_14d: (w?.history ?? []).slice(-14).map((d) => ({
+          date: d.date, day_name_pl: dayNamePl(d.date), recovery: d.recovery_score, hrv_ms: d.hrv_ms != null ? Math.round(Number(d.hrv_ms)) : null,
+          rhr: d.rhr, sleep_min: d.sleep_min, sleep_perf: d.sleep_performance, deep_min: d.deep_min, rem_min: d.rem_min,
+          strain: d.day_strain, workouts: d.workouts ?? [],
+        })),
+      }
+    : { connected: false, note: 'WHOOP niepołączony – można go połączyć na pulpicie (karta WHOOP).' };
+  return { week: week ?? null, latest_daily: daily ?? null, whoop };
 }
 
 // READ-ONLY weryfikacja startów względem oficjalnych kalendarzy UCI. NIE zapisuje nic —

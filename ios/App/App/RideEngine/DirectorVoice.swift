@@ -124,6 +124,21 @@ final class DirectorVoice: NSObject {
         return has("w.\(r5(w))") ? ["w.\(r5(w))"] : []
     }
 
+    /// Podsumowanie po jeździe: „Podsumujmy trening.” + każda seria („Interwał drugi z czterech.
+    /// trzysta dziesięć watów. Idealnie w zakresie.”) + rada na następny raz.
+    func debriefIds(_ series: [(n: Int, total: Int, avg: Int, vrd: String)], tip: String) -> [String] {
+        var out: [String] = []
+        if let l = lead("debrief") { out.append(l) }
+        for x in series {
+            if has("int.\(x.n).\(x.total)") { out.append("int.\(x.n).\(x.total)") }
+            out += watts("\(x.avg)")
+            out += pick("vrd." + x.vrd)
+        }
+        let ev = ["even": "tipEven", "fade": "tipFade", "high": "tipHigh", "low": "tipLow", "ok": "tipOk"][tip] ?? "tipOk"
+        if let l = lead(ev) { out.append(l) }
+        return out
+    }
+
     /// nil = nic nie mów; [] = brak nagrania (użyj głosu systemowego).
     func compose(_ key: String, _ vars: [String: String]) -> [String]? {
         if Self.silent.contains(key) { return nil }
@@ -141,6 +156,16 @@ final class DirectorVoice: NSObject {
             if has(c) { out.append(c) }
             let g = "grade.\(min(15, max(2, Int((num(vars["grade"]) ?? 0).rounded()))))"
             if has(g) { out.append(g) }
+            // tryb startowy: cel mocy ze strategii („Plan na podjazd: trzymaj od 280 do 300 watów”)
+            if vars["low"] != nil, let p = lead("climbPlan") {
+                let r = range(vars["low"], vars["high"])
+                if !r.isEmpty { out.append(p); out += r }
+            }
+            // …i taktyka na starcie podjazdu (oszczędzaj / atak / na maksa)
+            if key == "navClimbStart", let t = vars["tier"] {
+                let ev = t == "oszczedz" ? "climbSave" : t == "atak" ? "climbAttack" : t == "full" ? "climbFull" : ""
+                if !ev.isEmpty, let l = lead(ev) { out.append(l) }
+            }
             return out
         }
         if key == "navLeft" {
@@ -154,6 +179,16 @@ final class DirectorVoice: NSObject {
             let r = min(100, max(20, r5(num(vars["pct"]) ?? 0)))
             let lv = vars["level"] ?? "yellow"
             var out: [String] = has("rd.\(r)") ? ["rd.\(r)"] : []
+            // z WHOOP: zamiast oceny z PMC – regeneracja z liczbą i werdykt WHOOP (+ HRV / sen)
+            if let w = vars["whoop"], !w.isEmpty {
+                let rc = min(100, max(5, r5(num(vars["rec"]) ?? 0)))
+                if has("rec.\(rc)"), let wl = lead(w == "green" ? "whoopGreen" : (w == "red" ? "whoopRed" : "whoopYellow")) {
+                    out += ["rec.\(rc)", wl]
+                    if vars["hrvLow"] == "1", let l = lead("hrvLow") { out.append(l) }
+                    else if vars["sleepShort"] == "1", let l = lead("sleepShort") { out.append(l) }
+                    return out
+                }
+            }
             if let l = lead(lv == "green" ? "readyGreen" : (lv == "red" ? "readyRed" : "readyYellow")) { out.append(l) }
             if vars["heavy"] == "1", let l = lead("yHeavy") { out.append(l) }
             return out

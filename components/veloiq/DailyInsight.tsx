@@ -54,7 +54,7 @@ export function DailyInsight({ fallback }: { fallback?: string }) {
       {text ? (
         <div style={bodyStyle}>{text}</div>
       ) : (
-        <div style={{ color: C.muted, fontSize: 13, fontStyle: 'italic' }}>Analizuję dane Strava...</div>
+        <div style={{ color: C.muted, fontSize: 13, fontStyle: 'italic' }}>Analizuję dane ze Stravy…</div>
       )}
     </div>
   );

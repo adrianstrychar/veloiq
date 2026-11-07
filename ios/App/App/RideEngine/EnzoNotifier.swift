@@ -57,7 +57,7 @@ final class EnzoNotifier: NSObject, UNUserNotificationCenterDelegate {
                 t += " · tętno \(h)" + (["ok": " ✓", "high": " ↑", "low": " ↓"][g("hrState")] ?? "")
             }
             return t
-        case "readiness": return "Gotowość \(g("pct"))% – \(g("state"))"
+        case "readiness": return "Gotowość \(g("pct"))% – \(g("state"))" + (v["rec"].map { " · WHOOP \($0)%" } ?? "")
         case "condition": return "Kondycja dziś \(g("sign"))\(g("n"))"
         case "drink": return "Pij!"
         case "eat": return "Jedz – żel/baton"
@@ -71,8 +71,8 @@ final class EnzoNotifier: NSObject, UNUserNotificationCenterDelegate {
         case "navMute": return "Poza trasą – nawigacja wyciszona"
         case "navDisabled": return "Nawigacja wyłączona"
         case "navEnabled": return "Nawigacja włączona"
-        case "navClimb": return "Podjazd za 1 km: \(g("len")) km · \(g("grade"))%"
-        case "navClimbStart": return "Podjazd: \(g("len")) km · \(g("grade"))% · +\(g("gain")) m"
+        case "navClimb": return "Podjazd za 1 km: \(g("len")) km · \(g("grade"))%" + (v["low"] != nil ? " · cel \(g("low"))–\(g("high")) W" : "")
+        case "navClimbStart": return "Podjazd: \(g("len")) km · \(g("grade"))%" + (v["low"] != nil ? " · cel \(g("low"))–\(g("high")) W" : " · +\(g("gain")) m")
         case "navTop": return "Szczyt"
         case "navLeft": return "Do mety: \(g("km")) km"
         case "navDone": return "Meta trasy"

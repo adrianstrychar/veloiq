@@ -17,6 +17,7 @@ import {
 import { estimateRaceDay, taperDaysFor, taperVolumeFactor, taperLast48hViolation, outlineTaperPlaceholders, type RacePriority } from '@/lib/race-taper';
 import { buildRecentLoad, recoveryViolation, RECOVERY_CONFIG, type RecentActivity, type PastRace } from '@/lib/recent-load';
 import { userTodayISO } from '@/lib/timezone';
+import { applyWeekHours } from '@/lib/plan-hours';
 
 // dow (1=Pn..7=Nd) daty w tygodniu zaczynającym się od weekStart (Mon), albo null gdy poza tygodniem.
 function dowInWeek(weekStart: string, dateIso: string): number | null {
@@ -84,6 +85,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_week_start' }, { status: 400 });
   }
   const weekStart = weekStartParam ? mondayOf(new Date(weekStartParam)) : mondayOf(new Date(todayIso + 'T12:00:00Z'));
+  if (weekStart < mondayOf(new Date(todayIso + 'T12:00:00Z'))) {
+    return NextResponse.json({ error: 'past_week', message: 'Nie generuję planu na miniony tydzień.' }, { status: 400 });
+  }
 
   // Okno historii: 14 dni wstecz od PIERWSZEGO planowanego dnia (max(weekStart, dziś)) + zapas na
   // wykrycie startu tuż sprzed okna. Bez tego generator nie miał ŻADNEGO kanału na fakt "dwa dni
@@ -392,6 +396,11 @@ export async function POST(req: NextRequest) {
   if (saveErr) {
     return NextResponse.json({ error: `zapis nieudany: ${saveErr.message}` }, { status: 500 });
   }
+  // Ręczny wybór godzin (user_hours zostaje przy regeneracji) – nałóż go na nowy plan, żeby zapisane
+  // dni zgadzały się z suwakiem w całej aplikacji.
+  const { data: uh } = await supabase.from('weekly_plans').select('user_hours')
+    .eq('athlete_id', athleteId).eq('week_start', weekStart).maybeSingle();
+  if (uh?.user_hours != null) await applyWeekHours(supabase, athleteId, weekStart, Number(uh.user_hours)).catch(() => null);
 
   return NextResponse.json({ ok: true, current: curPayload, next: nextPayload });
 }

@@ -107,7 +107,7 @@ final class WorkoutEngine {
     // Wyniki
     private(set) var series: [SeriesResult] = []
     private(set) var efforts: [EffortResult] = []
-    private var inEffort = false, effortStart = 0
+    private var inEffort = false, effortStart = 0, effortPending = -1
 
     init(script: WorkoutScript, startDate: Date = Date(), pausedTotal: TimeInterval = 0, pausedAt: Date? = nil) {
         self.script = script
@@ -134,7 +134,13 @@ final class WorkoutEngine {
         let st = script.steps[idx]
         guard st.isInterval else { return false }
         if let s = st.start { return s == "auto" }
-        return st.durationSec >= 60
+        // każdy interwał (także 10-s sprint) czeka, aż ruszysz – poza interwałem tuż po innym interwale
+        return !script.steps[idx - 1].isInterval
+    }
+
+    /// Ile sekund nad progiem = start. Sprinty szybciej – start i tak liczy się od pierwszej sekundy wysiłku.
+    private func startNeedSec(_ dur: Int) -> Int {
+        dur < 30 ? min(R.autoStartSec, max(2, dur / 4)) : R.autoStartSec
     }
 
     // MARK: - Wejścia
@@ -381,7 +387,7 @@ final class WorkoutEngine {
             } else {
                 startRun = 0; startDips = 0
             }
-            if startRun >= R.autoStartSec {
+            if startRun >= startNeedSec(next.durationSec) {
                 let startSec = startRunAt
                 let rest = startSec - stepStartSec
                 let wasRecovery = st.type == "recovery"
@@ -659,6 +665,7 @@ final class WorkoutEngine {
         if let b = script.briefing {
             if let r = b.readiness { d["readiness"] = Int(r.rounded()) }
             if let s = b.readyState { d["readyState"] = s }
+            if let rc = b.recovery { d["recovery"] = Int(rc.rounded()) }
         }
         return d
     }
@@ -711,8 +718,15 @@ final class WorkoutEngine {
     private func briefingTick(_ s: Int, _ speak: Bool) {
         guard let b = script.briefing else { return }
         if s == Self.briefReadySec, let r = b.readiness {
-            say("readiness", ["pct": "\(Int(r.rounded()))", "level": b.readyColor ?? "yellow", "state": b.readyState ?? "",
-                              "heavy": (b.yTss ?? 0) >= 150 ? "1" : "0"], .info, speak)
+            var v: [String: String] = ["pct": "\(Int(r.rounded()))", "level": b.readyColor ?? "yellow", "state": b.readyState ?? "",
+                                       "heavy": (b.yTss ?? 0) >= 150 ? "1" : "0"]
+            if let rec = b.recovery, let lv = b.recLevel {
+                let low = b.hrvLow == true, short = b.sleepShort == true
+                v["rec"] = "\(Int(rec.rounded()))"; v["whoop"] = lv
+                v["hrvLow"] = low ? "1" : "0"; v["sleepShort"] = short ? "1" : "0"
+                v["whoopTxt"] = " Regeneracja WHOOP \(Int(rec.rounded())) procent." + (low ? " Zmienność tętna niższa niż zwykle." : short ? " Za mało snu." : "")
+            }
+            say("readiness", v, .info, speak)
         }
         if s == Self.briefCondSec, let a = b.hrA, let k = b.hrB {
             var pw = 0.0, hr = 0.0, n = 0
@@ -760,25 +774,40 @@ final class WorkoutEngine {
 
     // MARK: - Jazda swobodna: automatyczne wysiłki
 
+    /// Jazda swobodna: DŁUŻSZE wysiłki (≥ 2 min). Start i koniec po średniej z 30 s, koniec dopiero po 45 s
+    /// słabszej jazdy – chwilowe odpuszczenie (np. 300 → 235 W, światła) nie dzieli wysiłku.
     private func freeTick(_ s: Int, _ speak: Bool) {
         let ftp = Double(script.ftp)
-        guard ftp > 0, s >= 9 else { return }
+        guard ftp > 0, s >= 29, s < P.count else { return }
         let avg10 = Double(P[(s - 9)...s].reduce(0, +)) / 10
-        if !inEffort && avg10 >= ftp * R.effortStartPct {
-            inEffort = true; effortStart = s - 9
-        } else if inEffort && avg10 < ftp * R.effortEndPct {
-            inEffort = false
-            var a = effortStart, b = s
-            let thr = ftp * 0.8
-            while a < b && Double(P[a]) < thr { a += 1 }
-            while b > a && Double(P[b]) < thr { b -= 1 }
-            let dur = b - a + 1
-            if dur >= R.effortMinSec {
-                let avg = avgInt(Array(P[a...b]))
-                efforts.append(EffortResult(startSec: a, durationSec: dur, avgPower: avg))
-                say("effort", ["dur": Phrases.duration(dur), "avg": "\(avg)"], .effort, speak)
-            }
+        let avg30 = Double(P[(s - 29)...s].reduce(0, +)) / 30
+        if !inEffort {
+            if avg30 >= ftp * R.effortStartPct { inEffort = true; effortStart = s - 29; effortPending = -1 }
+            return
         }
+        if effortPending < 0 {
+            if avg30 < ftp * R.effortEndPct { effortPending = s }
+            return
+        }
+        if avg10 >= ftp * 0.8 { effortPending = -1; return }   // wrócił do mocy (≥ 80% FTP) → ten sam wysiłek
+        if s - effortPending < R.effortGapSec { return }
+        inEffort = false; effortPending = -1
+        if let e = effortBetween(effortStart, s) {
+            efforts.append(e)
+            say("effort", ["dur": Phrases.duration(e.durationSec), "avg": "\(e.avgPower)"], .effort, speak)
+        }
+    }
+
+    /// Wysiłek w [a, b] przycięty do sekund ≥ 80% FTP; nil = krótszy niż minimum.
+    private func effortBetween(_ a0: Int, _ b0: Int) -> EffortResult? {
+        guard a0 >= 0, b0 < P.count, a0 <= b0 else { return nil }
+        let thr = Double(script.ftp) * 0.8
+        var a = a0, b = b0
+        while a < b && Double(P[a]) < thr { a += 1 }
+        while b > a && Double(P[b]) < thr { b -= 1 }
+        let dur = b - a + 1
+        guard dur >= R.effortMinSec else { return nil }
+        return EffortResult(startSec: a, durationSec: dur, avgPower: avgInt(Array(P[a...b])))
     }
 
     static func verdictText(_ v: String) -> String {
@@ -796,7 +825,9 @@ final class WorkoutEngine {
         return WorkoutSummary(
             file: file, durationSec: n, avgPower: n > 0 ? Int((Double(total) / Double(n)).rounded()) : 0, normalizedPower: normalizedPower(),
             avgHr: hrs.isEmpty ? nil : avgInt(hrs), maxHr: hrs.max(), kJ: total / 1000,
-            compliancePct: evalSec > 0 ? weighted / evalSec : 0, series: series, efforts: efforts, laps: laps)
+            compliancePct: evalSec > 0 ? weighted / evalSec : 0, series: series,
+            // wysiłek trwający w chwili zakończenia jazdy też się liczy
+            efforts: efforts + ((inEffort && script.ftp > 0) ? [effortBetween(effortStart, n - 1)].compactMap { $0 } : []), laps: laps)
     }
 
     /// Ręczne zakończenie (przycisk Stop) – w dowolnym momencie, także po planie.

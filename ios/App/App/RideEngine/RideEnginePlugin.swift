@@ -20,6 +20,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stopWorkout", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "skipStep", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelStart", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "debrief", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setNavEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getRecoverable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "resumeRecovered", returnType: CAPPluginReturnPromise),
@@ -479,6 +480,25 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             if let m = mode { self.voiceMode = m }
             if let n = name { UserDefaults.standard.set(n, forKey: "veloiq.voice.name"); self.director?.name = n }
             self.speaker.configure(voiceId: id, rate: rate)
+            call.resolve()
+        }
+    }
+
+    /// Podsumowanie Enzo po jeździe (ekran podsumowania): seria po serii + rada.
+    @objc func debrief(_ call: CAPPluginCall) {
+        let items = (call.getArray("series") as? [[String: Any]]) ?? []
+        let series = items.map { (n: ($0["n"] as? NSNumber)?.intValue ?? 0, total: ($0["total"] as? NSNumber)?.intValue ?? 0,
+                                  avg: ($0["avg"] as? NSNumber)?.intValue ?? 0, vrd: ($0["vrd"] as? String) ?? "ok") }
+        let tip = call.getString("tip") ?? "ok"
+        let text = call.getString("text") ?? ""
+        DispatchQueue.main.async {
+            guard self.voiceLevel != "off" else { return call.resolve() }
+            if self.voiceMode == "enzo", let d = self.director {
+                let ids = d.debriefIds(series, tip: tip)
+                if !ids.isEmpty { d.play(ids, interrupt: true) }
+            } else if !text.isEmpty {
+                self.speaker.speak(text, interrupt: true)
+            }
             call.resolve()
         }
     }

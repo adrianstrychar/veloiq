@@ -4,7 +4,11 @@
 
 export type TurnDir = 'left' | 'right' | 'slightLeft' | 'slightRight' | 'sharpLeft' | 'sharpRight' | 'uturn';
 export interface RouteCue { d: number; dir: TurnDir; angle: number }
-export interface RouteClimb { start: number; end: number; gain: number; grade: number }
+export interface RouteClimb {
+  start: number; end: number; gain: number; grade: number;
+  // tryb startowy (strategia wyścigu): cel mocy i taktyka na tym podjeździe
+  low?: number; high?: number; tier?: 'oszczedz' | 'atak' | 'full'; tip?: string;
+}
 export interface RideRoute {
   name: string;
   total: number;                                    // m
@@ -12,6 +16,7 @@ export interface RideRoute {
   pts: [number, number, number | null, number][];   // lat, lon, ele, dystans od startu (m)
   cues: RouteCue[];
   climbs: RouteClimb[];
+  raceId?: string;   // trasa wgrana do startu w kalendarzu (tryb startowy w „Jedź”)
 }
 
 interface Raw { lat: number; lon: number; ele: number | null }

@@ -17,6 +17,7 @@ export async function setManualFtp(supabase: SupabaseClient, athleteId: string, 
   const nowIso = new Date().toISOString();
   const { error } = await supabase.from('athletes').update({
     ftp_watts: ftp, ftp_source: 'manual', ftp_updated_at: nowIso,
+    daily_brief_date: null,   // brief dnia w czacie z nowymi watami
     ...(prev != null && prev !== ftp ? { ftp_prev_value: prev } : {}),
   }).eq('id', athleteId);
   if (error) throw new Error(error.message);

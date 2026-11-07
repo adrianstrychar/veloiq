@@ -3,16 +3,33 @@
 // co w rozpisce/profilu planu), stare dni bez structure — z profilu buildWorkout().expanded.
 
 import type { PlanDayRow } from '@/lib/planned-day';
-import { buildWorkout, sessionStructure, blockStepKind } from '@/lib/workout';
+import { buildWorkout, blockStepKind, warmCool } from '@/lib/workout';
 import { isOU, isBlocks, type BlockStep } from '@/lib/structure';
 import type { StepType, WorkoutScript, WorkoutStep } from './workout-script';
 
 const TOL = 0.03; // ±3% wokół wata z planu = zakres, w którym silnik nie koryguje
 
-const TYPE_NAMES: Record<string, string> = { Z1: 'Regeneracja', Z2: 'Z2', LONG: 'Długa jazda', SST: 'Sweet Spot', THR: 'Threshold', OU: 'Over-Under', VO2: 'VO2max' };
+const TYPE_NAMES: Record<string, string> = { Z1: 'Regeneracja', Z2: 'Endurance', LONG: 'Długa jazda', SST: 'Sweet Spot', THR: 'Threshold', OU: 'Over-Under', VO2: 'VO2max' };
+const STEP_FALLBACK: Record<StepType, string> = { warmup: 'Rozgrzewka', cooldown: 'Schłodzenie', recovery: 'Przerwa', steady: 'Jazda', interval: 'Interwał' };
+
+/** Nazwa kroku BEZ strefy i zakresu mocy – cel w watach i czas są osobno (ekran, powiadomienia, głos).
+ *  „Z2 20 min @ 185–210W” → „Jazda”, „Przerwa 4 min 50 s @ 170W” → „Przerwa 4 min 50 s”. */
+export function cleanStepName(raw: string, type: StepType): string {
+  const n = raw
+    .replace(/@\s*~?\d{2,4}\s*(?:[-–]\s*\d{2,4})?\s*W\b/gi, '')                 // „@ 185–210W”
+    .replace(/\(?\s*~?\d{2,3}\s*(?:[-–]\s*\d{2,3})?\s*%\s*(?:FTP)?\s*\)?/gi, '')   // „(76–81% FTP)”
+    .replace(/~?\d{2,4}\s*(?:[-–]\s*\d{2,4})?\s*W\b/g, '')                       // „185–210 W”, „170W”
+    .replace(/\b(?:Z[1-7]|strefa\s*[1-7])\b/gi, '')                               // „Z2”
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s·,:@–-]+|[\s·,:@–-]+$/g, '')
+    .trim();
+  // zostało samo „20 min” (albo nic) → nazwa rodzaju kroku; czas i tak jest osobno
+  if (!n || /^\d+\s*(?:min|s|sek)\.?(?:\s+\d+\s*(?:s|sek)\.?)?$/i.test(n)) return STEP_FALLBACK[type];
+  return n;
+}
 
 function step(name: string, type: StepType, min: number, lo: number, hi: number, start?: 'auto' | 'time'): WorkoutStep {
-  return { name, type, durationSec: Math.round(min * 60), powerLow: Math.round(lo), powerHigh: Math.round(hi), ...(start ? { start } : {}) };
+  return { name: cleanStepName(name, type), type, durationSec: Math.round(min * 60), powerLow: Math.round(lo), powerHigh: Math.round(hi), ...(start ? { start } : {}) };
 }
 const around = (w: number) => [w * (1 - TOL), w * (1 + TOL)] as const;
 
@@ -45,9 +62,7 @@ function addHr(steps: WorkoutStep[], ftp: number, hrmax?: number | null, dayHr?:
 export function planDayToScript(day: PlanDayRow | null | undefined, ftp: number, id: string, hrmax?: number | null): WorkoutScript | null {
   if (!day || day.type === 'OFF' || !(day.dur_min > 0)) return null;
   const pct = (p: number) => (ftp * p) / 100;
-  const ss = sessionStructure(day.type);
-  const wu = day.warmup ?? ss.warmupDefault;
-  const cd = day.cooldown ?? ss.cooldownDefault;
+  const { w: wu, c: cd } = warmCool(day); // własny trening zawodnika (bloki own) → bez doklejanej rozgrzewki/schłodzenia
   const steps: WorkoutStep[] = [];
   const warm = () => wu > 0 && steps.push(step('Rozgrzewka', 'warmup', wu, pct(50), pct(65)));
   const cool = () => cd > 0 && steps.push(step('Schłodzenie', 'cooldown', cd, pct(45), pct(55)));
@@ -68,7 +83,12 @@ export function planDayToScript(day: PlanDayRow | null | undefined, ftp: number,
             const kind = blockStepKind((st.w / ftp) * 100);
             const suffix = total > 1 ? ` ${r + 1}/${total}` : '';
             const cad = st.cad ? { cadenceLow: st.cad[0], cadenceHigh: st.cad[1] } : {};
-            if (kind === 'rest') {
+            // własna rozgrzewka / schłodzenie zawodnika (wklejony trening) – jako takie kroki, nie „przerwa”
+            const wc = /rozgrzew|warm/i.test(st.name ?? '') ? 'warmup' : /sch[łl]odz|cool/i.test(st.name ?? '') ? 'cooldown' : null;
+            if (wc) {
+              steps.push({ ...step(st.name!, wc, st.sec / 60, st.w * 0.85, st.w * 1.1), ...cad });
+              prevWork = false;
+            } else if (kind === 'rest') {
               steps.push({ ...step(st.name ?? 'Przerwa', 'recovery', st.sec / 60, pct(40), Math.max(pct(60), st.w * 1.05)), ...cad });
               prevWork = false;
             } else if (kind === 'steady') {
@@ -82,8 +102,8 @@ export function planDayToScript(day: PlanDayRow | null | undefined, ftp: number,
               const lo = short ? st.w * 0.85 : st.w * (1 - TOL);
               const hi = short ? st.w * 1.6 : st.w * (1 + TOL);
               const name = `${st.name ?? b.name ?? 'Interwał'}${st.name || b.name ? suffix : ` ${n}`}`;
-              // praca tuż po pracy (piramida, 40/20 bez przerwy) idzie z zegarem, nie czeka na start
-              steps.push({ ...step(name, 'interval', st.sec / 60, lo, hi, prevWork || j > 0 ? 'time' : undefined), ...cad });
+              // praca tuż po pracy (piramida, 40/20 bez przerwy) idzie z zegarem; po przerwie/jeździe czeka na start
+              steps.push({ ...step(name, 'interval', st.sec / 60, lo, hi, prevWork ? 'time' : undefined), ...cad });
               prevWork = true;
             }
           });

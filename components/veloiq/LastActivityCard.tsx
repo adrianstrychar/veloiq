@@ -134,9 +134,9 @@ export function LastActivityCard({ activity, ftp }: LastActivityCardProps) {
 
 // Kompaktowy czas h:mm do ciasnej siatki metryk.
 function hhmm(seconds: number): string {
-  const t = Math.round(seconds);
-  const h = Math.floor(t / 3600);
-  const m = Math.round((t % 3600) / 60);
+  const tm = Math.round(seconds / 60);   // najpierw całe minuty – inaczej 2:59:40 → „2:60”
+  const h = Math.floor(tm / 60);
+  const m = tm % 60;
   return `${h}:${String(m).padStart(2, '0')}`;
 }
 

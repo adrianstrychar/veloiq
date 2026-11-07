@@ -18,7 +18,7 @@ function textOf(resp: Anthropic.Message): string {
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)
     .join('\n')
-    .trim();
+    .trim() || 'Przepraszam, nie dokończyłem odpowiedzi — zapytaj jeszcze raz, krócej.';   // pusta tura psuje kolejne pytanie
 }
 
 // Log kosztu per call — input/output + cache (do weryfikacji, czy caching i capy działają).
@@ -66,6 +66,14 @@ export async function POST(request: NextRequest) {
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: 'brak wiadomości' }, { status: 400 });
     }
+    // Tylko ostatnie 12 wiadomości (koszt i czas odpowiedzi nie rosną z długością rozmowy), tekst,
+    // role user/assistant, bez pustych tur; rozmowa zaczyna się od zawodnika.
+    messages = messages
+      .filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+      .slice(-12)
+      .map((m) => ({ role: m.role, content: (m.content as string).slice(0, 4000) }));
+    while (messages.length && messages[0].role !== 'user') messages.shift();
+    if (!messages.length) return NextResponse.json({ error: 'brak wiadomości' }, { status: 400 });
   } catch {
     return NextResponse.json({ error: 'nieprawidłowy JSON' }, { status: 400 });
   }

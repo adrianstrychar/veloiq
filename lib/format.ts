@@ -12,9 +12,9 @@ export function formatPolishDate(dateStr: string): string {
 
 // sekundy → "1h 36min" lub "45min"
 export function formatDuration(seconds: number): string {
-  const total = Math.round(seconds);
-  const h = Math.floor(total / 3600);
-  const min = Math.round((total % 3600) / 60);
+  const tm = Math.round(seconds / 60);   // najpierw całe minuty – inaczej 2:59:40 → „2h 60min”
+  const h = Math.floor(tm / 60);
+  const min = tm % 60;
   if (h > 0) return `${h}h ${min}min`;
   return `${min}min`;
 }

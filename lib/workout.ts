@@ -1,5 +1,5 @@
 import { C } from '@/lib/theme';
-import { type DayStructure, type BlocksStructure, type StructureBlock, isOU, isWork, isBlocks, ouBlockMin, fmtSec } from '@/lib/structure';
+import { type DayStructure, type BlocksStructure, type StructureBlock, isOU, isWork, isBlocks, isOwnSession, ouBlockMin, fmtSec } from '@/lib/structure';
 
 // Deterministyczny generator rozpiski treningu (ETAP 5.4) — port buildWorkout z mockupu.
 // Dni ze `structure` (nowy kontrakt): rozpiska i profil budowane Z PARAMETRÓW (buildFromStructure)
@@ -59,9 +59,7 @@ const REPS_GROUP_THRESHOLD = 8;
 // Profil ze `structure` (nowy kontrakt): segmenty budowane Z PARAMETRÓW, moc = %FTP z realnych
 // watów. Zero założeń o proporcji under/over czy długości przerw — wszystko przychodzi w danych.
 function buildFromStructure(d: WorkoutInput, s: DayStructure, ftp: number): ExpandedSeg[] {
-  const ss = sessionStructure(d.type);
-  const wUsed = d.warmup ?? ss.warmupDefault;
-  const cUsed = d.cooldown ?? ss.cooldownDefault;
+  const { w: wUsed, c: cUsed } = warmCool({ ...d, structure: s });
   const pct = (watts: number) => Math.round((watts / ftp) * 100);
   const segs: ExpandedSeg[] = [];
   if (wUsed > 0) segs.push({ kind: 'warmup', min: wUsed, pctFtp: 58, color: PC.gray });
@@ -259,6 +257,14 @@ export function sessionStructure(type: string): SessionStructure {
   return SESSION_STRUCT[type] ?? DEFAULT_SESSION_STRUCT;
 }
 
+/** Rozgrzewka i schłodzenie dnia (min): z suwaka albo domyślne dla typu. Własny kompletny trening
+ *  zawodnika (bloki z `own`) → 0/0 – jego rozgrzewka i schłodzenie są już w blokach. */
+export function warmCool(d: { type: string; warmup?: number; cooldown?: number; structure?: unknown }): { w: number; c: number } {
+  if (isOwnSession(d.structure)) return { w: 0, c: 0 };
+  const ss = sessionStructure(d.type);
+  return { w: d.warmup ?? ss.warmupDefault, c: d.cooldown ?? ss.cooldownDefault };
+}
+
 // Wyciąga "N×Mmin" z labela → { reps, minutes }. Null gdy brak struktury.
 export function parseStructure(label: string): { reps: number; minutes: number } | null {
   const m = label.match(/(\d+)\s*[×x]\s*(\d+)\s*min/i);
@@ -278,9 +284,7 @@ export function buildWorkout(d: WorkoutInput, ftp: number): Workout {
   const wr = (a: number, b: number) => `${w(a)}–${w(b)}W`;
   const T = d.type;
   const dur = d.dur_min;
-  const ss = sessionStructure(T);
-  const wUsed = d.warmup ?? ss.warmupDefault;     // rozgrzewka (z suwaka lub domyślna)
-  const cUsed = d.cooldown ?? ss.cooldownDefault; // schłodzenie
+  const { w: wUsed, c: cUsed } = warmCool(d); // rozgrzewka/schłodzenie (suwak, domyślne; własny trening → 0)
   // Substruktura: parametry z plan_json (jedno źródło prawdy) albo fallback z labela/defaultów.
   const sOU = d.structure && isOU(d.structure) ? d.structure : null;
   const sWork = d.structure && isWork(d.structure) ? d.structure : null;

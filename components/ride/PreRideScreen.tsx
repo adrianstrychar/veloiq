@@ -38,6 +38,8 @@ interface Props {
 
 export function PreRideScreen({ ride, plan, settings, onSettings, onBack, onStart }: Props) {
   const rows = groupSteps(plan.steps);
+  // interwały, które czekają, aż ruszysz (ta sama reguła co silnik: nie pierwszy krok, nie tuż po interwale)
+  const autoSteps = new Set(plan.steps.filter((st, i) => i > 0 && st.type === 'interval' && (st.start ? st.start === 'auto' : plan.steps[i - 1].type !== 'interval')));
   const toggles: { k: 'autoStart' | 'announceArm' | 'autoPause' | 'notifyDevice'; label: string; sub: string }[] = [
     { k: 'autoStart', label: 'Interwały startują automatycznie', sub: 'Wykrywam start po mocy – plan przesuwa się razem z Tobą.' },
     { k: 'announceArm', label: 'Zapowiedź minutę wcześniej', sub: 'Głos + odliczanie 10 s i 3-2-1.' },
@@ -65,7 +67,7 @@ export function PreRideScreen({ ride, plan, settings, onSettings, onBack, onStar
               <span style={{ fontSize: 15, fontWeight: 600 }}>{count > 1 ? `${count} × ` : ''}{st.name && st.name !== st.type ? st.name : NAMES[st.type]}</span>
               <span className={s.small} style={{ fontSize: 12 }}>
                 {dur(st.durationSec)}
-                {st.type === 'interval' && settings.autoStart && st.durationSec >= 60 ? ' · startuje, gdy ruszysz' : ''}
+                {settings.autoStart && autoSteps.has(st) ? ' · startuje, gdy ruszysz' : ''}
                 {st.cadenceLow ? ` · kadencja ${st.cadenceLow}–${st.cadenceHigh ?? ''}` : ''}
               </span>
             </span>

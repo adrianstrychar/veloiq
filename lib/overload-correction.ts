@@ -13,7 +13,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createHash } from 'crypto';
 import { scaleWeek } from '@/lib/plan';
-import { sessionStructure } from '@/lib/workout';
+import { warmCool } from '@/lib/workout';
 import { taperProtector, lockTaperDays, taperViolations, restoreProtectedDays, type RaceRef } from '@/lib/taper-guard';
 import { buildPlanDiff } from '@/lib/ai/chat-write-tools';
 import { isOU, isBlocks, buildLabel, structureMainMin, type DayStructure } from '@/lib/structure';
@@ -148,17 +148,14 @@ export function buildIntensityCorrection(
       const rep = s.blocks[idx].repeat;
       const newRep = Math.max(1, Math.round((rep * 2) / 3));
       if (newRep >= rep) return { ok: false, notice: 'Wykryto intensywność ponad plan, ale następny trening nie ma powtarzanej serii do skrócenia — oceń sam, czy go zmniejszyć.' };
-      newStruct = { blocks: s.blocks.map((b, i) => (i === idx ? { ...b, repeat: newRep } : b)) };
+      newStruct = { ...s, blocks: s.blocks.map((b, i) => (i === idx ? { ...b, repeat: newRep } : b)) }; // own zostaje
     } else {
       const newReps = Math.max(1, Math.round((s.reps * 2) / 3));
       if (newReps >= s.reps) return { ok: false, notice: 'Wykryto intensywność ponad plan, ale następny trening to pojedynczy kluczowy interwał — oceń sam, czy go zmniejszyć.' };
       newStruct = { ...s, reps: newReps };
     }
-    const ss = sessionStructure(candidate.type);
     // warmup/cooldown to opcjonalne pola widoku (suwak) — w plan_json bywają, w typie PlanDay nie.
-    const wc = candidate as PlanDay & { warmup?: number; cooldown?: number };
-    const wUsed = wc.warmup ?? ss.warmupDefault;
-    const cUsed = wc.cooldown ?? ss.cooldownDefault;
+    const { w: wUsed, c: cUsed } = warmCool(candidate as PlanDay & { warmup?: number; cooldown?: number });
     const oldMain = structureMainMin(s);
     const newMain = structureMainMin(newStruct);
     const newDur = wUsed + newMain + cUsed;

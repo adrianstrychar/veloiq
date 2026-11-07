@@ -136,6 +136,7 @@ export class WebRideEngine implements RideEnginePlugin {
   async getRecoverable() { return { available: false }; }
   async resumeRecovered() { return { paused: true, elapsed: 0 }; }
   async discardRecovered() {}
+  async debrief(o: { text: string }) { this.speak(o.text); }
   async testVoice(o: { text: string }) {
     if (this.mode === 'enzo' && (await this.loadPack())) {
       this.director!.play(['lead.arm.0', 'int.2.4', 'min.8', 'from.305', 'to.320']); return;

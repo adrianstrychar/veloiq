@@ -90,9 +90,18 @@ export class DirectorComposer {
     if (key === 'readiness') {
       const r = Math.min(100, Math.max(20, r5(num(vars.pct))));
       const lv = String(vars.level ?? 'yellow');
+      const rd = this.has(`rd.${r}`) ? [`rd.${r}`] : [];
+      // z WHOOP: zamiast oceny z PMC – regeneracja z liczbą i werdykt WHOOP (+ HRV / sen)
+      if (vars.whoop) {
+        const w = String(vars.whoop);
+        const rc = Math.min(100, Math.max(5, r5(num(vars.rec))));
+        const wl = this.lead(w === 'green' ? 'whoopGreen' : w === 'red' ? 'whoopRed' : 'whoopYellow');
+        const extra = num(vars.hrvLow) ? this.lead('hrvLow') : num(vars.sleepShort) ? this.lead('sleepShort') : null;
+        if (wl && this.has(`rec.${rc}`)) return [...rd, `rec.${rc}`, wl, ...(extra ? [extra] : [])];
+      }
       const lead = this.lead(lv === 'green' ? 'readyGreen' : lv === 'red' ? 'readyRed' : 'readyYellow');
       const heavy = num(vars.heavy) ? this.lead('yHeavy') : null;
-      return [...(this.has(`rd.${r}`) ? [`rd.${r}`] : []), ...(lead ? [lead] : []), ...(heavy ? [heavy] : [])];
+      return [...rd, ...(lead ? [lead] : []), ...(heavy ? [heavy] : [])];
     }
     if (key === 'condition') {
       const id = `cond.${Math.round(num(vars.n))}`;

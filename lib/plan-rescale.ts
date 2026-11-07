@@ -43,11 +43,14 @@ export async function rescalePlans(supabase: SupabaseClient, athleteId: string, 
     .from('weekly_plans').select('id, week_start, plan_json').eq('athlete_id', athleteId).gte('week_start', monday);
   let changed = 0;
   for (const w of weeks ?? []) {
-    const pj = w.plan_json as { days?: Day[] } | null;
+    const pj = w.plan_json as { days?: Day[]; base_days?: Day[] } | null;
     if (!pj?.days) continue;
     const current = w.week_start === monday;
-    const days = pj.days.map((d) => (current && d.dow < todayDow ? d : rescaleDay(d, ratio)));
-    const { error } = await supabase.from('weekly_plans').update({ plan_json: { ...pj, days } }).eq('id', w.id);
+    const re = (arr: Day[]) => arr.map((d) => (current && d.dow < todayDow ? d : rescaleDay(d, ratio)));
+    const days = re(pj.days);
+    // baza suwaka godzin też w nowych watach (inaczej kolejny ruch suwaka przywróciłby stare)
+    const next = pj.base_days ? { ...pj, days, base_days: re(pj.base_days) } : { ...pj, days };
+    const { error } = await supabase.from('weekly_plans').update({ plan_json: next }).eq('id', w.id);
     if (!error) changed++;
   }
   return changed;

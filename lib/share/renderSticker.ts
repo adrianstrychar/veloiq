@@ -6,7 +6,7 @@
 // status słowem z ringHeadline (lib/execution-ring) — identyczne z kartą, zero
 // równoległego matchingu.
 import { ringHeadline } from '@/lib/execution-ring';
-import { sessionStructure } from '@/lib/workout';
+import { warmCool } from '@/lib/workout';
 import { isOU, isBlocks, blocksMaxW } from '@/lib/structure';
 import { decodePolyline } from '@/lib/share/decodePolyline';
 import type { PlannedWorkout } from '@/lib/ai/insight';
@@ -72,9 +72,7 @@ export function buildProfileSegments(p: PlannedWorkout): ProfileSeg[] {
   // Steady (Z1/Z2/LONG lub brak struktury): jeden szeroki słupek.
   if (!s) return [{ min: Math.max(1, p.dur_min || 60), rel: 1, work: true }];
 
-  const ss = sessionStructure(p.type);
-  const wUsed = p.warmup ?? ss.warmupDefault;
-  const cUsed = p.cooldown ?? ss.cooldownDefault;
+  const { w: wUsed, c: cUsed } = warmCool(p);
   const segs: ProfileSeg[] = [];
   if (wUsed > 0) segs.push({ min: wUsed, rel: NONWORK_REL, work: false });
 

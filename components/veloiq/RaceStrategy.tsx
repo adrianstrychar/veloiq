@@ -4,6 +4,9 @@
 // Generacja przez POST /api/races/[id]/strategy (cache po fingerprincie). Paleta z landingu,
 // NIE motyw aplikacji — świadomie (landing to źródło prawdy wizualnej dla tej sekcji).
 import { useRef, useState } from 'react';
+import Link from 'next/link';
+import { routeFromGpx } from '@/lib/ride/gpx';
+import { saveRoute } from '@/components/ride/RouteCard';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis } from 'recharts';
 import type { RaceStrategy, PacingTier } from '@/lib/ai/race-strategy';
 import type { RouteAnalysis } from '@/lib/route/detect-climbs';
@@ -152,6 +155,8 @@ export default function RaceStrategyView({ race, initialStrategy, initialRoute }
     setUploading(true); setUploadError(null);
     try {
       const fd = new FormData(); fd.append('file', file);
+      // trasa także do nawigacji w „Jedź” (tryb startowy: Enzo poda cele mocy na podjazdach)
+      try { saveRoute({ ...routeFromGpx(await file.text()), raceId: String(race.id) }); } catch { /* nawigacja opcjonalna */ }
       const res = await fetch(`/api/races/${race.id}/gpx`, { method: 'POST', body: fd });
       const data = await res.json().catch(() => null);
       if (res.ok && data?.analysis) {
@@ -224,14 +229,13 @@ export default function RaceStrategyView({ race, initialStrategy, initialRoute }
       </div>
 
       {/* wk-meta — 4 kafle jak landing; POGODA "—" (Etap 3: geocoding location→lat/lon + Open-Meteo ≤16 dni, świeży fetch poza cache strategii) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', borderBottom: `1px solid ${L.border}` }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', borderBottom: `1px solid ${L.border}` }}>
         {[
           { v: s.meta.distance_km != null ? `${s.meta.distance_km} km` : '—', l: 'Dystans' },
           { v: s.meta.elevation_m != null ? `${s.meta.elevation_m} m` : '—', l: 'Przewyższenie' },
           { v: s.meta.surface, l: 'Nawierzchnia' },
-          { v: '—', l: 'Pogoda', tip: 'Dostępna bliżej startu (~2 tyg.)' },
         ].map((m, i) => (
-          <div key={i} title={m.tip} style={{ padding: '0.7rem 0.6rem', borderRight: i < 3 ? `1px solid ${L.border}` : 'none', textAlign: 'center' }}>
+          <div key={i} style={{ padding: '0.7rem 0.6rem', borderRight: i < 2 ? `1px solid ${L.border}` : 'none', textAlign: 'center' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: L.white }}>{m.v}</div>
             <div style={{ fontSize: 9, color: L.dim, textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 2 }}>{m.l}</div>
           </div>
@@ -297,6 +301,13 @@ export default function RaceStrategyView({ race, initialStrategy, initialRoute }
           <Block title="AI rekomenduje · Twoje mocne strony">
             <StratRows items={s.strengths.map((x) => ({ left: x.km, tip: x.tip }))} />
           </Block>
+        )}
+
+        {/* Jazda z tą strategią: Enzo prowadzi trasą startu i podaje waty na każdy podjazd */}
+        {route && (
+          <Link href="/trening" style={{ display: 'block', textAlign: 'center', minHeight: 44, lineHeight: '44px', borderRadius: 8, background: L.accent, color: '#04212B', fontSize: 15, fontWeight: 600, textDecoration: 'none' }}>
+            ▶ Jedź trasę startu z Enzo
+          </Link>
         )}
 
         {/* Wgranie/zmiana trasy GPX — przelicza strategię per realny podjazd */}
