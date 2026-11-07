@@ -160,7 +160,7 @@ export function buildDailyRows(athleteId: string, cycles: WCycle[], recs: WRecov
     const st = ss?.stage_summary;
     const need = ss?.sleep_needed;
     const asleep = st ? (st.total_light_sleep_time_milli ?? 0) + (st.total_slow_wave_sleep_time_milli ?? 0) + (st.total_rem_sleep_time_milli ?? 0) : null;
-    const needMs = need ? (need.baseline_milli ?? 0) + (need.need_from_sleep_debt_milli ?? 0) + (need.need_from_recent_strain_milli ?? 0) - (need.need_from_recent_nap_milli ?? 0) : null;
+    const needMs = need ? (need.baseline_milli ?? 0) + (need.need_from_sleep_debt_milli ?? 0) + (need.need_from_recent_strain_milli ?? 0) - Math.abs(need.need_from_recent_nap_milli ?? 0) : null;
     const cs = c.score_state === 'SCORED' || c.score?.strain != null ? c.score : null;
     rows.set(date, {
       _start: start,
@@ -244,17 +244,26 @@ async function refreshConn(supabase: SupabaseClient, conn: WhoopConnection): Pro
     await supabase.from('whoop_connections').update(upd).eq('athlete_id', conn.athlete_id);
     return { ...conn, ...upd };
   } catch (e) {
-    // inny proces mógł właśnie odświeżyć (stary refresh token unieważniony) → weź świeży z bazy
-    const fresh = await getWhoopConnection(supabase, conn.athlete_id);
-    if (fresh && fresh.refresh_token !== conn.refresh_token && new Date(fresh.expires_at).getTime() > Date.now() + 60_000) return fresh;
+    // inny proces mógł właśnie odświeżyć (stary refresh token unieważniony; WHOOP wysyła np. webhooki
+    // sleep + recovery naraz) → poczekaj chwilę na jego zapis i weź świeży token z bazy
+    for (let i = 0; i < 3; i++) {
+      const fresh = await getWhoopConnection(supabase, conn.athlete_id);
+      if (fresh && fresh.refresh_token !== conn.refresh_token && new Date(fresh.expires_at).getTime() > Date.now() + 60_000) return fresh;
+      if (!(e instanceof WhoopAuthError)) break;
+      await new Promise((r) => setTimeout(r, 700));
+    }
     if (e instanceof WhoopAuthError) {
-      await supabase.from('whoop_connections').update({ sync_error: 'reauth' }).eq('athlete_id', conn.athlete_id);
+      // tylko jeśli w bazie wciąż jest TEN refresh token – świeżo odświeżonego połączenia nie psujemy
+      await supabase.from('whoop_connections').update({ sync_error: 'reauth' })
+        .eq('athlete_id', conn.athlete_id).eq('refresh_token', conn.refresh_token);
     }
     throw e;
   }
 }
 
-async function validConn(supabase: SupabaseClient, conn: WhoopConnection): Promise<WhoopConnection> {
+/** Ważny token (odświeżony, jeśli wygasa). Wołane PRZED ograniczonym czasowo syncem – odświeżenie
+ *  musi się zapisać w bazie, bo stary refresh token po nim już nie działa. */
+export async function validConn(supabase: SupabaseClient, conn: WhoopConnection): Promise<WhoopConnection> {
   if (new Date(conn.expires_at).getTime() > Date.now() + 120_000) return conn;
   return refreshConn(supabase, conn);
 }
@@ -298,9 +307,14 @@ export async function syncWhoop(supabase: SupabaseClient, athleteId: string, opt
     return { ok: true, days: rows.length };
   } catch (e) {
     if (e instanceof WhoopAuthError) return { ok: false, days: 0, error: 'reauth', message: 'Połączenie z WHOOP wygasło – połącz ponownie.' };
-    if (e instanceof WhoopRateLimit) return { ok: false, days: 0, error: 'rate_limit', message: 'WHOOP chwilowo ogranicza zapytania – spróbuj za kilka minut.' };
+    // nieudana próba też liczy się jako „sync” (last_sync_at) – pulpit nie odpytuje WHOOP przy każdym wejściu
+    const now = new Date().toISOString();
+    if (e instanceof WhoopRateLimit) {
+      await supabase.from('whoop_connections').update({ last_sync_at: now, sync_error: 'rate_limit' }).eq('athlete_id', athleteId);
+      return { ok: false, days: 0, error: 'rate_limit', message: 'WHOOP chwilowo ogranicza zapytania – spróbuj za kilka minut.' };
+    }
     const msg = e instanceof Error ? e.message : String(e);
-    await supabase.from('whoop_connections').update({ sync_error: msg.slice(0, 200) }).eq('athlete_id', athleteId);
+    await supabase.from('whoop_connections').update({ last_sync_at: now, sync_error: msg.slice(0, 200) }).eq('athlete_id', athleteId);
     return { ok: false, days: 0, error: 'failed', message: msg };
   }
 }
@@ -311,8 +325,10 @@ export async function syncWhoopIfStale(supabase: SupabaseClient, athleteId: stri
   if (!conn || conn.sync_error === 'reauth') return;
   const age = conn.last_sync_at ? (Date.now() - new Date(conn.last_sync_at).getTime()) / 60_000 : Infinity;
   if (age < maxAgeMin) return;
+  let c: WhoopConnection;
+  try { c = await validConn(supabase, conn); } catch { return; }
   await Promise.race([
-    syncWhoop(supabase, athleteId, { days: 3, conn }).catch(() => null),
+    syncWhoop(supabase, athleteId, { days: 3, conn: c }).catch(() => null),
     new Promise((r) => setTimeout(r, timeoutMs)),
   ]);
 }

@@ -8,7 +8,7 @@ import { WorkoutDetail } from './WorkoutDetail';
 import { RideAnalysis, type RideActivity } from './RideAnalysis';
 import { createBrowserSupabaseClient } from '@/lib/supabase-browser';
 import { typeColor, fmtDur, dowLabel, dateLabel, weekRangeLabel, scaleWeek, maxAchievableMin, type WeekKind } from '@/lib/plan';
-import type { DayStructure } from '@/lib/structure';
+import { isOwnSession, type DayStructure } from '@/lib/structure';
 import type { RaceMeta } from '@/lib/ai/plan-generate';
 import { type RacePriority } from '@/lib/race-taper';
 import { buildRaceByDate, overlayRaceDays } from '@/lib/race-overlay';
@@ -314,7 +314,8 @@ function computeBaseHours(days: PlanDayView[] | null, acts: Record<string, PlanA
   if (!days) return 1;
   const min = days
     // RACE wykluczony — suwak budżetuje czas TRENINGU, nie liczy godzin wyścigu.
-    .filter((d) => d.type !== 'OFF' && d.type !== 'RACE' && !d.locked && !isDoneDate(acts, d.date))
+    // własny trening zawodnika (wklejony w czacie) – suwak go nie skaluje (jak dzień zablokowany)
+    .filter((d) => d.type !== 'OFF' && d.type !== 'RACE' && !d.locked && !isOwnSession(d.structure) && !isDoneDate(acts, d.date))
     .reduce((a, d) => a + d.dur_min, 0);
   return Math.round(min / 60) || 1;
 }

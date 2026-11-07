@@ -2,8 +2,8 @@
 // Cel zależy od typu dnia; 100% ZAWSZE osiągalne za idealne wykonanie (twardy wymóg produktu).
 // Okno mocy liczone po ELAPSED (streams indeksują i×dt = elapsed) — nigdy moving_time.
 import { hasWatts, zoneDistribution } from '@/lib/streams-view';
-import { sessionStructure } from '@/lib/workout';
-import { isStructuredType, isOU, isBlocks, blocksWorkSteps } from '@/lib/structure';
+import { warmCool } from '@/lib/workout';
+import { isStructuredType, isOU, isBlocks, isOwnSession, blocksWorkSteps } from '@/lib/structure';
 import type { StreamsJson } from '@/lib/strava/streams';
 import type { PlannedWorkout } from '@/lib/ai/insight';
 
@@ -131,10 +131,13 @@ export function computeExecutionRing(
 
   if (type === 'Z2' || type === 'LONG') {
     // Cel = dur_min − warmup − cooldown (strefa główna, bez rozgrzewki/chłodzenia) → 100% osiągalne.
-    const ss = sessionStructure(type);
-    const wUsed = planned.warmup ?? ss.warmupDefault;
-    const cUsed = planned.cooldown ?? ss.cooldownDefault;
-    const targetMin = planned.dur_min - wUsed - cUsed;
+    const { w: wUsed, c: cUsed } = warmCool(planned);
+    // własny trening zawodnika: jego rozgrzewka/schłodzenie/przerwy są w blokach → poza celem kroki < Z2
+    const ps = planned.structure;
+    const lowMin = ps && isOwnSession(ps) && isBlocks(ps)
+      ? ps.blocks.reduce((a, b) => a + b.repeat * b.steps.filter((st) => st.w < ftp * 0.56).reduce((x, st) => x + st.sec, 0), 0) / 60
+      : 0;
+    const targetMin = planned.dur_min - wUsed - cUsed - lowMin;
     if (targetMin <= 0) return { available: false, reason: 'bad_target' };
     // Wykonanie = Z2 lub wyżej (indeksy 1..5) — rozgrzewka wchodzi stopniowo (niżej, odpada),
     // a jazda mocniej niż Z2 to wciąż bodziec tlenowy (realizacja, nie kara).

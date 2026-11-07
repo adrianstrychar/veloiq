@@ -13,6 +13,8 @@ create table if not exists public.whoop_connections (
   last_sync_at timestamptz,
   sync_error text
 );
+-- jedno konto WHOOP = jedno konto VeloIQ (webhook szuka zawodnika po whoop_user_id)
+create unique index if not exists whoop_connections_user_uidx on public.whoop_connections (whoop_user_id);
 alter table public.whoop_connections enable row level security;
 drop policy if exists "Athletes manage own whoop_connections" on public.whoop_connections;
 create policy "Athletes manage own whoop_connections" on public.whoop_connections

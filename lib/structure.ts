@@ -41,6 +41,14 @@ export interface StructureBlock {
 }
 export interface BlocksStructure {
   blocks: StructureBlock[];
+  /** Własny, KOMPLETNY trening zawodnika (np. wklejony w czacie): bloki zawierają jego rozgrzewkę
+   *  i schłodzenie (albo świadomie ich nie ma) – serwer NIC nie dokleja, suwak godzin go nie rusza. */
+  own?: boolean;
+}
+
+/** Czy structure to własny kompletny trening zawodnika (bez doklejanej rozgrzewki/schłodzenia). */
+export function isOwnSession(s: unknown): boolean {
+  return !!s && typeof s === 'object' && 'blocks' in (s as object) && (s as { own?: unknown }).own === true;
 }
 
 export type DayStructure = OUStructure | WorkStructure | BlocksStructure;
@@ -224,7 +232,7 @@ function parseBlocks(o: Record<string, unknown>): ParseResult {
     if (typeof b.name === 'string' && b.name.trim()) block.name = b.name.trim().slice(0, BLK.maxName);
     blocks.push(block);
   }
-  return { ok: true, structure: { blocks } };
+  return { ok: true, structure: o.own === true ? { blocks, own: true } : { blocks } };
 }
 
 export function parseDayStructure(raw: unknown, type: string): ParseResult {
@@ -286,14 +294,15 @@ export function reconcileStructureDuration(
   s: DayStructure,
   warmupDefault: number,
   cooldownDefault: number,
-  maxMin: number = MAX_SESSION_MIN
+  maxMin: number = MAX_SESSION_MIN,
+  minMin: number = MIN_SESSION_MIN
 ): { durMin: number; error: string | null } {
   const main = structureMainMin(s);
   const durMin = warmupDefault + main + cooldownDefault;
-  if (durMin < MIN_SESSION_MIN || durMin > maxMin) {
+  if (durMin < minMin || durMin > maxMin) {
     return {
       durMin,
-      error: `struktura daje rozgrzewka ${warmupDefault} + część główna ${main} + schłodzenie ${cooldownDefault} = ${durMin} min, poza zakresem ${MIN_SESSION_MIN}–${maxMin} — sprawdź strukturę`,
+      error: `struktura daje rozgrzewka ${warmupDefault} + część główna ${main} + schłodzenie ${cooldownDefault} = ${durMin} min, poza zakresem ${minMin}–${maxMin} — sprawdź strukturę`,
     };
   }
   return { durMin, error: null };

@@ -1,5 +1,6 @@
 import { C } from '@/lib/theme';
 import { sessionStructure } from '@/lib/workout';
+import { isOwnSession } from '@/lib/structure';
 import { userTodayISO } from './timezone';
 
 // Helpery planu treningowego (ETAP 5.2) — kolory stref/typów, formatowanie, daty.
@@ -138,7 +139,8 @@ export function maxAchievableMin<T extends ScalableDay>(days: T[], isDone: (date
   let steadyHeadroom = 0;
   for (const d of days) {
     // RACE nieskalowalny jak OFF — suwak godzin nie rusza dnia startu.
-    if (d.type === 'OFF' || d.type === 'RACE' || isDone(d.date) || isPast(d.date) || d.locked) continue;
+    // własny trening zawodnika (wklejony w czacie) – suwak go nie rusza, jak dnia zablokowanego
+    if (d.type === 'OFF' || d.type === 'RACE' || isDone(d.date) || isPast(d.date) || d.locked || isOwnSession(d.structure)) continue;
     const ss = sessionStructure(d.type);
     base += d.dur_min;
     headroom += (ss.cooldownMax - ss.cooldownDefault) + (ss.warmupMax - ss.warmupDefault);
@@ -166,7 +168,7 @@ export function scaleWeek<T extends ScalableDay>(
   type W = { idx: number; type: string; core: number; coreMax: number; w: number; c: number; origDur: number; origTss: number; removed: boolean };
   const work: (W | null)[] = days.map((d, idx) => {
     // RACE traktowany jak OFF — nieskalowalny (dzień startu ma stały szacunek, nie warmup/cooldown).
-    if (d.type === 'OFF' || d.type === 'RACE' || isDone(d.date) || isPast(d.date) || d.locked) return null; // przeszłe/done/locked nietykalne
+    if (d.type === 'OFF' || d.type === 'RACE' || isDone(d.date) || isPast(d.date) || d.locked || isOwnSession(d.structure)) return null; // przeszłe/done/locked/własny trening nietykalne
     const ss = sessionStructure(d.type);
     const core = Math.max(0, d.dur_min - ss.warmupDefault - ss.cooldownDefault);
     // Z2/LONG z blokami: rdzeń = dokładna rozpiska (bloki) → wydłużanie rozjechałoby czas z profilem.

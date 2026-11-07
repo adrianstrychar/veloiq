@@ -67,6 +67,7 @@ struct WorkoutRules: Codable {
     var effortStartPct: Double?
     var effortEndPct: Double?
     var effortMinSec: Double?
+    var effortGapSec: Double?
     // korekty na średniej + tętno
     var corrWindowMinSec: Double?
     var corrWindowMaxSec: Double?
@@ -93,7 +94,7 @@ struct ResolvedRules {
     let armLeadSec: Int, autoStartPct: Double, autoStartSec: Int, waitRemindSec: Int
     let autoPauseWatts: Int, autoPauseSec: Int, resumeSec: Int
     let earlyStopPct: Double, earlyStopSec: Int
-    let effortStartPct: Double, effortEndPct: Double, effortMinSec: Int
+    let effortStartPct: Double, effortEndPct: Double, effortMinSec: Int, effortGapSec: Int
     let corrWindowMinSec: Int, corrWindowMaxSec: Int, corrGraceMinSec: Int, corrGraceMaxSec: Int, cooldownMaxSec: Int
     let deadbandW: Double, deadbandPct: Double, minDeltaW: Int, earlyStopAvgSec: Int
     let hrMarginBpm: Int, hrAlertSec: Int, hrGraceSec: Int, hrCooldownSec: Int, statusEverySec: Int, statusMinStepSec: Int
@@ -116,9 +117,10 @@ struct ResolvedRules {
         resumeSec = 2
         earlyStopPct = r?.earlyStopPct ?? 0.6
         earlyStopSec = max(1, i(r?.earlyStopSec, 40))
-        effortStartPct = r?.effortStartPct ?? 0.9
-        effortEndPct = r?.effortEndPct ?? 0.75
-        effortMinSec = i(r?.effortMinSec, 60)
+        effortStartPct = r?.effortStartPct ?? 0.88
+        effortEndPct = r?.effortEndPct ?? 0.72
+        effortMinSec = i(r?.effortMinSec, 120)
+        effortGapSec = max(1, i(r?.effortGapSec, 45))
         corrWindowMinSec = max(1, i(r?.corrWindowMinSec, 20))
         corrWindowMaxSec = max(1, i(r?.corrWindowMaxSec, 60))
         corrGraceMinSec = i(r?.corrGraceMinSec, 20)

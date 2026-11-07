@@ -9,9 +9,12 @@ import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { shiftISO, userTodayISO } from '@/lib/timezone';
 import type { RideBriefing } from './workout-script';
 import { loadWhoop } from '@/lib/whoop-summary';
+import { syncWhoopIfStale } from '@/lib/whoop';
 
 export async function buildBriefing(supabase: SupabaseClient, athleteId: string): Promise<RideBriefing | undefined> {
   const today = userTodayISO();
+  // świeża regeneracja WHOOP przed odprawą (gdy dane starsze niż 30 min; maks. 3 s czekania)
+  await syncWhoopIfStale(supabase, athleteId, 30, 3000).catch(() => undefined);
   const [{ data: pmc }, { data: rides }, whoop] = await Promise.all([
     supabase.from('fitness_metrics').select('date, ctl, atl, tsb, daily_tss').eq('athlete_id', athleteId).order('date', { ascending: true }),
     supabase.from('strava_activities')

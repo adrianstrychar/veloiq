@@ -14,7 +14,7 @@ export interface WorkoutStep {
   /** Własny komunikat na start kroku (np. wygenerowany przez AI). Nadpisuje domyślny. */
   cueStart?: string;
   /** 'auto' = interwał startuje, gdy zawodnik ruszy (wykrywanie po mocy); 'time' = z zegarem.
-   *  Domyślnie: interwały ≥ 60 s (poza pierwszym krokiem) → 'auto'. */
+   *  Domyślnie: każdy interwał (poza pierwszym krokiem i interwałem tuż po interwale) → 'auto'. */
   start?: 'auto' | 'time';
   /** Zakres tętna kroku (bpm). recovery: hrHigh = próg „zregenerowany”. Brak = bez komunikatów o tętnie. */
   hrLow?: number;
@@ -40,7 +40,8 @@ export interface WorkoutRules {
   earlyStopSec?: number;     // ile sekund = przerwanie interwału (15)
   effortStartPct?: number;   // jazda swobodna: start wysiłku, ułamek FTP (0.9)
   effortEndPct?: number;     // koniec wysiłku (0.75)
-  effortMinSec?: number;     // minimalny wysiłek do zapisania (60)
+  effortMinSec?: number;     // minimalny wysiłek do zapisania (120)
+  effortGapSec?: number;     // słabsza jazda dłużej niż tyle s = koniec wysiłku (45)
   // korekty mocy liczone na średniej (nie na chwilowych skokach)
   corrWindowMinSec?: number; // okno średniej: długość kroku / 6, min (20)
   corrWindowMaxSec?: number; // … max (60)
