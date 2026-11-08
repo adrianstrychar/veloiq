@@ -60,13 +60,15 @@ export const FLEX_PHRASES: Record<string, string> = {
   armNext: 'Za minutę interwał {n} z {total}. {dur}, {low} do {high} watów. Zacznij, kiedy będziesz gotowy.',
   tenSec: 'Dziesięć sekund.',
   goNow: 'Możesz startować.',
+  chainNext: 'Zaraz potem, bez przerwy: {dur}, {low} do {high} watów.',
+  chainGo: 'Teraz!',
   waiting: 'Czekam na start interwału {n}. Przerwa trwa już {rest}.',
   autoStart: 'Start! {dur}, trzymaj {low} do {high} watów.',
   restInfo: 'Przerwa trwała {rest}.',
   autoPause: 'Pauza interwału. Zostało {left}.',
   autoResume: 'Wznawiam. Zostało {left}.',
   earlyStop: 'Interwał przerwany po {done}.',
-  falseStart: 'Fałstart – nie liczę. Interwał {n} ruszy, gdy znów przyspieszysz.',
+  falseStart: 'Falstart – nie liczę. Interwał {n} ruszy, gdy znów przyspieszysz.',
   seriesEnd: 'Seria {n} z {total} zrobiona. {dur}, średnio {avg} watów – {verdict}.',
   seriesPrev: 'Poprzednia {prev}.',
   hrUp: 'Tętno o {d} uderzeń wyżej niż w pierwszej serii.',
@@ -97,7 +99,7 @@ export const FLEX_PHRASES: Record<string, string> = {
 };
 
 const QUIET_AFTER_STOP_SEC = 20;
-// fałstart: okno odwołania startu auto-interwału (do 60 s; krótkie interwały 1/3 długości, min. 10 s)
+// falstart: okno odwołania startu auto-interwału (do 60 s; krótkie interwały 1/3 długości, min. 10 s)
 // postój ≥ 15 s albo średnia z 10 s poniżej 60% dolnej granicy przez 15 s (krótkie zwolnienia nie odwołują)
 const FALSE_START_MAX_SEC = 60, FALSE_START_PCT = 0.6, FALSE_START_STOP_SEC = 15, FALSE_START_EASE_SEC = 15, FALSE_START_AVG_SEC = 10;
 const FUEL_DRINK_SEC = 1200;   // picie co 20 min
@@ -146,7 +148,7 @@ export class FlexEngine {
   private lastCorrection = -1e9;
   private spoke = new Set<string>();
   private lastRestSec?: number;
-  // fałstart: przez pierwsze sekundy auto-interwału można go odwołać – wraca czekanie
+  // falstart: przez pierwsze sekundy auto-interwału można go odwołać – wraca czekanie
   private startSnap: { idx: number; startSec: number; secs: number[]; rest?: number } | null = null;
   private fsStopRun = 0; private fsEaseRun = 0;
   private needRearm = false; private rearmLow = 0;   // po fałstarcie nowy start dopiero po zejściu z mocy
@@ -174,8 +176,9 @@ export class FlexEngine {
     const fromScript = Object.fromEntries(Object.entries(script.rules ?? {}).filter(([, v]) => v !== undefined));
     this.rules = { ...DEFAULT_FLEX_RULES, ...fromScript, ...rules } as FlexRules;
     this.phrases = { ...FLEX_PHRASES, ...(script.phrases ?? {}) };
+    // numeracja po SERIACH: interwał tuż po interwale (3 min → 20 s, over-under) ma numer poprzedniego
     let n = 0;
-    this.intervalNumbers = script.steps.map((st) => (st.type === 'interval' ? ++n : null));
+    this.intervalNumbers = script.steps.map((st, i) => (st.type === 'interval' ? (this.isChained(i) ? n : ++n) : null));
     this.intervalCount = n;
     if (!script.steps.length) this.phase = 'free';
     else this.laps.push({ startSec: 0, name: script.steps[0].name, type: script.steps[0].type });
@@ -193,6 +196,14 @@ export class FlexEngine {
   }
 
   /** Ile sekund nad progiem = start. Krótkie interwały (sprinty) szybciej – start i tak liczy się od pierwszej sekundy wysiłku. */
+  /** Interwał tuż po interwale, z zegarem (np. 3 min → od razu 20 s, over-under): bez przerwy między nimi. */
+  isChained(idx: number): boolean {
+    const st = this.script.steps[idx], prev = this.script.steps[idx - 1];
+    return !!st && !!prev && st.type === 'interval' && prev.type === 'interval' && !this.isAuto(idx);
+  }
+  private chainAnnounced = false;
+  private chainStart = 0;
+
   private startNeedSec(durationSec: number): number {
     return durationSec < 30 ? Math.min(this.rules.autoStartSec, Math.max(2, Math.floor(durationSec / 4))) : this.rules.autoStartSec;
   }
@@ -232,7 +243,7 @@ export class FlexEngine {
     const cad = sample.cad ?? null;
     if (p < this.rules.autoPauseWatts && (cad === null || cad === 0)) this.quietUntil = s + QUIET_AFTER_STOP_SEC;
 
-    // --- fałstart: odpuszczenie albo postój tuż po auto-starcie = interwał się nie liczy, czekamy na prawdziwy start
+    // --- falstart: odpuszczenie albo postój tuż po auto-starcie = interwał się nie liczy, czekamy na prawdziwy start
     if (this.startSnap) {
       // odpuszczenie/postój, który zaczął się w oknie, jest oceniany do końca (nawet po oknie)
       const lowNow = p < st.powerLow * FALSE_START_PCT;
@@ -342,7 +353,7 @@ export class FlexEngine {
     }
   }
 
-  /** Odwołanie startu auto-interwału (fałstart): sekundy wracają do przerwy, interwał czeka na prawdziwy start. */
+  /** Odwołanie startu auto-interwału (falstart): sekundy wracają do przerwy, interwał czeka na prawdziwy start. */
   private cancelFalseStart(s: number | null, speak: boolean) {
     const snap = this.startSnap; if (!snap) return;
     // cała jazda od auto-startu (także sekundy auto-pauzy interwału) wraca do przerwy
@@ -364,7 +375,7 @@ export class FlexEngine {
     this.say('falseStart', { n }, 'info', speak);
   }
 
-  /** Przycisk „Fałstart”. */
+  /** Przycisk „Falstart”. */
   cancelStart(speak = true) { if (this.startSnap) this.cancelFalseStart(null, speak); }
 
   // ------------------------------------------------------------------ kroki
@@ -384,6 +395,13 @@ export class FlexEngine {
 
   private announceStep(idx: number, speak: boolean) {
     const st = this.script.steps[idx];
+    // kolejny interwał bez przerwy, zapowiedziany w trakcie poprzedniego → tylko krótkie „Teraz!”
+    const chainGo = this.isChained(idx) && this.chainAnnounced;
+    this.chainAnnounced = false;
+    if (chainGo) {
+      return this.say('chainGo', { n: this.intervalNumbers[idx] ?? 0, total: this.intervalCount, dur: durationPl(st.durationSec),
+        low: st.powerLow, high: st.powerHigh }, 'step', speak);
+    }
     const key = st.type === 'interval' ? 'intervalStart' : st.type === 'recovery' ? 'recoveryStart'
       : st.type === 'warmup' ? 'warmupStart' : st.type === 'cooldown' ? 'cooldownStart' : 'steadyStart';
     const vars = { n: this.intervalNumbers[idx] ?? 0, total: this.intervalCount, name: st.name,
@@ -394,6 +412,7 @@ export class FlexEngine {
 
   private closeInterval(early: boolean, speak: boolean) {
     const st = this.step!;
+    if (!this.isChained(this.stepIdx)) this.chainStart = this.series.length; // początek serii (np. 3 min + 20 s)
     const secs = this.stepSecs;
     const pw = secs.map((i) => this.P[i]);
     const g = this.rules.graceSec, e = Math.max(g, secs.length - 3);
@@ -415,18 +434,24 @@ export class FlexEngine {
     if (res.avgPower > st.powerHigh + tolV) { res.verdict = 'high'; res.deltaW = res.avgPower - st.powerHigh; }
     else if (res.avgPower < st.powerLow - tolV) { res.verdict = 'low'; res.deltaW = st.powerLow - res.avgPower; }
     else { res.verdict = 'ok'; res.deltaW = 0; }
-    const prev = this.series[this.series.length - 1];
     this.series.push(res);
-    const sv: Record<string, string | number> = { n: res.n, total: this.intervalCount, dur: durationPl(res.durationSec), avg: res.avgPower,
-      vrd: res.verdict, dW: res.deltaW, verdict: verdictText(res.verdict) };
+    // od razu kolejny interwał (bez przerwy) → teraz cisza, podsumowanie dopiero po całej serii
+    if (this.isChained(this.stepIdx + 1)) { this.lastRestSec = 0; return; }
+    const chain = this.series.slice(this.chainStart);
+    const main = chain.reduce((a, b) => (b.plannedSec > a.plannedSec ? b : a), chain[0]); // najdłuższy w serii
+    const before = this.series.slice(0, this.chainStart);
+    const prev = chain.length === 1 ? before[before.length - 1] : [...before].reverse().find((x) => x.plannedSec === main.plannedSec);
+    const sv: Record<string, string | number> = { n: main.n, total: this.intervalCount, dur: durationPl(main.durationSec), avg: main.avgPower,
+      vrd: main.verdict ?? 'ok', dW: main.deltaW ?? 0, verdict: verdictText(main.verdict ?? 'ok') };
     let text = render(this.phrases.seriesEnd, sv);
+    for (const x of chain) if (x !== main) text += ` Potem ${durationPl(x.durationSec)}: ${x.avgPower} W.`;
     if (prev) text += ' ' + render(this.phrases.seriesPrev, { prev: prev.avgPower });
     const first = this.series[0];
-    if (this.series.length >= 2 && first.avgHr && res.avgHr && !this.spokeHr) {
+    if (this.series.length >= 2 && first.avgHr && main.avgHr && !this.spokeHr && first !== main) {
       // porównanie tylko przy podobnej mocy (±3%)
-      if (Math.abs(res.avgPower - first.avgPower) <= first.avgPower * 0.03 && res.avgHr - first.avgHr >= this.rules.hrDriftBpm) {
-        text += ' ' + render(this.phrases.hrUp, { d: res.avgHr - first.avgHr });
-        sv.hrUp = res.avgHr - first.avgHr;
+      if (Math.abs(main.avgPower - first.avgPower) <= first.avgPower * 0.03 && main.avgHr - first.avgHr >= this.rules.hrDriftBpm) {
+        text += ' ' + render(this.phrases.hrUp, { d: main.avgHr - first.avgHr });
+        sv.hrUp = main.avgHr - first.avgHr;
         this.spokeHr = true;
       }
     }
@@ -460,6 +485,16 @@ export class FlexEngine {
     }
     if (st.type === 'interval' && st.durationSec >= 180 && remaining === 60 && once('lastMin')) {
       this.say('lastMinute', {}, 'info', speak);
+    }
+    if (this.isChained(this.stepIdx + 1)) {
+      // zapowiedź W TRAKCIE: po tym interwale od razu kolejny (np. 20 s) – 30 s przed końcem (krótkie: 15 s)
+      const next = this.script.steps[this.stepIdx + 1];
+      const lead = st.durationSec >= 60 ? 30 : st.durationSec >= 30 ? 15 : 0;
+      if (lead && remaining === lead && once('chain')) {
+        this.chainAnnounced = true;
+        this.say('chainNext', { n: this.intervalNumbers[this.stepIdx + 1] ?? 0, total: this.intervalCount,
+          dur: durationPl(next.durationSec), low: next.powerLow, high: next.powerHigh }, 'arm', speak);
+      }
     }
     if (nextAuto) {
       const next = this.script.steps[this.stepIdx + 1];
@@ -559,11 +594,14 @@ export class FlexEngine {
     const hard = steps.some((x) => x.type === 'interval' && this.script.ftp > 0 && x.powerLow >= this.script.ftp * 0.88);
     const eatEvery = hard ? 1800 : 2400;
     const st = this.phase === 'free' ? undefined : this.step;
-    const working = st?.type === 'interval'; // w trakcie pracy nie przeszkadzamy
     // dopasowanie do sesji: po planie i na schłodzeniu nic; jeść tylko, gdy zostało ≥ 25 min, pić ≥ 10 min
     if (!free && (this.phase === 'free' || st?.type === 'cooldown')) return;
+    if (!this.fuelWindow(s, st, free)) return;
     const left = free ? Infinity : this.planLeftSec();
-    const due = (last: number, every: number) => s - last >= every && (!working || s - last >= every + 600);
+    // przerwa przed długim interwałem (≥ 10 min) → zjedz / napij się teraz, wcześniej niż wynika z zegara
+    const next = free ? undefined : steps[this.stepIdx + 1];
+    const preLong = !!st && st.type !== 'interval' && !!next && next.type === 'interval' && next.durationSec >= 600;
+    const due = (last: number, every: number) => s - last >= (preLong ? Math.round(every * 0.6) : every);
     if (eatOn && left >= 1500 && due(this.lastEat, eatEvery)) {
       this.lastEat = s; this.lastDrink = s;
       this.say('eat', {}, 'info', speak);
@@ -571,6 +609,25 @@ export class FlexEngine {
       this.lastDrink = s;
       this.say('drink', {}, 'info', speak);
     }
+  }
+
+  /** Czy to dobry moment na jedzenie/picie: nie w trakcie wysiłku i nie tuż po jego starcie, nie w ostatnich
+   *  sekundach przed interwałem. Wyjątek: bardzo długi blok (≥ 30 min) – w jego środku można. */
+  private fuelWindow(s: number, st: WorkoutStep | undefined, free: boolean): boolean {
+    const ftp = this.script.ftp;
+    if (free) return !this.inEffort || s - this.effortStart >= 1200;
+    if (!st) return false;
+    const remaining = st.durationSec - this.inStep;
+    const hardSteady = st.type === 'steady' && ftp > 0 && st.powerLow >= ftp * 0.85;
+    if (st.type === 'interval' || hardSteady) return st.durationSec >= 1800 && this.inStep >= 300 && remaining >= 300;
+    if (this.inStep < 15) return false;                                   // krok dopiero się zaczął
+    if (st.type === 'recovery' && st.durationSec < 90) return false;      // krótka przerwa między powtórzeniami
+    const next = this.script.steps[this.stepIdx + 1];
+    if (next?.type === 'interval') {
+      if (this.phase === 'waiting') return mean(this.P.slice(-10)) < next.powerLow * 0.7; // czeka na start, jeszcze nie rusza
+      if (remaining < 45) return false;                                    // zaraz start / odliczanie
+    }
+    return true;
   }
 
   // ------------------------------------------------------------------ odprawa (rozgrzewka)

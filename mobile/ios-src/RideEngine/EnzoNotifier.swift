@@ -32,6 +32,8 @@ final class EnzoNotifier: NSObject, UNUserNotificationCenterDelegate {
         switch k {
         case "intervalStart": return "Start: interwał \(g("n"))/\(g("total")) · \(g("dur")) · \(range)"
         case "autoStart": return "Start · \(g("dur")) · \(range)"
+        case "chainNext": return "Zaraz potem bez przerwy: \(g("dur")) · \(range)"
+        case "chainGo": return "Teraz! \(g("dur")) · \(range)"
         case "armNext": return "Za 1 min: interwał \(g("n"))/\(g("total")) · \(range)"
         case "recoveryStart": return "Przerwa · \(g("dur")) · < \(g("high")) W"
         case "warmupStart": return "Rozgrzewka · \(g("dur")) · \(range)"
@@ -43,7 +45,7 @@ final class EnzoNotifier: NSObject, UNUserNotificationCenterDelegate {
         case "cadenceLow": return "Kadencja \(g("cad")) → \(g("cadLow"))+"
         case "cadenceHigh": return "Kadencja \(g("cad")) → max \(g("cadHigh"))"
         case "lastMinute": return "Ostatnia minuta!"
-        case "falseStart": return "Fałstart – interwał \(g("n")) czeka na start"
+        case "falseStart": return "Falstart – interwał \(g("n")) czeka na start"
         case "seriesEnd":
             let vr = g("vrd") == "high" ? "↑ mocniej +\(g("dW")) W" : g("vrd") == "low" ? "↓ słabiej −\(g("dW")) W" : "✓ w zakresie"
             var t = "Seria \(g("n"))/\(g("total")): \(g("avg")) W · \(vr)"

@@ -26,6 +26,13 @@ const VERDICT_TEXT = { ok: 'idealnie w zakresie', high: 'mocniej niż plan', low
 /** null = brak serii (jazda swobodna / plan bez interwałów) – nie ma czego podsumowywać seria po serii. */
 export function buildDebrief(series: SeriesResult[]): Debrief | null {
   if (!series.length) return null;
+  // seria z kilku interwałów bez przerwy (np. 3 min + 20 s) ma jeden numer → liczy się najdłuższy z nich
+  const byN = new Map<number, SeriesResult>();
+  for (const x of series) {
+    const cur = byN.get(x.n);
+    if (!cur || (x.plannedSec ?? x.durationSec) > (cur.plannedSec ?? cur.durationSec)) byN.set(x.n, x);
+  }
+  series = Array.from(byN.values()).sort((a, b) => a.n - b.n);
   const lines = series.map((x) => ({
     n: x.n, durationSec: x.durationSec, avgPower: x.avgPower,
     verdict: (x.verdict ?? 'ok') as 'ok' | 'high' | 'low', deltaW: x.deltaW ?? 0, endedEarly: x.endedEarly,

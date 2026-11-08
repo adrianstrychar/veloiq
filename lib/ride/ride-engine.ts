@@ -34,7 +34,7 @@ export interface LiveSample {
   stepRemaining: number;  // s
   overrunSec: number;     // o ile przeciąga się przerwa przed interwałem
   lastSeries?: SeriesResult;
-  falseStartLeft?: number; // s, w których można jeszcze odwołać start interwału (fałstart)
+  falseStartLeft?: number; // s, w których można jeszcze odwołać start interwału (falstart)
   stepAvgPower?: number;   // średnia moc bieżącego kroku (np. interwału)
   vKmh?: number;           // wirtualna prędkość (trenażer)
   vKm?: number;            // wirtualny dystans (trenażer)
@@ -93,7 +93,7 @@ export interface RideEnginePlugin {
   stopWorkout(): Promise<WorkoutSummary>;
   /** "Następny krok" – pomija bieżący krok (np. przerwę). */
   skipStep(): Promise<void>;
-  /** „Fałstart” – odwołuje świeżo wykryty start interwału (czekanie wraca). */
+  /** „Falstart” – odwołuje świeżo wykryty start interwału (czekanie wraca). */
   cancelStart(): Promise<void>;
   /** Wyłączenie / włączenie nawigacji GPX w trakcie jazdy. */
   setNavEnabled(options: { enabled: boolean }): Promise<void>;

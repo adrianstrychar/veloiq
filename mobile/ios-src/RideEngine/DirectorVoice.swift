@@ -55,7 +55,7 @@ final class DirectorVoice: NSObject {
         "falseStart": "falseStart",
         "seriesEnd": "seriesEnd", "hrUp": "hr", "tooHigh": "tooHigh", "tooLow": "tooLow", "recoveryTooHigh": "recTooHigh",
         "cadenceLow": "cadLow", "cadenceHigh": "cadHigh", "half": "half", "lastMinute": "last", "praise": "praise",
-        "planDone": "done", "freeStart": "free", "effort": "effort",
+        "planDone": "done", "freeStart": "free", "effort": "effort", "chainNext": "chainNext", "chainGo": "go",
         "powerLost": "powerLost", "powerBack": "powerBack", "hrLost": "hrLost", "hrBack": "hrBack",
         "hrHigh": "hrHigh", "hrRecovered": "hrRec", "status": "status",
         "rideAutoPause": "pause", "rideAutoResume": "resume",
@@ -205,6 +205,8 @@ final class DirectorVoice: NSObject {
         switch key {
         case "armNext":
             if let n = vars["n"], let t = vars["total"], has("int.\(n).\(t)") { seg.append("int.\(n).\(t)") }
+            seg += dur(vars["dur"]) + range(vars["low"], vars["high"])
+        case "chainNext":
             seg += dur(vars["dur"]) + range(vars["low"], vars["high"])
         case "autoStart", "intervalStart", "steadyStart":
             seg += dur(vars["dur"]) + range(vars["low"], vars["high"])
