@@ -5,6 +5,7 @@
 // żeby alfa PNG była widoczna. Jeden CTA „Zapisz naklejkę" → cache'owany blob 2× →
 // istniejące shareImage() (bez zmian).
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { renderSticker, type StickerData, type StickerVariant } from '@/lib/share/renderSticker';
 import { shareImage } from '@/lib/share/shareImage';
 
@@ -17,7 +18,8 @@ const S = {
   muted: '#8B96A0',
 };
 
-const THUMB_BOX = { w: 150, h: 150 }; // różne proporcje wariantów → fit z zachowaniem aspect ratio
+// różne proporcje wariantów → fit; przy 3 wariantach mniejsze, żeby zmieściły się w jednym rzędzie na telefonie
+const thumbBox = (n: number) => (n >= 3 ? { w: 96, h: 96 } : { w: 150, h: 150 });
 
 const VARIANT_LABEL: Record<StickerVariant, string> = {
   plan: 'Plan',
@@ -48,6 +50,8 @@ export default function ShareSheet({ data, onClose }: { data: StickerData; onClo
   const [thumbs, setThumbs] = useState<Thumb[] | null>(null);
   const [saving, setSaving] = useState(false);
   const canvasRefs = useRef<Partial<Record<StickerVariant, HTMLCanvasElement | null>>>({});
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   // Render wszystkich dostępnych wariantów raz (pełne 2× — ten sam blob idzie potem do share).
   useEffect(() => {
@@ -58,7 +62,8 @@ export default function ShareSheet({ data, onClose }: { data: StickerData; onClo
         try {
           const blob = await renderSticker(v, data);
           const bmp = await createImageBitmap(blob);
-          const fit = Math.min(THUMB_BOX.w / bmp.width, THUMB_BOX.h / bmp.height);
+          const box = thumbBox(variants.length);
+          const fit = Math.min(box.w / bmp.width, box.h / bmp.height);
           out.push({ variant: v, blob, bmp, w: Math.round(bmp.width * fit), h: Math.round(bmp.height * fit) });
         } catch {
           // wariant nie wyrenderował się (np. uszkodzona polyline) → po prostu go nie pokazujemy
@@ -96,10 +101,13 @@ export default function ShareSheet({ data, onClose }: { data: StickerData; onClo
     }
   }
 
-  return (
+  // Portal do <body> + wysoki z-index: arkusz musi przykryć dolną nawigację (z-index 50), inaczej
+  // przycisk „Zapisz naklejkę” chował się pod nią i nie dało się pobrać naklejki.
+  if (!mounted) return null;
+  return createPortal(
     <div
       onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', overscrollBehavior: 'contain' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', overscrollBehavior: 'contain' }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -109,6 +117,7 @@ export default function ShareSheet({ data, onClose }: { data: StickerData; onClo
           borderRadius: '16px 16px 0 0', padding: '16px 16px 0',
           paddingBottom: 'calc(16px + env(safe-area-inset-bottom))',
           display: 'flex', flexDirection: 'column', gap: 14,
+          maxHeight: 'calc(100dvh - env(safe-area-inset-top) - 24px)', overflowY: 'auto',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -126,7 +135,7 @@ export default function ShareSheet({ data, onClose }: { data: StickerData; onClo
         {!thumbs ? (
           <div style={{ fontSize: 16, color: S.muted, textAlign: 'center', padding: '28px 0' }}>Renderuję naklejki…</div>
         ) : (
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
             {thumbs.map((t) => {
               const active = t.variant === selected;
               return (
@@ -141,7 +150,7 @@ export default function ShareSheet({ data, onClose }: { data: StickerData; onClo
                   <span
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      width: THUMB_BOX.w + 12, height: THUMB_BOX.h + 12, borderRadius: 10,
+                      width: thumbBox(thumbs.length).w + 12, height: thumbBox(thumbs.length).h + 12, borderRadius: 10,
                       border: active ? `2px solid ${S.accent}` : `1px solid ${S.border}`,
                       background: 'repeating-conic-gradient(#14181E 0% 25%, #0B0E12 0% 50%) 0 0 / 16px 16px',
                     }}
@@ -175,6 +184,7 @@ export default function ShareSheet({ data, onClose }: { data: StickerData; onClo
           {saving ? 'Przygotowuję…' : 'Zapisz naklejkę'}
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
