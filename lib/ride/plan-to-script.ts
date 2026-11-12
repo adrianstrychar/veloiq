@@ -6,6 +6,7 @@ import type { PlanDayRow } from '@/lib/planned-day';
 import { buildWorkout, blockStepKind, warmCool } from '@/lib/workout';
 import { isOU, isBlocks, type BlockStep } from '@/lib/structure';
 import type { StepType, WorkoutScript, WorkoutStep } from './workout-script';
+import { shortWorkoutName } from './workout-name';
 
 const TOL = 0.03; // ±3% wokół wata z planu = zakres, w którym silnik nie koryguje
 
@@ -155,5 +156,7 @@ export function planDayToScript(day: PlanDayRow | null | undefined, ftp: number,
   }
 
   addHr(steps, ftp, hrmax, day.hr);
-  return { version: 1, id, name: day.label || TYPE_NAMES[day.type] || day.type, ftp, lang: 'pl-PL', steps };
+  // krótka nazwa (ekran jazdy, lista, Strava): „Threshold 2×20 min” zamiast długiej rozpiski z planu
+  const name = steps.length ? shortWorkoutName(steps, ftp, day.type) : (TYPE_NAMES[day.type] || day.label || day.type);
+  return { version: 1, id, name, type: day.type, ftp, lang: 'pl-PL', steps };
 }

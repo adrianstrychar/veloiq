@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { refreshStravaToken, fetchStravaActivityDetail, updateStravaActivity } from '@/lib/strava';
 import { buildDescription } from '@/lib/writeback';
+import { planDayToScript } from '@/lib/ride/plan-to-script';
+import type { PlanDayRow as FullPlanDay } from '@/lib/planned-day';
 
 // Write-back opisu jazdy do Stravy (Etap 1: przycisk + podgląd + potwierdzenie).
 // action='preview' → buduje finalny opis z LABELA dopasowanej sesji + aktualnego opisu ze Stravy,
@@ -20,7 +22,8 @@ function hasWriteScope(scope: string | null | undefined): boolean {
 async function matchSessionLabel(
   supabase: ReturnType<typeof createServerSupabaseClient>,
   athleteId: string,
-  activity: { strava_activity_id: number; activity_date: string; tss: number | null }
+  activity: { strava_activity_id: number; activity_date: string; tss: number | null },
+  ftp: number
 ): Promise<string | null> {
   const date = activity.activity_date;
   // Ta jazda musi być sesją dnia = najwyższy TSS tej daty (spójnie z matchingiem w Plan.tsx).
@@ -46,7 +49,9 @@ async function matchSessionLabel(
     .maybeSingle();
   const day = (plan?.plan_json as { days?: PlanDayRow[] } | null)?.days?.find((x) => x.dow === dow);
   if (!day || day.type === 'OFF') return null; // brak sesji do opisania
-  const label = (day.label ?? '').trim();
+  // krótka nazwa (jak przy wysyłce jazdy z VeloIQ): „Threshold 2×20 min”, nie cała rozpiska z planu
+  const short = ftp > 0 ? planDayToScript(day as unknown as FullPlanDay, ftp, 'describe')?.name : null;
+  const label = (short ?? day.label ?? '').trim();
   return label.length ? label : null;
 }
 
@@ -71,14 +76,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { data: athlete } = await supabase
     .from('athletes')
-    .select('id, user_id, strava_scope, strava_access_token, strava_refresh_token, strava_token_expires_at')
+    .select('id, user_id, ftp_watts, strava_scope, strava_access_token, strava_refresh_token, strava_token_expires_at')
     .eq('id', activity.athlete_id)
     .single();
   if (!athlete || athlete.user_id !== user.id) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 });
   }
 
-  const label = await matchSessionLabel(supabase, athlete.id as string, activity as never);
+  const label = await matchSessionLabel(supabase, athlete.id as string, activity as never, Number(athlete.ftp_watts) || 0);
   if (!label) return NextResponse.json({ ok: false, reason: 'no_session', message: 'Ta jazda nie jest dopasowana do zaplanowanej sesji — nie ma nazwy treningu do opisania.' });
 
   const canWrite = hasWriteScope(athlete.strava_scope as string | null);
