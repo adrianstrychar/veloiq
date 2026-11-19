@@ -23,6 +23,9 @@ import { PowerProfileCard } from '@/components/veloiq/PowerProfileCard';
 import { WhoopCard } from '@/components/veloiq/WhoopCard';
 import { syncWhoopIfStale } from '@/lib/whoop';
 import { loadWhoop, type WhoopState } from '@/lib/whoop-summary';
+import { runMorningReport } from '@/lib/morning/run';
+import { morningView } from '@/lib/morning/view';
+import { MorningReportCard } from '@/components/veloiq/MorningReportCard';
 import { computePowerProfile } from '@/lib/power-profile';
 import { SeasonGoalCard } from '@/components/veloiq/SeasonGoalCard';
 import { TodayCard, type TodayPlan } from '@/components/veloiq/TodayCard';
@@ -49,6 +52,9 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   // WHOOP: dociągnij świeże dane (gdy starsze niż 30 min), potem stan na dziś – gotowość i karta
   if (athleteId) await syncWhoopIfStale(supabase, athleteId as string).catch(() => undefined);
   const whoop: WhoopState | null = athleteId ? await loadWhoop(supabase, athleteId as string, userTodayISO()).catch(() => null) : null;
+  // Raport poranny: zwykle policzony już przez webhook WHOOP – tu tylko zapas (gdy webhook nie dotarł).
+  // PRZED odczytem planu, bo odciążenie zmienia dzisiejszy dzień (karta „Dziś”, Enzo).
+  const morning = athleteId && whoop?.today ? morningView(await runMorningReport(supabase, athleteId as string, { whoop }).catch(() => null), userTodayISO()) : null;
   const stravaConnected = !!athlete?.strava_id;
   const todayISO = localTodayISO();
 
@@ -280,6 +286,9 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
         <div className={styles.span2}>
           <FtpBar ftp={ftpData} />
         </div>
+
+        {/* 0b. Raport poranny (span2) – regeneracja WHOOP → decyzja o dzisiejszym treningu */}
+        {morning && <MorningReportCard report={morning} className={styles.span2} />}
 
         {/* 1. Gotowość */}
         {readiness && <ReadinessModule readiness={readiness} pmc={pmc} />}

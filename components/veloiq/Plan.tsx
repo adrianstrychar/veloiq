@@ -41,6 +41,7 @@ export interface PlanDayView {
   cooldown?: number;
   removed?: boolean;  // 5.6: sesja usunięta przez skalowanie w dół (pokazana jako OFF)
   locked?: boolean;   // ręczna blokada usera — odblokowanie tylko przez czat
+  morning?: { verdict: string; from: string } | null; // dostosowane przez raport poranny (WHOOP)
 }
 
 // Wykonana jazda dla dnia planu — kształt wymagany przez RideAnalysis + sync-details.
@@ -176,6 +177,11 @@ function DayCard({ d, isToday, isPast, done, loading, actual, onClick }: { d: Pl
             </div>
           )}
           {!offLike && !isRace && !unrealized && <ZoneBar zones={d.zones} />}
+          {d.morning && !isRace && (
+            <div style={{ fontSize: 9.5, color: C.muted, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              WHOOP: {d.morning.verdict === 'boost' ? 'dołożone' : 'dostosowane rano'} · było: {d.morning.from}
+            </div>
+          )}
           {isOutline && !offLike && !isRace && (
             // Zarys jest celowo nieklikalny — powiedz to na karcie, zamiast milczeć.
             <div style={{ fontSize: 9, color: C.muted, fontStyle: 'italic', marginTop: 3 }}>

@@ -6,6 +6,7 @@ import { computeReadiness, type MetricRow } from '@/lib/readiness';
 import { taperDaysFor, type RacePriority } from '@/lib/race-taper';
 import { firstName } from '@/lib/name';
 import { loadWhoop, whoopLine } from '@/lib/whoop-summary';
+import { getMorningReport } from '@/lib/morning/run';
 
 interface AthleteRow {
   id: string;
@@ -225,7 +226,7 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
   // Plan bieżącego tygodnia dołącza do tej samej równoległej partii — jest ALWAYS-ON, bo zostawiony
   // za narzędziem powodował, że model improwizował sesję sprzeczną z zakładką Plan.
   const tomorrowISO = shiftISO(todayISO, 1);
-  const [{ data: fmRows }, { data: nextRace }, planView, whoop] = await Promise.all([
+  const [{ data: fmRows }, { data: nextRace }, planView, whoop, morning] = await Promise.all([
     athleteId
       ? supabase.from('fitness_metrics').select('date, ctl, atl, tsb').eq('athlete_id', athleteId).order('date', { ascending: true })
       : Promise.resolve({ data: null }),
@@ -236,8 +237,20 @@ export async function buildSystemPrompt(supabase: SupabaseClient, userId: string
       ? fetchPlanView(supabase, athleteId, mondayOfISO(todayISO), todayISO)
       : Promise.resolve(null),
     athleteId ? loadWhoop(supabase, athleteId, todayISO).catch(() => null) : Promise.resolve(null),
+    athleteId ? getMorningReport(supabase, athleteId, todayISO).catch(() => null) : Promise.resolve(null),
   ]);
   const wt = whoop?.today ?? null;
+  // Raport poranny: model musi wiedzieć, że plan na dziś został rano dostosowany (i dlaczego),
+  // żeby nie proponował „wróć do VO2”, kiedy WHOOP pokazał słabą regenerację.
+  const MORNING_STATUS: Record<string, string> = {
+    applied: 'odciążenie ZAPISANE w planie (zawodnik może je cofnąć na pulpicie)',
+    proposed: 'propozycja dołożenia czeka na zatwierdzenie na pulpicie',
+    accepted: 'zawodnik zatwierdził dołożenie', reverted: 'zawodnik COFNĄŁ zmianę – jedzie wg oryginalnego planu',
+    dismissed: 'zawodnik odrzucił propozycję', stale: 'zawodnik zmienił plan ręcznie',
+  };
+  const morningLine = morning
+    ? `\nRAPORT PORANNY (WHOOP → plan dnia): ${morning.title}. ${morning.reason}${morning.change_status ? ` [${MORNING_STATUS[morning.change_status] ?? morning.change_status}]` : ''}`
+    : '';
   const rows = (fmRows ?? []) as MetricRow[];
   const now = rows.length ? rows[rows.length - 1] : null;
   const weekAgo = rows.length ? rows[Math.max(0, rows.length - 8)] : null;
@@ -290,7 +303,7 @@ FORMA DZIŚ: CTL ${ctl} | ATL ${atl} | TSB ${tsb}${trend !== null ? ` | Trend CT
     readiness ? `\nGOTOWOŚĆ: ${readiness.raceReady}% (${readiness.state}) | Świeżość ${readiness.freshPct}%${readiness.recoveryPct != null ? ` | Regeneracja WHOOP ${readiness.recoveryPct}%` : ''}` : ''
   }${
     wt ? `\nWHOOP DZIŚ RANO: ${whoopLine(wt)}` : whoop?.connected ? '\nWHOOP: połączony, dzisiejsza regeneracja jeszcze niepoliczona (pojawia się po pobudce).' : ''
-  }
+  }${morningLine}
 ${raceLine}
 ${planBlock ?? 'PLAN TYGODNIA: brak planu na bieżący tydzień w aplikacji — powiedz to wprost i wskaż zakładkę Plan (tam można go wygenerować). NIE układaj planu w czacie.'}
 

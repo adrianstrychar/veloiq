@@ -47,6 +47,8 @@ export interface PlanDay {
   structure?: DayStructure | null;
   // Metadane startu — obecne WYŁĄCZNIE gdy type==='RACE'. Wstrzykiwane server-side.
   race?: RaceMeta | null;
+  // Zmiana z raportu porannego (WHOOP): co było w planie przed odciążeniem/propozycją. Tylko do opisu w UI.
+  morning?: { verdict: string; from: string } | null;
 }
 
 // Kontekst wyścigu dla generatora — wybór wyścigu i jego pozycja w oknie liczone w route.

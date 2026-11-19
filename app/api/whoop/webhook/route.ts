@@ -1,10 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { createAdminSupabaseClient } from '@/lib/supabase';
+import { waitUntil } from '@vercel/functions';
 import { syncWhoop, validConn, type WhoopConnection } from '@/lib/whoop';
+import { runMorningReport } from '@/lib/morning/run';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 15;
+export const maxDuration = 60;
 
 // Webhook WHOOP (v2): nowa regeneracja / sen / trening → od razu dociągamy dane zawodnika.
 // Podpis: base64(HMAC-SHA256(client_secret, timestamp + surowe body)) w X-WHOOP-Signature.
@@ -40,9 +42,14 @@ export async function POST(req: NextRequest) {
   // odświeżenie tokenu POZA limitem czasu – musi się zapisać (stary refresh token potem nie działa)
   let c: WhoopConnection;
   try { c = await validConn(admin, conn as WhoopConnection); } catch { return NextResponse.json({ ok: true, synced: false }); }
-  const res = await Promise.race([
-    syncWhoop(admin, conn.athlete_id as string, { days: 2, conn: c }).catch(() => null),
-    new Promise<null>((r) => setTimeout(() => r(null), 3000)),
-  ]);
+  // Sync + raport poranny dokańczają się PO odpowiedzi (waitUntil) – WHOOP dostaje 2xx od razu.
+  // Nowa regeneracja/sen → silnik ocenia dzisiejszy trening i w razie potrzeby odciąża plan.
+  const athleteId = conn.athlete_id as string;
+  const sync = syncWhoop(admin, athleteId, { days: 2, conn: c }).catch(() => null);
+  const work = sync.then(async (r) => {
+    if (r?.ok && /^(recovery|sleep)\./.test(ev.type ?? '')) await runMorningReport(admin, athleteId).catch(() => null);
+  });
+  waitUntil(work);
+  const res = await Promise.race([sync, new Promise<null>((r) => setTimeout(() => r(null), 3000))]);
   return NextResponse.json({ ok: true, synced: !!res?.ok });
 }
