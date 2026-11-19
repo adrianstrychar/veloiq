@@ -65,6 +65,22 @@ export interface WorkoutSummary {
   laps?: LapMark[];        // kroki planu jako lapy (Strava)
 }
 
+/** Przycisk Flic 2 na kierownicy (natywnie, SDK flic2lib). available=false → stara wersja aplikacji / web. */
+export interface FlicStatus {
+  available: boolean;
+  bluetoothOn?: boolean;
+  scanning?: boolean;
+  scanPhase?: 'searching' | 'discovered' | 'connecting' | 'verified' | 'failed';
+  paired?: boolean;
+  name?: string;
+  connected?: boolean;
+  ready?: boolean;
+  battery?: number;          // %
+  ok?: boolean;              // wynik flicScan
+  error?: string;            // komunikat po polsku
+}
+export type FlicPress = 'click' | 'double' | 'hold';
+
 export interface CoachEvent { state: 'listening' | 'question' | 'answer' | 'error' | 'idle'; text?: string }
 
 export interface RideEnginePlugin {
@@ -130,6 +146,13 @@ export interface RideEnginePlugin {
   setCoach(options: { token: string; baseUrl: string; tapMode: boolean }): Promise<void>;
   /** Przycisk „Zapytaj Enzo”. */
   talk(): Promise<void>;
+  /** Przycisk Flic: stan, parowanie (przytrzymaj Flic ~7 s), anulowanie, usunięcie. */
+  flicStatus(): Promise<FlicStatus>;
+  flicScan(): Promise<FlicStatus>;
+  flicStopScan(): Promise<void>;
+  flicForget(): Promise<FlicStatus>;
+  /** Zmiana stanu przycisku albo wciśnięcie ({ press }) – też poza jazdą (test na ekranie Czujniki). */
+  addListener(event: 'flic', cb: (d: FlicStatus & { press?: FlicPress }) => void): Promise<PluginListenerHandle>;
   removeAllListeners(): Promise<void>;
 }
 

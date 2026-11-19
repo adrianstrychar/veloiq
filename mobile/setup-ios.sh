@@ -48,7 +48,8 @@ pset() { $PB -c "Print :$1" "$PL" >/dev/null 2>&1 && $PB -c "Set :$1 $3" "$PL" |
 pbg()  { $PB -c "Print :UIBackgroundModes" "$PL" >/dev/null 2>&1 || $PB -c "Add :UIBackgroundModes array" "$PL"
          $PB -c "Print :UIBackgroundModes" "$PL" | grep -q "^ *$1\$" || $PB -c "Add :UIBackgroundModes: string $1" "$PL"; }
 pbg bluetooth-central; pbg audio; pbg location
-pset NSBluetoothAlwaysUsageDescription string "VeloIQ łączy się z Twoim pomiarem mocy i pasem tętna, żeby prowadzić trening na żywo."
+pset NSBluetoothAlwaysUsageDescription string "VeloIQ łączy się z pomiarem mocy, pasem tętna i przyciskiem Flic na kierownicy, żeby prowadzić trening na żywo."
+pset NSBluetoothPeripheralUsageDescription string "VeloIQ łączy się z pomiarem mocy, pasem tętna i przyciskiem Flic na kierownicy."
 pset NSLocationWhenInUseUsageDescription string "VeloIQ zapisuje trasę treningu na zewnątrz."
 pset NSMicrophoneUsageDescription string "Zadaj pytanie trenerowi Enzo głosem – przez mikrofon słuchawek lub okularów."
 pset NSSpeechRecognitionUsageDescription string "VeloIQ zamienia Twoje pytanie do trenera Enzo na tekst."
@@ -94,6 +95,25 @@ if Dir.exist?(voice) && app_group.files.none? { |f| f.path == 'Voice' }
   ref.last_known_file_type = 'folder'
   target.resources_build_phase.add_file_reference(ref)
   puts '  + Voice/ (głos lektora)'
+end
+# Przycisk Flic na kierownicy: oficjalne SDK flic2lib (Swift Package, binarny xcframework)
+flic_url = 'https://github.com/50ButtonsEach/flic2lib-ios'
+flic = proj.root_object.package_references.find { |p| p.respond_to?(:repositoryURL) && p.repositoryURL.to_s.sub(/\.git$/, '') == flic_url }
+unless flic
+  flic = proj.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+  flic.repositoryURL = flic_url
+  flic.requirement = { 'kind' => 'upToNextMajorVersion', 'minimumVersion' => '1.8.0' }
+  proj.root_object.package_references << flic
+  puts '  + pakiet flic2lib (przycisk Flic)'
+end
+unless target.package_product_dependencies.any? { |d| d.product_name == 'flic2lib' }
+  dep = proj.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+  dep.package = flic
+  dep.product_name = 'flic2lib'
+  target.package_product_dependencies << dep
+  bf = proj.new(Xcodeproj::Project::Object::PBXBuildFile)
+  bf.product_ref = dep
+  target.frameworks_build_phase.files << bf
 end
 target.build_configurations.each { |c| c.build_settings['SWIFT_VERSION'] = '5.0' }
 proj.save

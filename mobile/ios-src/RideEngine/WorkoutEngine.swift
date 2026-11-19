@@ -251,6 +251,23 @@ final class WorkoutEngine {
         }
     }
 
+    /// Ręczne okrążenie w jeździe swobodnej (przycisk Flic na kierownicy) – trafia jako lap do Stravy.
+    /// Zwraca numer nowego okrążenia oraz czas i średnią moc zamkniętego; nil = nie teraz (plan / < 10 s od poprzedniego).
+    @discardableResult
+    func manualLap() -> (n: Int, prevSec: Int, prevAvg: Int)? {
+        guard phase == .free, !stopped else { return nil }
+        let s = lastSecond + 1
+        let own = laps.filter { $0.type == "lap" }
+        if own.isEmpty && laps.isEmpty { laps.append(LapMark(startSec: 0, name: "Okrążenie 1", type: "lap")) }
+        let prevStart = laps.last?.startSec ?? 0
+        guard s - prevStart >= 10 else { return nil }
+        let n = laps.filter { $0.type == "lap" }.count + 1
+        laps.append(LapMark(startSec: s, name: "Okrążenie \(n)", type: "lap"))
+        let a = max(0, min(prevStart, P.count - 1)), b = min(s - 1, P.count - 1)
+        let avg = b >= a && !P.isEmpty ? avgInt(Array(P[a...b])) : 0
+        return (n, s - prevStart, avg)
+    }
+
     func activeElapsed(_ now: Date) -> Int {
         let end = pausedAt ?? now
         return max(0, Int(end.timeIntervalSince(startDate) - pausedTotal))
@@ -264,6 +281,7 @@ final class WorkoutEngine {
             process(i, smp.power, smp.hr, smp.cad, nil, speak: false)
             if rec.skips.contains(i) { skipStep() }   // ręczne "Następny krok" sprzed awarii
             if rec.cancels.contains(i) { cancelStart() }   // ręczny „Falstart” sprzed awarii
+            if rec.laps.contains(i) { manualLap() }       // ręczne okrążenie (Flic) sprzed awarii
         }
         replaying = false
     }

@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import s from './ride.module.css';
 import type { Ride } from './useRide';
 import { BackHeader, IconBolt, IconHeart, IconInfo, StatusDot } from './parts';
+import { FlicCard } from './FlicCard';
 
 export function SensorsScreen({ ride, onBack }: { ride: Ride; onBack: () => void }) {
   // skanuj od razu po wejściu, zatrzymaj po wyjściu
@@ -67,6 +68,8 @@ export function SensorsScreen({ ride, onBack }: { ride: Ride; onBack: () => void
         </div>
         {hr?.connected ? <span className={s.statValue}>{live?.hr ?? '–'}</span> : <StatusDot ok={false}>–</StatusDot>}
       </section>
+
+      <FlicCard ride={ride} />
 
       <h2 className={s.h2}>W pobliżu</h2>
       <div className={s.list} role="list">
