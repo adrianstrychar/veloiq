@@ -11,9 +11,11 @@ warn() { printf '\033[1;33m! %s\033[0m\n' "$*"; }
 [[ "$(uname)" == "Darwin" ]] || { echo "Uruchom na Macu."; exit 1; }
 xcodebuild -version >/dev/null 2>&1 || { echo "Brak Xcode. Zainstaluj z App Store, uruchom raz, potem: sudo xcode-select -s /Applications/Xcode.app"; exit 1; }
 
-say "Capacitor 6 (npm)"
-npm i @capacitor/core@^6 @capacitor/ios@^6
-npm i -D @capacitor/cli@^6
+say "Capacitor 6 (npm, wersje z package-lock)"
+# NIE „npm i @capacitor/...@^6”: to podbija do najnowszego 6.x (6.2.3), a natywna biblioteka iOS
+# (capacitor-swift-pm) ma wydania tylko do 6.2.2 → cap sync wpisuje exact 6.2.3 do Package.swift
+# i Xcode nie buduje („Missing package product 'CapApp-SPM'”). Wersje trzyma package-lock.json.
+npm install --no-audit --no-fund
 
 IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
 if [[ -n "$IP" ]]; then

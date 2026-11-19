@@ -37,7 +37,7 @@ export interface MorningSignals {
   hrvLow: boolean;
   rhrHigh: boolean;
   sleepShort: boolean;
-  sleepDebtMin: number | null;        // niedobór snu z 3 nocy (min), >0 = dług
+  sleepDebtMin: number | null;        // niedobór snu z 3 nocy (min) – tylko gdy średnio < 75 % potrzeby, inaczej null
   tsbDeep: boolean;
   redStreak: boolean;                 // wczoraj też czerwono
   illness: boolean;                   // temp. skóry + tętno/oddech wyraźnie ponad normę
@@ -97,7 +97,11 @@ export function morningSignals(inp: MorningInput): MorningSignals {
 
   // dług snu z 3 ostatnich nocy (dziś + 2 wcześniejsze): Σ(potrzeba − sen)
   const nights = inp.history.filter((r) => r.date > shiftISO(inp.today, -3) && r.date <= inp.today && r.sleep_min != null && r.sleep_need_min != null);
-  const sleepDebtMin = nights.length >= 2 ? Math.round(nights.reduce((a, r) => a + (Number(r.sleep_need_min) - Number(r.sleep_min)), 0)) : null;
+  // Potrzeba snu WHOOP już zawiera dług i obciążenie – sumowanie (potrzeba − sen) liczyłoby dług podwójnie
+  // (u zawodnika z potrzebą 8,5–9 h wychodziło „4 h długu” przy 89 % potrzeby). Dług = średnio < 75 % potrzeby.
+  const perfAvg = nights.length >= 2 ? nights.reduce((a, r) => a + Number(r.sleep_min) / Math.max(1, Number(r.sleep_need_min)), 0) / nights.length : null;
+  const sleepDebtMin = perfAvg != null && perfAvg < 0.75
+    ? Math.round(nights.reduce((a, r) => a + Math.max(0, Number(r.sleep_need_min) - Number(r.sleep_min)), 0)) : null;
 
   const y = inp.history.find((r) => r.date === shiftISO(inp.today, -1));
   const redStreak = level === 'red' && y?.recovery_score != null && y.recovery_score < 34;
@@ -108,12 +112,12 @@ export function morningSignals(inp: MorningInput): MorningSignals {
   if (w.hrvLow) flags.push(`HRV ${Math.abs(w.hrvPct ?? 0)}% poniżej Twojej normy`);
   if (w.rhrHigh) flags.push(`tętno spoczynkowe +${w.rhrDelta} ud./min ponad normę`);
   if (w.sleepShort) flags.push(`krótki sen (${fmtSleep(w.sleepMin)}${w.sleepPerf != null ? `, ${w.sleepPerf}% potrzeby` : ''})`);
-  else if (sleepDebtMin != null && sleepDebtMin >= 150) flags.push(`dług snu z ostatnich nocy ok. ${fmtSleep(sleepDebtMin)}`);
+  else if (sleepDebtMin != null) flags.push(`za mało snu kilka nocy z rzędu (brakuje ok. ${fmtSleep(sleepDebtMin)})`);
   if (redStreak) flags.push('drugi dzień z rzędu czerwona regeneracja');
   if (tsbDeep) flags.push(`skumulowane zmęczenie (TSB ${Math.round(inp.tsb!)})`);
 
   return {
-    level, flags, hrvLow: w.hrvLow, rhrHigh: w.rhrHigh, sleepShort: w.sleepShort || (sleepDebtMin ?? 0) >= 150,
+    level, flags, hrvLow: w.hrvLow, rhrHigh: w.rhrHigh, sleepShort: w.sleepShort || sleepDebtMin != null,
     sleepDebtMin, tsbDeep, redStreak, illness, skinTempDelta, respDelta,
   };
 }
@@ -205,7 +209,7 @@ export function boostDay(d: PlanDay): PlanDay | null {
     if (rep < 2 || rep >= 10) return null;
     ns = { ...s, blocks: s.blocks.map((b, i) => (i === idx ? { ...b, repeat: rep + 1 } : b)) };
   } else {
-    const cap = isOU(s) ? 4 : d.type === 'VO2' ? 6 : 4;
+    const cap = isOU(s) ? 3 : d.type === 'VO2' ? 6 : d.type === 'SST' ? 5 : 4; // OU 2→3 maks., dalej to już inny trening
     if (s.reps < 2 || s.reps >= cap) return null;
     ns = { ...s, reps: s.reps + 1 };
   }
