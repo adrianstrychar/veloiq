@@ -63,14 +63,14 @@ final class WorkoutEngine {
     private var lastCorrection = -1_000_000
     private var spoke = Set<String>()
     private var lastRestSec: Int?
-    // Fałstart: przez pierwsze sekundy auto-interwału można go odwołać (sam albo przyciskiem/głosem) – wraca czekanie
+    // Falstart: przez pierwsze sekundy auto-interwału można go odwołać (sam albo przyciskiem/głosem) – wraca czekanie
     private struct StartSnap { let idx: Int; let startSec: Int; let secs: [Int]; let rest: Int? }
     private var startSnap: StartSnap?
     private var fsStopRun = 0, fsEaseRun = 0
     private var needRearm = false, rearmLow = 0   // po fałstarcie nowy start dopiero po zejściu z mocy
     // postój ≥ 15 s albo średnia z 10 s poniżej 60% dolnej granicy przez 15 s (krótkie zwolnienia nie odwołują)
     static let falseStartMaxSec = 60, falseStartPct = 0.6, falseStartStopSec = 15, falseStartEaseSec = 15, falseStartAvgSec = 10
-    /// Okno fałstartu: do 60 s, przy krótkich interwałach 1/3 długości (min. 10 s).
+    /// Okno falstartu: do 60 s, przy krótkich interwałach 1/3 długości (min. 10 s).
     private func falseStartWindow(_ st: WorkoutStep) -> Int { min(Self.falseStartMaxSec, max(10, st.durationSec / 3)) }
     /// Ile sekund jeszcze można odwołać start interwału (0 = już nie).
     var falseStartLeft: Int {
@@ -108,15 +108,18 @@ final class WorkoutEngine {
     private(set) var series: [SeriesResult] = []
     private(set) var efforts: [EffortResult] = []
     private var inEffort = false, effortStart = 0, effortPending = -1
+    private var chainAnnounced = false, chainStart = 0
 
     init(script: WorkoutScript, startDate: Date = Date(), pausedTotal: TimeInterval = 0, pausedAt: Date? = nil) {
         self.script = script
         self.R = ResolvedRules(script.rules)
         self.phrases = Phrases.defaults.merging(script.phrases ?? [:]) { _, custom in custom }
+        // numeracja po SERIACH: interwał tuż po interwale (3 min → 20 s, over-under) ma numer poprzedniego
         var n = 0
-        self.intervalNumbers = script.steps.map { st -> Int? in
-            if st.isInterval { n += 1; return n }
-            return nil
+        self.intervalNumbers = script.steps.indices.map { i -> Int? in
+            guard script.steps[i].isInterval else { return nil }
+            if !Self.chainedAt(script.steps, i) { n += 1 }
+            return n
         }
         self.intervalCount = n
         self.startDate = startDate
@@ -129,14 +132,23 @@ final class WorkoutEngine {
     private var step: WorkoutStep? { stepIdx < script.steps.count ? script.steps[stepIdx] : nil }
 
     /// Interwał startuje automatycznie (wykrywanie po mocy)? Pierwszy krok nigdy.
-    func isAuto(_ idx: Int) -> Bool {
-        guard idx > 0, idx < script.steps.count else { return false }
-        let st = script.steps[idx]
+    func isAuto(_ idx: Int) -> Bool { Self.autoAt(script.steps, idx) }
+
+    static func autoAt(_ steps: [WorkoutStep], _ idx: Int) -> Bool {
+        guard idx > 0, idx < steps.count else { return false }
+        let st = steps[idx]
         guard st.isInterval else { return false }
         if let s = st.start { return s == "auto" }
         // każdy interwał (także 10-s sprint) czeka, aż ruszysz – poza interwałem tuż po innym interwale
-        return !script.steps[idx - 1].isInterval
+        return !steps[idx - 1].isInterval
     }
+
+    /// Interwał tuż po interwale, z zegarem (np. 3 min → od razu 20 s, over-under): bez przerwy między nimi.
+    static func chainedAt(_ steps: [WorkoutStep], _ idx: Int) -> Bool {
+        guard idx > 0, idx < steps.count else { return false }
+        return steps[idx].isInterval && steps[idx - 1].isInterval && !autoAt(steps, idx)
+    }
+    func isChained(_ idx: Int) -> Bool { Self.chainedAt(script.steps, idx) }
 
     /// Ile sekund nad progiem = start. Sprinty szybciej – start i tak liczy się od pierwszej sekundy wysiłku.
     private func startNeedSec(_ dur: Int) -> Int {
@@ -251,7 +263,7 @@ final class WorkoutEngine {
         for (i, smp) in rec.samples.enumerated() {
             process(i, smp.power, smp.hr, smp.cad, nil, speak: false)
             if rec.skips.contains(i) { skipStep() }   // ręczne "Następny krok" sprzed awarii
-            if rec.cancels.contains(i) { cancelStart() }   // ręczny „Fałstart” sprzed awarii
+            if rec.cancels.contains(i) { cancelStart() }   // ręczny „Falstart” sprzed awarii
         }
         replaying = false
     }
@@ -304,7 +316,7 @@ final class WorkoutEngine {
         if p < R.autoPauseWatts && (cad == nil || cad == 0) { quietUntil = s + Self.quietAfterStopSec }
         let autoInterval = st.isInterval && isAuto(stepIdx)
 
-        // --- fałstart: odpuszczenie albo postój tuż po auto-starcie = interwał się nie liczy, czekamy na prawdziwy start
+        // --- falstart: odpuszczenie albo postój tuż po auto-starcie = interwał się nie liczy, czekamy na prawdziwy start
         if startSnap != nil {
             // odpuszczenie/postój, który zaczął się w oknie, jest oceniany do końca (nawet po oknie)
             let lowNow = Double(p) < Double(st.powerLow) * Self.falseStartPct
@@ -416,7 +428,7 @@ final class WorkoutEngine {
         }
     }
 
-    /// Odwołanie startu auto-interwału (fałstart): sekundy wracają do przerwy, interwał czeka na prawdziwy start
+    /// Odwołanie startu auto-interwału (falstart): sekundy wracają do przerwy, interwał czeka na prawdziwy start
     /// (bez wpisu do serii, numer interwału bez zmian).
     private func cancelFalseStart(_ s: Int?, speak: Bool) {
         guard let snap = startSnap else { return }
@@ -440,7 +452,7 @@ final class WorkoutEngine {
         say("falseStart", ["n": "\(n)"], .info, speak)
     }
 
-    /// Przycisk / polecenie głosowe „Fałstart”.
+    /// Przycisk / polecenie głosowe „Falstart”.
     func cancelStart() {
         guard startSnap != nil, !stopped else { return }
         cancelFalseStart(nil, speak: !replaying)
@@ -475,6 +487,10 @@ final class WorkoutEngine {
         }
         let vars = ["n": "\(intervalNumbers[idx] ?? 0)", "total": "\(intervalCount)", "name": st.name,
                     "dur": Phrases.duration(st.durationSec), "low": "\(st.powerLow)", "high": "\(st.powerHigh)"]
+        // kolejny interwał bez przerwy, zapowiedziany w trakcie poprzedniego → tylko krótkie „Teraz!”
+        let chainGo = isChained(idx) && chainAnnounced
+        chainAnnounced = false
+        if chainGo { say("chainGo", vars, .step, speak); return }
         // własny tekst kroku (AI) idzie na ekran, a Enzo mówi swoje wejście dla tego typu kroku
         if let c = st.cueStart, !c.isEmpty { emit(c, .step, speak, key: key, vars: vars); return }
         say(key, vars, .step, speak)
@@ -482,6 +498,7 @@ final class WorkoutEngine {
 
     private func closeInterval(early: Bool, speak: Bool) {
         guard let st = step else { return }
+        if !isChained(stepIdx) { chainStart = series.count }   // początek serii (np. 3 min + 20 s)
         let secs = stepSecs
         let pw = secs.map { P[$0] }
         let evalEnd = max(R.graceSec, secs.count - 3)
@@ -504,15 +521,21 @@ final class WorkoutEngine {
         let tolV = max(5, Double(st.powerLow + st.powerHigh) / 2 * 0.015)   // ±5 W – „idealnie” znaczy idealnie
         if avgP > Double(st.powerHigh) + tolV { res.verdict = "high"; res.deltaW = res.avgPower - st.powerHigh }
         else if avgP < Double(st.powerLow) - tolV { res.verdict = "low"; res.deltaW = st.powerLow - res.avgPower }
-        let prev = series.last
         series.append(res)
-        var sv = ["n": "\(res.n)", "total": "\(intervalCount)", "dur": Phrases.duration(res.durationSec),
-                  "vrd": res.verdict, "dW": "\(res.deltaW)", "verdict": Self.verdictText(res.verdict),
-                  "avg": "\(res.avgPower)", "pct": "\(res.compliancePct)"]
+        // od razu kolejny interwał (bez przerwy) → teraz cisza, podsumowanie dopiero po całej serii
+        if isChained(stepIdx + 1) { lastRestSec = 0; return }
+        let chain = Array(series[min(chainStart, series.count - 1)...])
+        let main = chain.dropFirst().reduce(chain[0]) { $1.plannedSec > $0.plannedSec ? $1 : $0 }   // najdłuższy w serii
+        let before = Array(series[..<min(chainStart, series.count - 1)])
+        let prev = chain.count == 1 ? before.last : before.last(where: { $0.plannedSec == main.plannedSec })
+        var sv = ["n": "\(main.n)", "total": "\(intervalCount)", "dur": Phrases.duration(main.durationSec),
+                  "vrd": main.verdict, "dW": "\(main.deltaW)", "verdict": Self.verdictText(main.verdict),
+                  "avg": "\(main.avgPower)", "pct": "\(main.compliancePct)"]
         var text = Phrases.render(phrases["seriesEnd"] ?? "", sv)
+        for x in chain where x.startSec != main.startSec { text += " Potem \(Phrases.duration(x.durationSec)): \(x.avgPower) W." }
         if let p = prev, let t = phrases["seriesPrev"] { text += " " + Phrases.render(t, ["prev": "\(p.avgPower)"]) }
-        if series.count >= 2, !spokeHr, let first = series.first, let h1 = first.avgHr, let h = res.avgHr,
-           abs(Double(res.avgPower - first.avgPower)) <= Double(first.avgPower) * 0.03, h - h1 >= R.hrDriftBpm,
+        if series.count >= 2, !spokeHr, let first = series.first, first.startSec != main.startSec, let h1 = first.avgHr, let h = main.avgHr,
+           abs(Double(main.avgPower - first.avgPower)) <= Double(first.avgPower) * 0.03, h - h1 >= R.hrDriftBpm,
            let t = phrases["hrUp"] {
             text += " " + Phrases.render(t, ["d": "\(h - h1)"])
             sv["hrUp"] = "\(h - h1)"
@@ -556,6 +579,16 @@ final class WorkoutEngine {
             say("lastMinute", [:], .info, speak)
         }
         let countdown = ["", "Jeden", "Dwa", "Trzy"]
+        if isChained(stepIdx + 1) {
+            // zapowiedź W TRAKCIE: po tym interwale od razu kolejny (np. 20 s) – 30 s przed końcem (krótkie: 15 s)
+            let next = script.steps[stepIdx + 1]
+            let lead = st.durationSec >= 60 ? 30 : (st.durationSec >= 30 ? 15 : 0)
+            if lead > 0 && remaining == lead && once("chain") {
+                chainAnnounced = true
+                say("chainNext", ["n": "\(intervalNumbers[stepIdx + 1] ?? 0)", "total": "\(intervalCount)",
+                                  "dur": Phrases.duration(next.durationSec), "low": "\(next.powerLow)", "high": "\(next.powerHigh)"], .arm, speak)
+            }
+        }
         if nextAuto {
             let next = script.steps[stepIdx + 1]
             let lead = min(R.armLeadSec, st.durationSec - 1)
@@ -695,11 +728,14 @@ final class WorkoutEngine {
         let hard = script.steps.contains { $0.isInterval && script.ftp > 0 && Double($0.powerLow) >= Double(script.ftp) * 0.88 }
         let eatEvery = hard ? 1800 : 2400
         let st = phase == .free ? nil : step
-        let working = st?.isInterval == true   // w trakcie pracy nie przeszkadzamy
         // dopasowanie do sesji: po planie i na schłodzeniu nic; jeść tylko, gdy zostało ≥ 25 min, pić ≥ 10 min
         if !free && (phase == .free || st?.type == "cooldown") { return }
+        guard fuelWindow(s, st, free) else { return }
         let left = free ? Int.max : planLeftSec()
-        func due(_ last: Int, _ every: Int) -> Bool { s - last >= every && (!working || s - last >= every + 600) }
+        // przerwa przed długim interwałem (≥ 10 min) → zjedz / napij się teraz, wcześniej niż wynika z zegara
+        let next: WorkoutStep? = (!free && stepIdx + 1 < script.steps.count) ? script.steps[stepIdx + 1] : nil
+        let preLong = st != nil && st?.isInterval == false && next?.isInterval == true && (next?.durationSec ?? 0) >= 600
+        func due(_ last: Int, _ every: Int) -> Bool { s - last >= (preLong ? Int((Double(every) * 0.6).rounded()) : every) }
         if eatOn && left >= 1500 && due(lastEat, eatEvery) {
             lastEat = s; lastDrink = s
             say("eat", [:], .info, speak)
@@ -707,6 +743,31 @@ final class WorkoutEngine {
             lastDrink = s
             say("drink", [:], .info, speak)
         }
+    }
+
+    /// Czy to dobry moment na jedzenie/picie: nie w trakcie wysiłku i nie tuż po jego starcie, nie w ostatnich
+    /// sekundach przed interwałem. Wyjątek: bardzo długi blok (≥ 30 min) – w jego środku można. 1:1 z flex-engine.ts.
+    private func fuelWindow(_ s: Int, _ st: WorkoutStep?, _ free: Bool) -> Bool {
+        let ftp = Double(script.ftp)
+        if free { return !inEffort || s - effortStart >= 1200 }
+        guard let st = st else { return false }
+        let remaining = st.durationSec - inStep
+        let hardSteady = st.type == "steady" && ftp > 0 && Double(st.powerLow) >= ftp * 0.85
+        if st.isInterval || hardSteady { return st.durationSec >= 1800 && inStep >= 300 && remaining >= 300 }
+        if inStep < 15 { return false }                                   // krok dopiero się zaczął
+        if st.type == "recovery" && st.durationSec < 90 { return false }  // krótka przerwa między powtórzeniami
+        if stepIdx + 1 < script.steps.count {
+            let next = script.steps[stepIdx + 1]
+            if next.isInterval {
+                if phase == .waiting {                                    // czeka na start, jeszcze nie rusza
+                    let tail = P.suffix(10)
+                    let avg = tail.isEmpty ? 0 : Double(tail.reduce(0, +)) / Double(tail.count)
+                    return avg < Double(next.powerLow) * 0.7
+                }
+                if remaining < 45 { return false }                        // zaraz start / odliczanie
+            }
+        }
+        return true
     }
 
     // MARK: - Odprawa na rozgrzewce

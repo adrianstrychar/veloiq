@@ -76,6 +76,8 @@ export interface WorkoutScript {
   id: string;
   name: string;
   ftp: number;
+  /** Typ dnia z planu (THR, SST, LONG…) – do krótkiej nazwy treningu (Strava). */
+  type?: string;
   lang?: string; // 'pl-PL'
   steps: WorkoutStep[];
   rules?: WorkoutRules;

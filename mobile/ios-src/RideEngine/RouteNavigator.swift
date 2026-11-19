@@ -134,23 +134,25 @@ final class RouteNavigator {
         checkDistance()
     }
 
+    /// Zapowiedzi skrętów. Liczy się WYŁĄCZNIE najbliższy niewykonany skręt – o kolejnym Enzo mówi
+    /// dopiero, gdy ten minęliśmy (≥ 20 m za nim). Inaczej „za 500 w lewo”, a chwilę później „za 500
+    /// w prawo” (bo następny skręt po lewym jest w prawo) – mylące. Dystans w zapowiedzi = rzeczywisty.
     private func checkCues() {
         let fast = speedKmh > 32
         let far: Double = fast ? 500 : 300
         let nowDist: Double = fast ? 70 : 45
-        for (i, c) in cues.enumerated() {
-            let to = c.d - progress
-            if to < -20 { continue }
-            if to > far + 50 { break }
-            let said = cueSaid[i] ?? 0
-            let prevClose = i > 0 && c.d - cues[i - 1].d < 150    // tuż po poprzednim skręcie – bez zapowiedzi
-            if said < 1 && to <= far && to > 120 && !prevClose {
-                cueSaid[i] = 1
-                onSay?("navTurn", ["dist": fast ? "500" : "300", "dir": c.dir, "m": "\(Int(far))"])
-            } else if said < 2 && to <= nowDist {
-                cueSaid[i] = 2
-                onSay?("navTurn", ["dist": "0", "dir": c.dir, "m": "0"])
-            }
+        guard let i = cues.firstIndex(where: { $0.d - progress >= -20 }) else { return }
+        let c = cues[i]
+        let to = c.d - progress
+        let said = cueSaid[i] ?? 0
+        let prevClose = i > 0 && c.d - cues[i - 1].d < 150    // tuż po poprzednim skręcie – bez zapowiedzi, tylko „teraz”
+        if said < 1 && to <= far && to > nowDist + 40 && !prevClose {
+            cueSaid[i] = 1
+            let label = to > 400 ? 500 : to > 250 ? 300 : to > 150 ? 200 : 100
+            onSay?("navTurn", ["dist": "\(label)", "dir": c.dir, "m": "\(label)"])
+        } else if said < 2 && to <= nowDist {
+            cueSaid[i] = 2
+            onSay?("navTurn", ["dist": "0", "dir": c.dir, "m": "0"])
         }
     }
 

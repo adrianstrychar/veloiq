@@ -146,13 +146,15 @@ enum Phrases {
         "armNext": "Za minutę interwał {n} z {total}. {dur}, {low} do {high} watów. Zacznij, kiedy będziesz gotowy.",
         "tenSec": "Dziesięć sekund.",
         "goNow": "Możesz startować.",
+        "chainNext": "Zaraz potem, bez przerwy: {dur}, {low} do {high} watów.",
+        "chainGo": "Teraz!",
         "waiting": "Czekam na start interwału {n}. Przerwa trwa już {rest}.",
         "autoStart": "Start! {dur}, trzymaj {low} do {high} watów.",
         "restInfo": "Przerwa trwała {rest}.",
         "autoPause": "Pauza interwału. Zostało {left}.",
         "autoResume": "Wznawiam. Zostało {left}.",
         "earlyStop": "Interwał przerwany po {done}.",
-        "falseStart": "Fałstart – nie liczę. Interwał {n} ruszy, gdy znów przyspieszysz.",
+        "falseStart": "Falstart – nie liczę. Interwał {n} ruszy, gdy znów przyspieszysz.",
         "seriesEnd": "Seria {n} z {total} zrobiona. {dur}, średnio {avg} watów – {verdict}.",
         "seriesPrev": "Poprzednia {prev}.",
         "hrUp": "Tętno o {d} uderzeń wyżej niż w pierwszej serii.",
@@ -263,7 +265,7 @@ struct LiveSample {
     var lat: Double?
     var lon: Double?
     var lastSeries: SeriesResult?
-    var falseStartLeft: Int = 0  // s, w których można jeszcze odwołać start interwału (fałstart)
+    var falseStartLeft: Int = 0  // s, w których można jeszcze odwołać start interwału (falstart)
     var stepAvgPower: Int? = nil // średnia moc bieżącego kroku (np. interwału)
     var vKmh: Double = 0         // wirtualna prędkość (trenażer)
     var vKm: Double = 0          // wirtualny dystans (trenażer)

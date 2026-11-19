@@ -31,7 +31,7 @@ final class Recorder {
     struct Recorded {
         var samples: [(power: Int?, hr: Int?, cad: Int?)] = []
         var skips: Set<Int> = []   // sekundy, w których zawodnik wcisnął "Następny krok"
-        var cancels: Set<Int> = [] // sekundy, w których zawodnik odwołał start interwału („Fałstart”)
+        var cancels: Set<Int> = [] // sekundy, w których zawodnik odwołał start interwału („Falstart”)
         var count: Int { samples.count }
     }
 

@@ -19,7 +19,7 @@ const LEAD_FOR: Record<string, string> = {
   autoPause: 'pause', autoResume: 'resume', manualPause: 'pause', manualResume: 'resume', earlyStop: 'early',
   seriesEnd: 'seriesEnd', hrUp: 'hr', tooHigh: 'tooHigh', tooLow: 'tooLow', recoveryTooHigh: 'recTooHigh',
   cadenceLow: 'cadLow', cadenceHigh: 'cadHigh', half: 'half', lastMinute: 'last', praise: 'praise',
-  planDone: 'done', freeStart: 'free', effort: 'effort',
+  planDone: 'done', freeStart: 'free', effort: 'effort', chainNext: 'chainNext', chainGo: 'go', falseStart: 'falseStart',
   powerLost: 'powerLost', powerBack: 'powerBack', hrLost: 'hrLost', hrBack: 'hrBack',
   hrHigh: 'hrHigh', hrRecovered: 'hrRec', status: 'status',
   listen: 'listen', repeat: 'repeat', think: 'think', offline: 'offline', doneCmd: 'doneCmd', left: 'left', power: 'power',
@@ -120,6 +120,9 @@ export class DirectorComposer {
         seg.push(...this.dur(vars.dur), ...this.range(vars.low, vars.high));
         break;
       }
+      case 'chainNext':
+        seg.push(...this.dur(vars.dur), ...this.range(vars.low, vars.high));
+        break;
       case 'autoStart': case 'intervalStart': case 'steadyStart':
         seg.push(...this.dur(vars.dur), ...this.range(vars.low, vars.high)); break;
       case 'warmupStart': case 'recoveryStart': seg.push(...this.dur(vars.dur)); break;

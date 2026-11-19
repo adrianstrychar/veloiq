@@ -45,7 +45,8 @@ interface Props {
 export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onAskCoach, onExportStrava, onDone }: Props) {
   // Podsumowanie Enzo: seria po serii + jedna rada; Enzo mówi je raz, od razu po treningu
   const debrief = useMemo(() => buildDebrief(summary.series), [summary.series]);
-  const total = plan ? plan.steps.filter((x) => x.type === 'interval').length : summary.series.length;
+  // liczba SERII: interwał tuż po interwale (3 min + 20 s bez przerwy) to ta sama seria
+  const total = plan ? plan.steps.filter((x, i) => x.type === 'interval' && !(i > 0 && plan.steps[i - 1].type === 'interval' && x.start !== 'auto')).length : new Set(summary.series.map((x) => x.n)).size;
   const playDebrief = () => debrief && ride.debrief({
     series: debrief.lines.map((l) => ({ n: l.n, total: Math.max(total, l.n), avg: l.avgPower, vrd: l.endedEarly ? 'low' : l.verdict })),
     tip: debrief.tip, text: debrief.text,
@@ -217,7 +218,7 @@ export function SummaryScreen({ ride, plan, summary, ftp, startedAt, onSave, onA
           {summary.series.map((x) => {
             const note = x.endedEarly ? `przerwana z ${mmss(x.plannedSec)}` : `plan ${mmss(x.plannedSec)}`;
             return (
-              <div key={x.n} className={s.seriesRow}>
+              <div key={x.startSec} className={s.seriesRow}>
                 <span style={{ fontWeight: 700, color: 'var(--cyan)' }}>{x.n}</span>
                 <span className={s.stack} style={{ gap: 0 }}>
                   <span className={s.statValue} style={{ fontSize: 19 }}>{mmss(x.durationSec)}</span>

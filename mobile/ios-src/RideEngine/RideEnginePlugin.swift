@@ -250,7 +250,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
             self.notifier.post(key, vars)              // krótko na licznik (Garmin), niezależnie od głosu
             guard self.shouldSpeak(kind) else { return }
-            // fałstart ucina zaległe „Start!” – inaczej Enzo mówiłby o interwale, którego już nie ma
+            // falstart ucina zaległe „Start!” – inaczej Enzo mówiłby o interwale, którego już nie ma
             DispatchQueue.main.async { self.say(key, vars, text, interrupt: kind == .countdown || key == "falseStart") }
         }
         eng.onLive = { [weak self] live in self?.notifyListeners("live", data: live.toDict()) }
@@ -330,7 +330,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    /// Przycisk „Fałstart” – odwołuje świeżo wykryty start interwału (wraca czekanie na start).
+    /// Przycisk „Falstart” – odwołuje świeżo wykryty start interwału (wraca czekanie na start).
     @objc func cancelStart(_ call: CAPPluginCall) {
         engineQueue.async {
             guard let eng = self.engine else { return call.resolve() }
@@ -723,7 +723,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         // --- polecenia
         if has("falstart", "anuluj", "od nowa", "jeszcze nie", "nie teraz", "nie startuj"),
            ((st["falseStartLeft"] as? Int) ?? 0) > 0 {
-            coachAction("cancel"); return true           // silnik sam mówi „Fałstart…”
+            coachAction("cancel"); return true           // silnik sam mówi „Falstart…”
         }
         if has("nastepny krok", "pomin", "przejdz dalej", "kolejny krok", "nastepny etap") {
             coachAction("next"); play(lead("doneCmd"), "Następny krok."); return true

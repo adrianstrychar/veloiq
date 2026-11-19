@@ -5,6 +5,8 @@ import { buildTcx, type TcxLap } from '@/lib/ride/tcx';
 import { veloiqActivityId } from '@/lib/ride/import-rides';
 import { syncStravaActivities, recalculateFitnessMetrics } from '@/lib/sync';
 import type { SavedSample } from '@/lib/ride/save-ride';
+import { shortWorkoutName } from '@/lib/ride/workout-name';
+import type { WorkoutScript } from '@/lib/ride/workout-script';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 45;
@@ -57,14 +59,17 @@ export async function POST(req: NextRequest) {
     }).eq('id', athlete.id);
   }
 
-  const name = (ride.workout_name as string | null) || 'Jazda';
+  // krótka nazwa z kroków, które prowadził Enzo (też dla starszych jazd z długą nazwą z planu)
+  const script = ride.workout_script as WorkoutScript | null;
+  const name = script?.steps?.length ? shortWorkoutName(script.steps, script.ftp, script.type)
+    : (ride.workout_name as string | null) || 'Jazda swobodna';
   const tcx = buildTcx({ startedAt: ride.started_at as string, samples, name, kJ: ride.kj as number | null,
     laps: Array.isArray(ride.laps) ? (ride.laps as TcxLap[]) : null });
   const form = new FormData();
   form.append('file', new Blob([tcx], { type: 'application/xml' }), `veloiq-${ride.id}.tcx`);
   form.append('data_type', 'tcx');
   form.append('name', name);
-  form.append('description', 'Nagrane w VeloIQ · prowadził Dyrektor Enzo');
+  form.append('description', 'Nagrane w VeloIQ');
   form.append('trainer', ride.outdoor ? '0' : '1');
   form.append('external_id', `veloiq-${ride.id}`);
   const up = await fetch('https://www.strava.com/api/v3/uploads', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
