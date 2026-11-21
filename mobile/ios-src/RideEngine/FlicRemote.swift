@@ -30,6 +30,9 @@ final class FlicRemote: NSObject, FLICManagerDelegate, FLICButtonDelegate {
     private var manager: FLICManager? { FLICManager.shared() }
     private var buttons: [FLICButton] { restored ? (manager?.buttons() ?? []) : [] }
 
+    /// Czy jest sparowany przycisk (po odtworzeniu stanu przez SDK).
+    var isPaired: Bool { !buttons.isEmpty }
+
     func status() -> [String: Any] {
         var d: [String: Any] = [
             "available": true,

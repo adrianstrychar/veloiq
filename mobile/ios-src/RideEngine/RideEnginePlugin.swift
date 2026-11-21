@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import Capacitor
 
 /// Plugin Capacitor "RideEngine" – most między UI (Next.js w WebView) a natywnym silnikiem.
@@ -406,7 +407,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func stopInternal(speakSummary: Bool) {
         navigator = nil
-        DispatchQueue.main.async { self.coach.setTapMode(false) }
+        DispatchQueue.main.async { self.coach.setTapMode(false); self.coach.disarm() }
         ticker?.cancel(); ticker = nil
         simulator?.stop(); simulator = nil
         recorder?.close(); recorder = nil
@@ -599,6 +600,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             self.coach.baseURL = base
             self.coach.setTapMode(false)   // tryb dotyku wyłączony – blokował Spotify
             _ = tap
+            self.armMicForFlic()
             call.resolve()
         }
     }
@@ -623,6 +625,19 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     }
     @objc func flicForget(_ call: CAPPluginCall) {
         DispatchQueue.main.async { FlicRemote.shared.forget { call.resolve(FlicRemote.shared.status()) } }
+    }
+
+    /// Z przyciskiem Flic mikrofon musi działać od startu jazdy: iOS nie pozwala go włączyć, gdy
+    /// telefon jest zablokowany (aplikacja w tle). Wołane przy starcie jazdy (setCoach, pierwszy plan).
+    /// Uprawnienia mogą jeszcze czekać na zgodę – wtedy próbujemy ponownie po odpowiedzi.
+    private func armMicForFlic(retry: Int = 0) {
+        guard FlicRemote.shared.isPaired, engineQueue.sync(execute: { self.engine != nil }) else { return }
+        if coach.arm() { return }
+        guard retry < 10 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self = self, UIApplication.shared.applicationState != .background else { return }
+            self.armMicForFlic(retry: retry + 1)
+        }
     }
 
     // MARK: - Licznik Garmin Edge (most Connect IQ)
@@ -761,6 +776,12 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         }
         switch kind {
         case "click":
+            if !coach.armed && UIApplication.shared.applicationState == .background {
+                // mikrofonu nie da się włączyć przy zablokowanym telefonie – powiedz to, zamiast milczeć
+                notifyListeners("coach", data: ["state": "error", "text": "Mikrofon nie był włączony od startu jazdy – odblokuj telefon, żeby zapytać Enzo."])
+                if voiceMode == "enzo", let d = director, let seg = d.compose("repeat", [:]) { d.play(seg) }
+                return
+            }
             coach.start()
         case "double":
             if ph == .free { flicLap() } else { coachAction("next") }

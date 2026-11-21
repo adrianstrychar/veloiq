@@ -7,8 +7,13 @@ import MediaPlayer
 /// systemowy nie przełączają kategorii ani nie zwalniają sesji po każdym komunikacie.
 enum AudioGate {
     static var hold = false
+    /// Mikrofon w gotowości przez całą jazdę (przycisk Flic przy zablokowanym telefonie): sesja
+    /// playAndRecord zostaje aktywna, nikt jej nie przełącza ani nie zwalnia – iOS nie pozwala
+    /// WŁĄCZYĆ mikrofonu w tle, więc musi działać od startu jazdy (na pierwszym planie).
+    static var armed = false
     static func restoreDefault() {
         let s = AVAudioSession.sharedInstance()
+        if armed { return }
         if hold {
             try? s.setCategory(.playback, mode: .default, options: [])
             try? s.setActive(true)
@@ -49,6 +54,12 @@ final class CoachTalk: NSObject {
     private var text = ""
     private var keepAlive: AVAudioPlayer?
     private var tapOn = false
+    /// Mikrofon w gotowości (arm): silnik audio działa cały czas, bufory trafiają do rozpoznawania
+    /// tylko w trakcie pytania. Dostęp z wątku audio → pod blokadą.
+    private(set) var armed = false
+    private let tapLock = NSLock()
+    private var tapRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var configObserver: NSObjectProtocol?
 
     static func requestPermissions() {
         SFSpeechRecognizer.requestAuthorization { _ in }
@@ -106,6 +117,61 @@ final class CoachTalk: NSObject {
         return d
     }
 
+    // MARK: - Mikrofon w gotowości (przycisk Flic, telefon zablokowany)
+
+    /// Włącza mikrofon NA CAŁĄ JAZDĘ – wołać na pierwszym planie (start jazdy). Wyjście audio zostaje
+    /// w jakości muzyki (A2DP), wejście to mikrofon telefonu. true = gotowe.
+    @discardableResult
+    func arm() -> Bool {
+        if armed { return true }
+        guard session.recordPermission == .granted, SFSpeechRecognizer.authorizationStatus() == .authorized else { return false }
+        do {
+            try session.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers, .allowBluetoothA2DP, .defaultToSpeaker])
+            try session.setActive(true)
+            try startArmedEngine()
+            armed = true
+            AudioGate.armed = true
+            configObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: audioEngine, queue: .main) { [weak self] _ in
+                // zmiana trasy (np. słuchawki) zatrzymuje silnik – w tle może się nie dać wznowić
+                guard let self = self, self.armed, !self.audioEngine.isRunning else { return }
+                if (try? self.startArmedEngine()) == nil { self.disarm() }
+            }
+            return true
+        } catch {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            if audioEngine.isRunning { audioEngine.stop() }
+            return false
+        }
+    }
+
+    private func startArmedEngine() throws {
+        let input = audioEngine.inputNode
+        input.removeTap(onBus: 0)
+        input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { [weak self] buf, _ in
+            guard let self = self else { return }
+            self.tapLock.lock(); let r = self.tapRequest; self.tapLock.unlock()
+            r?.append(buf)
+        }
+        audioEngine.prepare()
+        try audioEngine.start()
+    }
+
+    func disarm() {
+        guard armed else { return }
+        armed = false
+        AudioGate.armed = false
+        if let o = configObserver { NotificationCenter.default.removeObserver(o); configObserver = nil }
+        setTapRequest(nil)
+        if phase == .listening { timer?.invalidate(); timer = nil; request?.endAudio(); task?.cancel(); request = nil; task = nil; phase = .idle }
+        if audioEngine.isRunning { audioEngine.stop() }
+        audioEngine.inputNode.removeTap(onBus: 0)
+        AudioGate.restoreDefault()
+    }
+
+    private func setTapRequest(_ r: SFSpeechAudioBufferRecognitionRequest?) {
+        tapLock.lock(); tapRequest = r; tapLock.unlock()
+    }
+
     // MARK: - Słuchanie
 
     func start() {
@@ -123,6 +189,16 @@ final class CoachTalk: NSObject {
     }
 
     private func record() {
+        if armed && audioEngine.isRunning {
+            // mikrofon już działa (od startu jazdy) – tylko podpinamy rozpoznawanie
+            let req = SFSpeechAudioBufferRecognitionRequest()
+            req.shouldReportPartialResults = true
+            req.taskHint = .dictation
+            request = req
+            setTapRequest(req)
+            listen(req)
+            return
+        }
         do {
             // mieszana z muzyką: Spotify tylko ściszony na czas pytania, potem wraca
             try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .defaultToSpeaker, .mixWithOthers, .duckOthers])
@@ -136,34 +212,47 @@ final class CoachTalk: NSObject {
             input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { buf, _ in req.append(buf) }
             audioEngine.prepare()
             try audioEngine.start()
-            text = ""; heard = false; startedAt = Date(); lastHeard = Date()
-            task = recognizer?.recognitionTask(with: req) { [weak self] res, err in
-                DispatchQueue.main.async {
-                    guard let self = self, self.request != nil else { return }
-                    if let r = res {
-                        let t = r.bestTranscription.formattedString
-                        if t != self.text { self.text = t; self.heard = !t.isEmpty; self.lastHeard = Date() }
-                        if r.isFinal { self.finish() }
-                    } else if err != nil { self.finish() }
-                }
-            }
-            timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-                guard let self = self else { return }
-                let now = Date()
-                // koniec: 1,3 s ciszy po pytaniu, 5 s bez słowa albo 9 s łącznie
-                if (self.heard && now.timeIntervalSince(self.lastHeard) > 1.3)
-                    || (!self.heard && now.timeIntervalSince(self.startedAt) > 5)
-                    || now.timeIntervalSince(self.startedAt) > 9 { self.finish() }
-            }
+            listen(req)
         } catch {
             stopAudio()
             phase = .idle
-            onEvent?("error", ["text": "Nie mogę włączyć mikrofonu."])
+            onEvent?("error", ["text": "Nie mogę włączyć mikrofonu (\((error as NSError).code)). Odblokuj telefon albo użyj przycisku na ekranie."])
+            playLead?("repeat", nil)
+        }
+    }
+
+    /// Rozpoznawanie + koniec pytania po ciszy.
+    private func listen(_ req: SFSpeechAudioBufferRecognitionRequest) {
+        text = ""; heard = false; startedAt = Date(); lastHeard = Date()
+        task = recognizer?.recognitionTask(with: req) { [weak self] res, err in
+            DispatchQueue.main.async {
+                guard let self = self, self.request != nil else { return }
+                if let r = res {
+                    let t = r.bestTranscription.formattedString
+                    if t != self.text { self.text = t; self.heard = !t.isEmpty; self.lastHeard = Date() }
+                    if r.isFinal { self.finish() }
+                } else if err != nil { self.finish() }
+            }
+        }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            let now = Date()
+            // koniec: 1,3 s ciszy po pytaniu, 5 s bez słowa albo 9 s łącznie
+            if (self.heard && now.timeIntervalSince(self.lastHeard) > 1.3)
+                || (!self.heard && now.timeIntervalSince(self.startedAt) > 5)
+                || now.timeIntervalSince(self.startedAt) > 9 { self.finish() }
         }
     }
 
     private func stopAudio() {
         timer?.invalidate(); timer = nil
+        if armed {
+            // mikrofon zostaje włączony do końca jazdy – odpinamy tylko rozpoznawanie
+            setTapRequest(nil)
+            request?.endAudio(); task?.cancel()
+            request = nil; task = nil
+            return
+        }
         if audioEngine.isRunning { audioEngine.stop() }
         audioEngine.inputNode.removeTap(onBus: 0)
         request?.endAudio(); task?.cancel()
