@@ -56,13 +56,26 @@ pset NSSpeechRecognitionUsageDescription string "VeloIQ zamienia Twoje pytanie d
 pset NSLocalNetworkUsageDescription string "VeloIQ w trybie deweloperskim ładuje aplikację z komputera w tej samej sieci."
 $PB -c "Print :NSAppTransportSecurity" "$PL" >/dev/null 2>&1 || $PB -c "Add :NSAppTransportSecurity dict" "$PL"
 $PB -c "Print :NSAppTransportSecurity:NSAllowsLocalNetworking" "$PL" >/dev/null 2>&1 || $PB -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PL"
+# Cykl życia ze scenami (UIScene) – wymagany przez nowe SDK Xcode, bez niego aplikacja się nie uruchamia.
+# Scena ładuje Main.storyboard (VeloIQBridgeViewController), delegat: RideEngine/SceneDelegate.swift.
+SM=":UIApplicationSceneManifest"; SC="$SM:UISceneConfigurations:UIWindowSceneSessionRoleApplication:0"
+$PB -c "Delete $SM" "$PL" 2>/dev/null || true
+$PB -c "Add $SM dict" "$PL"
+$PB -c "Add $SM:UIApplicationSupportsMultipleScenes bool false" "$PL"
+$PB -c "Add $SM:UISceneConfigurations dict" "$PL"
+$PB -c "Add $SM:UISceneConfigurations:UIWindowSceneSessionRoleApplication array" "$PL"
+$PB -c "Add $SC dict" "$PL"
+$PB -c "Add $SC:UISceneConfigurationName string Default" "$PL"
+$PB -c "Add $SC:UISceneDelegateClassName string \$(PRODUCT_MODULE_NAME).SceneDelegate" "$PL"
+$PB -c "Add $SC:UISceneStoryboardFile string Main" "$PL"
+$PB -c "Delete :UIMainStoryboardFile" "$PL" 2>/dev/null || true
 # pełny ekran jak w natywnej aplikacji: iPhone tylko pionowo, jasny pasek statusu na ciemnym tle
 $PB -c "Delete :UISupportedInterfaceOrientations" "$PL" 2>/dev/null || true
 $PB -c "Add :UISupportedInterfaceOrientations array" "$PL"
 $PB -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" "$PL"
 pset UIViewControllerBasedStatusBarAppearance bool false
 pset UIStatusBarStyle string UIStatusBarStyleLightContent
-ok "Tryby tła + uprawnienia + orientacja pionowa"
+ok "Tryby tła + uprawnienia + orientacja pionowa + sceny (UIScene)"
 
 say "Main.storyboard → VeloIQBridgeViewController"
 SB="$APPDIR/Base.lproj/Main.storyboard"
