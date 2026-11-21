@@ -31,6 +31,10 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "readRecording", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCoach", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "talk", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "flicStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "flicScan", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "flicStopScan", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "flicForget", returnType: CAPPluginReturnPromise),
     ]
 
     private let engineQueue = DispatchQueue(label: "veloiq.engine")
@@ -100,6 +104,11 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     private var announceArm = true
 
     public override func load() {
+        // przycisk Flic na kierownicy – konfiguracja jak najwcześniej (iOS wznawia połączenie w tle)
+        let flic = FlicRemote.shared
+        flic.onStatus = { [weak self] d in self?.notifyListeners("flic", data: d) }
+        flic.onPress = { [weak self] kind in self?.handleFlic(kind) }
+        flic.configure()
         sensors.onFound = { [weak self] id, name, kind, rssi in
             self?.notifyListeners("sensorFound", data: ["id": id, "name": name, "kind": kind, "rssi": rssi])
         }
@@ -583,6 +592,66 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// Przycisk „Zapytaj Enzo” na ekranie.
+    // MARK: - Przycisk Flic
+
+    @objc func flicStatus(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { call.resolve(FlicRemote.shared.status()) }
+    }
+    @objc func flicScan(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            FlicRemote.shared.scan { ok, err in
+                var d = FlicRemote.shared.status(); d["ok"] = ok
+                if let e = err { d["error"] = e }
+                call.resolve(d)
+            }
+        }
+    }
+    @objc func flicStopScan(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { FlicRemote.shared.stopScan(); call.resolve() }
+    }
+    @objc func flicForget(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { FlicRemote.shared.forget { call.resolve(FlicRemote.shared.status()) } }
+    }
+
+    /// klik → rozmowa z Enzo · 2× klik → okrążenie (swobodna) / następny krok (plan) · przytrzymaj → raport.
+    /// Poza jazdą tylko zdarzenie dla ekranu Czujniki (test przycisku). Główny wątek.
+    private func handleFlic(_ kind: String) {
+        notifyListeners("flic", data: ["press": kind])
+        let phase: WorkoutEngine.Phase? = engineQueue.sync { self.engine?.phase }
+        guard let ph = phase else { return }
+        switch kind {
+        case "click":
+            coach.start()
+        case "double":
+            if ph == .free { flicLap() } else { coachAction("next") }
+        case "hold":
+            _ = localAnswer("raport")
+        default: break
+        }
+    }
+
+    private func flicLap() {
+        engineQueue.async {
+            guard let eng = self.engine else { return }
+            eng.advance()
+            let sec = eng.lastSecond
+            guard let r = eng.manualLap() else { return }
+            self.recorder?.appendEvent(second: sec, "lap")
+            let level = self.voiceLevel
+            let text = "Okrążenie \(r.n). Poprzednie: \(Phrases.duration(r.prevSec)), średnio \(r.prevAvg) watów."
+            DispatchQueue.main.async {
+                self.notifyListeners("cue", data: ["text": text, "kind": "lap"])
+                guard level != "off" else { return }
+                if self.voiceMode == "enzo", let d = self.director {
+                    let ids = (d.compose("doneCmd", [:]) ?? []) + (d.compose("status", ["avg": "\(r.prevAvg)", "hr": "", "hrState": ""]) ?? [])
+                    if !ids.isEmpty { d.play(ids) }
+                } else {
+                    self.speaker.speak(text)
+                }
+            }
+        }
+    }
+
     @objc func talk(_ call: CAPPluginCall) {
         DispatchQueue.main.async { self.coach.start(); call.resolve() }
     }

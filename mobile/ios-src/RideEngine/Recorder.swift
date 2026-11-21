@@ -32,6 +32,7 @@ final class Recorder {
         var samples: [(power: Int?, hr: Int?, cad: Int?)] = []
         var skips: Set<Int> = []   // sekundy, w których zawodnik wcisnął "Następny krok"
         var cancels: Set<Int> = [] // sekundy, w których zawodnik odwołał start interwału („Falstart”)
+        var laps: Set<Int> = []    // sekundy ręcznych okrążeń (przycisk Flic)
         var count: Int { samples.count }
     }
 
@@ -42,6 +43,7 @@ final class Recorder {
         var bySecond: [Int: (Int?, Int?, Int?)] = [:]
         var skips: Set<Int> = []
         var cancels: Set<Int> = []
+        var laps: Set<Int> = []
         var maxS = -1
         for line in text.split(separator: "\n") {
             guard let d = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
@@ -49,6 +51,7 @@ final class Recorder {
             if let ev = d["ev"] as? String {
                 if ev == "skip" { skips.insert(s) }
                 if ev == "cancel" { cancels.insert(s) }
+                if ev == "lap" { laps.insert(s) }
                 continue
             }
             bySecond[s] = (d["p"] as? Int, d["hr"] as? Int, d["cad"] as? Int)
@@ -59,7 +62,7 @@ final class Recorder {
             let v = bySecond[s]
             return (power: v?.0, hr: v?.1, cad: v?.2)
         }
-        return Recorded(samples: samples, skips: skips, cancels: cancels)
+        return Recorded(samples: samples, skips: skips, cancels: cancels, laps: laps)
     }
 
     /// Zdarzenie w zapisie (np. ręczne "Następny krok"), potrzebne do wiernego odtworzenia po awarii.

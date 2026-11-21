@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { getRideEngine, isNativeRide, setWebSimSpeed } from '@/lib/ride/ride-client';
-import type { CoachEvent, LiveSample, SensorData, SensorFound, SensorStatus, WorkoutSummary, VoiceLevel, VoiceInfo, VoiceMode } from '@/lib/ride/ride-engine';
+import type { CoachEvent, FlicPress, FlicStatus, LiveSample, SensorData, SensorFound, SensorStatus, WorkoutSummary, VoiceLevel, VoiceInfo, VoiceMode } from '@/lib/ride/ride-engine';
 import type { WorkoutScript } from '@/lib/ride/workout-script';
 import type { RideRoute } from '@/lib/ride/gpx';
 import type { NavState } from './RouteCard';
@@ -58,6 +58,9 @@ export function useRide() {
   const [coach, setCoach] = useState<{ state: CoachEvent['state']; question?: string; answer?: string; at: number } | null>(null);
   const [route, setRoute] = useState<RideRoute | null>(null);   // trasa tej jazdy (mapa na ekranie)
   const [nav, setNav] = useState<NavState | null>(null);
+  // przycisk Flic na kierownicy: stan + ostatnie wciśnięcie (test na ekranie Czujniki)
+  const [flic, setFlic] = useState<FlicStatus>({ available: false });
+  const [flicPress, setFlicPress] = useState<{ press: FlicPress; at: number } | null>(null);
   const cueId = useRef(0);
   const lastElapsed = useRef(0);
 
@@ -83,6 +86,12 @@ export function useRide() {
         return c ? { ...c, state: d.state, at } : null;
       })),
     ];
+    handles.push(engine.addListener('flic', (d) => {
+      if (d.press) setFlicPress({ press: d.press, at: Date.now() });
+      else setFlic((f) => ({ ...f, ...d, available: true }));
+    }));
+    // stara wersja aplikacji (bez metody) → available: false, sekcja Flic prosi o aktualizację
+    engine.flicStatus().then(setFlic).catch(() => setFlic({ available: false }));
     engine.getRecoverable().then((r) => { if (r.available) setRecoverable({ name: r.name, elapsed: r.elapsed }); }).catch(() => {});
     engine.getSavedSensors().then((s) => { if (s.hrId || s.powerId) engine.connect(s); }).catch(() => {});
     return () => { handles.forEach((h) => h.then((x) => x.remove())); };
@@ -123,6 +132,18 @@ export function useRide() {
     }),
     coach,
     talk: () => run(() => engine.talk()),
+    flic, flicPress,
+    flicScan: () => run(async () => {
+      setFlic((f) => ({ ...f, scanning: true, scanPhase: 'searching', error: undefined }));
+      try {
+        const r = await engine.flicScan();
+        setFlic({ ...r, available: true, scanning: false, scanPhase: undefined });
+      } finally {
+        setFlic((f) => (f.scanning ? { ...f, scanning: false, scanPhase: undefined } : f));
+      }
+    }),
+    flicStopScan: () => run(() => engine.flicStopScan()),
+    flicForget: () => run(async () => { const r = await engine.flicForget(); setFlic({ ...r, available: true }); }),
     pause: () => run(async () => { await engine.pause(); setPaused(true); }),
     resume: () => run(async () => { await engine.resume(); setPaused(false); setAutoPaused(false); }),
     skip: () => run(() => engine.skipStep()),
