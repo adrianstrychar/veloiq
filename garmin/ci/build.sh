@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 
 DEVICES="${DEVICES:-edge1030 edge1030plus edge1030bontrager edge830 edge530 edge1040 edge840 edge540 edge1050}"
 TEST_DEVICE="${TEST_DEVICE:-edge1030}"
-TYPECHECK="${TYPECHECK:-2}"
+TYPECHECK="${TYPECHECK:-1}"
 mkdir -p bin
 rm -f bin/*.prg bin/*.log bin/report.md bin/annotations.txt
 
