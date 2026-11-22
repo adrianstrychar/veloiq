@@ -23,26 +23,26 @@ class Hist {
         _buf[o + 3] = (cad == null || cad < 0) ? 255 : (cad > 254 ? 254 : cad);
     }
 
-    function has(i as Number) as Boolean {
+    function valid(i as Number) as Boolean {
         return i >= 0 && i <= last && (last - i) < CAP;
     }
 
     //! Moc w sekundzie i (0, gdy poza historią).
     function p(i as Number) as Number {
-        if (!has(i)) { return 0; }
+        if (!valid(i)) { return 0; }
         var o = (i % CAP) * 4;
         return _buf[o] | (_buf[o + 1] << 8);
     }
 
     //! Tętno w sekundzie i albo 0 (brak).
     function hr(i as Number) as Number {
-        if (!has(i)) { return 0; }
+        if (!valid(i)) { return 0; }
         return _buf[(i % CAP) * 4 + 2];
     }
 
     //! Kadencja w sekundzie i albo -1 (brak).
     function cad(i as Number) as Number {
-        if (!has(i)) { return -1; }
+        if (!valid(i)) { return -1; }
         var c = _buf[(i % CAP) * 4 + 3];
         return c == 255 ? -1 : c;
     }

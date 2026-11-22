@@ -926,7 +926,7 @@ class Engine {
         var thr = wk.ftp * 0.8;
         var sum = _effSum;
         // _effSum obejmuje [a, s]; b == s
-        while (a < b && hist.has(a) && hist.p(a) < thr) { sum -= hist.p(a); a++; }
+        while (a < b && hist.valid(a) && hist.p(a) < thr) { sum -= hist.p(a); a++; }
         while (b > a && hist.p(b) < thr) { sum -= hist.p(b); b--; }
         var dur = b - a + 1;
         if (dur < effortMinSec) { return null; }

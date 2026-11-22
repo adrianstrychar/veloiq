@@ -121,11 +121,12 @@ for (const sc of scenarios) {
   const laps = eng.laps.map((l) => `${l.startSec}, ${q(l.type)}`);
   out.push('(:test)');
   out.push(`function testParity${sc.id}(logger as Test.Logger) as Boolean {`);
-  out.push('    return ParityRun.check(logger,');
+  // Monkey C: najwyżej 9 argumentów funkcji – wejście scenariusza idzie jedną tablicą [ftp, kroki, odcinki, akcje]
+  out.push('    return ParityRun.check(logger, [');
   out.push(`        ${sc.ftp},`);
   out.push(`        [${sc.steps.map((a) => `[${q(a[0])}, ${a.slice(1).join(', ')}]`).join(',\n         ')}],`);
   out.push(`        [${sc.segs.map((a) => `[${a.join(', ')}]`).join(', ')}],`);
-  out.push(`        [${(sc.actions ?? []).map((a) => `${a[0]}, ${a[1] === 'skip' ? 1 : 2}`).join(', ')}],`);
+  out.push(`        [${(sc.actions ?? []).map((a) => `${a[0]}, ${a[1] === 'skip' ? 1 : 2}`).join(', ')}]],`);
   out.push(`        [${cues.join(', ')}],`);
   out.push(`        [${series.join(',\n         ')}],`);
   out.push(`        [${efforts.join(', ')}],`);

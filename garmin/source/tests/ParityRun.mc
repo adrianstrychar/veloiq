@@ -31,7 +31,11 @@ module ParityRun {
         return s;
     }
 
-    function check(logger as Test.Logger, ftp, steps, segs, actions, expCues, expSeries, expEfforts, expLaps, expSum) as Boolean {
+    function check(logger as Test.Logger, input, expCues, expSeries, expEfforts, expLaps, expSum) as Boolean {
+        var ftp = input[0];
+        var steps = input[1];
+        var segs = input[2];
+        var actions = input[3];
         var wk;
         if (steps.size() > 0) {
             wk = Workout.fromDict({ "id" => "t", "name" => "t", "steps" => steps }, ftp, 75);
