@@ -1,0 +1,48 @@
+name: Garmin Connect IQ
+
+# Buduje aplikację VeloIQ na Garmin Edge (garmin/) i uruchamia testy silnika w symulatorze.
+# Gotowe pliki .prg (do wgrania na urządzenie: GARMIN/APPS) są w artefaktach przebiegu.
+
+on:
+  push:
+    paths:
+      - 'garmin/**'
+      - '.github/workflows/garmin.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: garmin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build + test (Connect IQ SDK w kontenerze)
+        run: |
+          docker run --rm --entrypoint /bin/bash \
+            -v "$PWD/garmin:/app" -w /app \
+            ghcr.io/matco/connectiq-tester:latest ci/build.sh
+
+      - name: Raport
+        if: always()
+        run: |
+          if [ -f garmin/bin/report.md ]; then cat garmin/bin/report.md >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -f garmin/bin/annotations.txt ]; then cat garmin/bin/annotations.txt; fi
+
+      - name: Artefakty (.prg)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: veloiq-garmin
+          path: |
+            garmin/bin/*.prg
+            garmin/bin/*.log
+            garmin/bin/report.md
+          if-no-files-found: warn
