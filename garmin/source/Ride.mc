@@ -77,6 +77,7 @@ class Ride {
     hidden var _moveRun as Number = 0;
 
     var result = null;          // podsumowanie po zapisie
+    var uiPage as Number = -1;  // prośba o przełączenie strony ekranu jazdy (tryb demo)
     var saved as Boolean = false;
     hidden var _timer = null;
     hidden var _tickNo as Number = 0;
@@ -100,6 +101,7 @@ class Ride {
         _timer.start(method(:onTick), 1000, true);
         loadPlan();
         if (Cfg.paired()) { sync(null); } else { up.kick(); }   // po starcie: świeży plan z VeloIQ
+        Demo.boot(self);
     }
 
     function shutdown() as Void {
@@ -317,6 +319,7 @@ class Ride {
         }
         if (state == RideState.RECORDING) { rideTick(); }
         if (state == RideState.IDLE && _tickNo % 60 == 0) { up.kick(); }   // ponawiaj zaległą wysyłkę
+        Demo.tick(self);
         WatchUi.requestUpdate();
     }
 
@@ -351,6 +354,14 @@ class Ride {
                 link.event({ "t" => "state", "s" => "pause", "auto" => 1 });
             }
         }
+    }
+
+    //! Sekunda jazdy z podanymi odczytami zamiast czujników (testy w symulatorze, tryb demo).
+    function simTick(p, h, c, spd) as Void {
+        hub.power = p; hub.hr = h; hub.cad = c;
+        speed = spd;
+        if (spd != null) { dist += spd; }
+        if (state == RideState.RECORDING) { rideTick(); }
     }
 
     hidden function rideTick() as Void {

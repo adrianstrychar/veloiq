@@ -1,1 +1,4 @@
 project.manifest = manifest.xml
+
+# Tryb demo (zrzuty ekranu w CI) jest w kodzie pod adnotacja (:demo) - w zwyklym buildzie wykluczony.
+base.excludeAnnotations = demo

@@ -30,6 +30,14 @@ jobs:
             -v "$PWD/garmin:/app" -w /app \
             ghcr.io/matco/connectiq-tester:latest ci/build.sh
 
+      - name: Zrzuty ekranu z symulatora (tryb demo)
+        if: always()
+        run: |
+          docker run --rm --entrypoint /bin/bash \
+            -e DEVICE=edge1030 -e SHOT_CROP -e SHOT_ONLY \
+            -v "$PWD/garmin:/app" -w /app \
+            ghcr.io/matco/connectiq-tester:latest ci/screens.sh
+
       - name: Raport
         if: always()
         run: |
@@ -43,6 +51,7 @@ jobs:
           name: veloiq-garmin
           path: |
             garmin/bin/*.prg
+            garmin/bin/shots/*.png
             garmin/bin/*.log
             garmin/bin/report.md
           if-no-files-found: warn
