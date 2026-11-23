@@ -49,3 +49,7 @@ scripts/.baseline-*
 # Garmin Connect IQ – wynik budowania
 /garmin/bin/
 /garmin/sim/dist/
+
+# klucz dewelopera Garmin (podpis aplikacji w sklepie Connect IQ) – nigdy nie commitować
+.garmin-key/
+*.der

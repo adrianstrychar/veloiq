@@ -40,6 +40,21 @@ jobs:
             base64 -w 60000 "$f" | awk '{print "PRGB64 " NR " " $0}'
           fi
 
+      - name: Paczka do sklepu Connect IQ (.iq, wersja beta)
+        # Tylko gdy w repo jest sekret GARMIN_DEVELOPER_KEY_B64 (klucz dewelopera w base64, ten sam przy każdej
+        # wersji – sklep przyjmuje aktualizacje tylko z tym samym podpisem).
+        if: always()
+        env:
+          KEY_B64: ${{ secrets.GARMIN_DEVELOPER_KEY_B64 }}
+        run: |
+          if [ -z "$KEY_B64" ]; then echo "Brak sekretu GARMIN_DEVELOPER_KEY_B64 – pomijam paczkę .iq"; exit 0; fi
+          echo "$KEY_B64" | base64 -d > "$RUNNER_TEMP/developer_key.der"
+          docker run --rm --entrypoint /bin/bash \
+            -v "$PWD/garmin:/app" -v "$RUNNER_TEMP:/key" -w /app \
+            ghcr.io/matco/connectiq-tester:latest -c \
+            'monkeyc -e -r -f monkey.jungle -o bin/veloiq.iq -y /key/developer_key.der -w > bin/export.log 2>&1; s=$?; grep -E "^(ERROR|BUILD)" bin/export.log | head -20; ls -la bin/veloiq.iq 2>/dev/null; exit $s'
+          rm -f "$RUNNER_TEMP/developer_key.der"
+
       - name: Zrzuty ekranu z symulatora (tryb demo)
         if: always()
         run: |
@@ -67,6 +82,7 @@ jobs:
         with:
           name: veloiq-garmin
           path: |
+            garmin/bin/veloiq.iq
             garmin/bin/*.prg
             garmin/bin/shots/*.png
             garmin/bin/*.log
