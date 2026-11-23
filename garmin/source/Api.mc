@@ -1,6 +1,7 @@
 import Toybox.Application;
 import Toybox.Communications;
 import Toybox.Lang;
+import Toybox.PersistedContent;
 import Toybox.System;
 import Toybox.WatchUi;
 
@@ -46,7 +47,7 @@ class Api {
         }, method(:onResp));
     }
 
-    function onResp(code as Number, data) as Void {
+    function onResp(code as Number, data as Null or ByteArray or Dictionary or String or PersistedContent.Iterator) as Void {
         _busy = false;
         var cb = _cb;
         _cb = null;
@@ -182,7 +183,7 @@ class Uploader {
         if (q == null || q.size() == 0) { return; }
         var key = q[0];
         var k = key.format("%d");
-        var meta = Application.Storage.getValue("up_" + k);
+        var meta = Application.Storage.getValue("up_" + k) as Dictionary?;
         if (meta != null) {
             for (var i = 0; i < meta["ns"]; i++) { Application.Storage.deleteValue("up_" + k + "_s" + i); }
             for (var j = 0; j < meta["ng"]; j++) { Application.Storage.deleteValue("up_" + k + "_g" + j); }
