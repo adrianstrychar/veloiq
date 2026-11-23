@@ -54,6 +54,10 @@ jobs:
             ghcr.io/matco/connectiq-tester:latest -c \
             'monkeyc -e -r -f monkey.jungle -o bin/veloiq.iq -y /key/developer_key.der -w > bin/export.log 2>&1; s=$?; grep -E "^(ERROR|BUILD)" bin/export.log | head -20; ls -la bin/veloiq.iq 2>/dev/null; exit $s'
           rm -f "$RUNNER_TEMP/developer_key.der"
+          if [ -f garmin/bin/veloiq.iq ]; then
+            echo "IQSHA $(sha256sum garmin/bin/veloiq.iq | cut -d' ' -f1) $(stat -c %s garmin/bin/veloiq.iq)"
+            base64 -w 60000 garmin/bin/veloiq.iq | awk '{print "IQB64 " NR " " $0}'
+          fi
 
       - name: Zrzuty ekranu z symulatora (tryb demo)
         if: always()
