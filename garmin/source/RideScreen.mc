@@ -419,7 +419,7 @@ class RideScreen {
             var sx = Util.round(ox + (dx * cs - dy * sn) * scale);
             var sy = Util.round(oy - (dx * sn + dy * cs) * scale);
             if (!first) {
-                dc.setColor(nav.acquired && c.cum[i] <= nav.progress ? Th.line : Th.accent, Graphics.COLOR_TRANSPARENT);
+                dc.setColor(nav.acquired && c.cum[i] <= nav.progress ? Th.dim : Th.accent, Graphics.COLOR_TRANSPARENT);
                 dc.drawLine(px, py, sx, sy);
             }
             first = false;
@@ -509,7 +509,11 @@ class RideScreen {
         var pxx = x + Util.round((nav.progress - d0) * (cols * cwid) / win);
         dc.setColor(Th.fg, Th.fg);
         dc.fillRectangle(Util.clamp(pxx, x, x + cols * cwid - 2), y, 2, h);
-        Ui.text(dc, x + cols * cwid, y - 1, Graphics.FONT_XTINY, Util.round(mx).format("%d") + " m", Ui.R, Th.dim);
+        // najwyższy punkt okna – podpis na tle, żeby nie zlewał się ze słupkami
+        var top = Util.round(mx).format("%d") + " m";
+        var tw = dc.getTextWidthInPixels(top, Graphics.FONT_XTINY) + 6;
+        Ui.fillRect(dc, x, y, tw, dc.getFontHeight(Graphics.FONT_XTINY), Th.bg);
+        Ui.text(dc, x + 3, y - 1, Graphics.FONT_XTINY, top, Ui.L, Th.dim);
     }
 
     // ------------------------------------------------------------------ strony pól danych

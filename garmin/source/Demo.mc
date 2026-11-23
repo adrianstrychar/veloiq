@@ -117,11 +117,12 @@ module Demo {
             r.hub.power = 0; r.hub.hr = 71;
             shot("18-start-z-trasa");
         }
-        else if (s == 23) { r.startRide(true); drive(r, 100, 205, 134, 89); r.banner = null; r.uiPage = 5; r.uiZoom = 1; shot("19-trasa-skret"); }
-        else if (s == 24) { drive(r, 18, 240, 141, 88); shot("20-trasa-teraz"); }
-        else if (s == 25) { drive(r, 72, 291, 158, 84); r.banner = null; r.uiPage = 0; shot("21-podjazd-cel"); }
-        else if (s == 26) { r.uiPage = 5; r.uiZoom = 4; shot("22-trasa-cala"); }
-        else if (s == 27) { drive(r, 76, 289, 163, 83); r.uiZoom = 0; shot("23-trasa-w-lewo"); }
-        else if (s == 28) { r.finish(false); r.reset(); System.println("SHOT END"); }
+        else if (s == 23) { r.startRide(true); drive(r, 100, 205, 134, 89); wait = 1; }     // strona ustawiana po starcie (start wraca na TRENING)
+        else if (s == 24) { r.banner = null; r.uiPage = 5; r.uiZoom = 1; shot("19-trasa-skret"); }
+        else if (s == 25) { drive(r, 18, 240, 141, 88); r.uiPage = 0; shot("20-teraz-w-prawo"); }
+        else if (s == 26) { drive(r, 72, 291, 158, 84); r.banner = null; shot("21-podjazd-cel"); }
+        else if (s == 27) { r.uiPage = 5; r.uiZoom = 4; shot("22-trasa-cala"); }
+        else if (s == 28) { drive(r, 76, 289, 163, 83); r.uiZoom = 0; shot("23-trasa-w-lewo"); }
+        else if (s == 29) { r.finish(false); r.reset(); System.println("SHOT END"); }
     }
 }

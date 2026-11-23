@@ -17,7 +17,7 @@ module Menus {
     function autoLapLabel() as String {
         if (Cfg.autoLapMode == 1) { return "co " + Cfg.autoLapKm + " km"; }
         if (Cfg.autoLapMode == 2) { return "co " + Cfg.autoLapMin + " min"; }
-        if (Cfg.autoLapMode == 3) { return "wysiłki (smart)"; }
+        if (Cfg.autoLapMode == 3) { return "wysiłki i podjazdy"; }
         return "wyłączony";
     }
 
@@ -30,6 +30,7 @@ module Menus {
         } else {
             m.addItem(item("Sparuj z VeloIQ", "kod do wpisania w aplikacji", "pair"));
         }
+        if (r.interrupted != null) { m.addItem(item("Odrzuć przerwaną jazdę", "bez zapisu i wysyłki", "dropck")); }
         m.addItem(item("Jazda swobodna", "nagrywanie, wysiłki, lapy", "free"));
         m.addItem(item("Ustawienia", null, "settings"));
         if (r.up.pending() > 0) {
@@ -144,6 +145,10 @@ class HomeMenuDelegate extends WatchUi.Menu2InputDelegate {
         } else if (id.equals("pair")) {
             var v = new PairView(_scr);
             WatchUi.switchToView(v, new PairDelegate(v), WatchUi.SLIDE_LEFT);
+        } else if (id.equals("dropck")) {
+            r.clearCheckpoint();
+            WatchUi.popView(WatchUi.SLIDE_RIGHT);
+            _scr.flash("Przerwana jazda odrzucona");
         } else if (id.equals("free")) {
             WatchUi.popView(WatchUi.SLIDE_RIGHT);
             _scr.start(true);

@@ -48,7 +48,25 @@ class HomeScreen {
         Ui.card(dc, pad, y, w - 2 * pad, cardH, Th.card);
         var cy = y + pad / 2;
         var plan = r.plan;
-        if (plan != null) {
+        var ck = r.interrupted;
+        if (r.resumePct >= 0) {
+            // odtwarzanie przerwanej jazdy z punktu kontrolnego
+            Ui.text(dc, 2 * pad, cy, Graphics.FONT_XTINY, "ODTWARZAM PRZERWANĄ JAZDĘ", Ui.L, Th.accent);
+            Ui.value(dc, w / 2, y + cardH / 2, w - 6 * pad, cardH / 2, r.resumePct.format("%d"), Th.fg);
+            Ui.text(dc, w / 2, y + cardH - dc.getFontHeight(Graphics.FONT_XTINY) - pad, Graphics.FONT_XTINY, "procent, chwila...", Ui.C, Th.dim);
+        } else if (ck != null) {
+            Ui.text(dc, 2 * pad, cy, Graphics.FONT_XTINY, "PRZERWANA JAZDA", Ui.L, Th.warn);
+            cy += dc.getFontHeight(Graphics.FONT_XTINY);
+            Ui.text(dc, 2 * pad, cy, Graphics.FONT_SMALL, Util.ellipsis(Util.str(ck.get("name"), "Jazda"), 24), Ui.L, Th.fg);
+            cy += dc.getFontHeight(Graphics.FONT_SMALL);
+            var ckInfo = "zapisane " + Util.clock(Util.int(ck.get("s"), 0));
+            var ckDist = Util.num(ck.get("d"), 0.0);
+            if (ckDist > 100) { ckInfo = ckInfo + ", " + (ckDist / 1000.0).format("%.1f") + " km"; }
+            Ui.text(dc, 2 * pad, cy, Graphics.FONT_XTINY, ckInfo, Ui.L, Th.dim);
+            cy += dc.getFontHeight(Graphics.FONT_XTINY) + pad / 2;
+            Ui.lines(dc, Ui.wrap(dc, "WZNÓW: jedziesz dalej w tej samej jeździe.\nZAKOŃCZ: zapisuję i wysyłam do VeloIQ to, co było.", Graphics.FONT_XTINY, w - 4 * pad),
+                w / 2, cy, Graphics.FONT_XTINY, Th.fg, 5);
+        } else if (plan != null) {
             Ui.text(dc, 2 * pad, cy, Graphics.FONT_XTINY, plan.date.equals(r.todayIso()) ? "TRENING NA DZIŚ" : "TRENING " + plan.date, Ui.L, Th.accent);
             cy += dc.getFontHeight(Graphics.FONT_XTINY);
             var fName = Graphics.FONT_SMALL;
@@ -69,6 +87,9 @@ class HomeScreen {
             Ui.text(dc, 2 * pad, cy, Graphics.FONT_XTINY, "DZIŚ", Ui.L, Th.accent);
             cy += dc.getFontHeight(Graphics.FONT_XTINY) + pad / 2;
             var msg = Cfg.paired() ? "Brak treningu w planie.\nJazda swobodna: wysiłki i lapy zapiszę automatycznie." : "Sparuj licznik z kontem VeloIQ (MENU), żeby pobrać plan.\nBez tego działa jazda swobodna.";
+            if (r.course != null && !Cfg.indoor && Cfg.navOn) {
+                msg = "Trasa: " + r.course.name + "\n" + (r.course.total / 1000.0).format("%.1f") + " km, +" + r.course.gain + " m, podjazdy: " + r.course.climbs.size() + "\nSTART poprowadzi po śladzie.";
+            }
             Ui.lines(dc, Ui.wrap(dc, msg, Graphics.FONT_XTINY, w - 4 * pad), w / 2, cy, Graphics.FONT_XTINY, Th.fg, 6);
         }
         y += cardH + pad / 2;
@@ -100,11 +121,22 @@ class HomeScreen {
         if (line != null) {
             Ui.text(dc, w / 2, by - dc.getFontHeight(Graphics.FONT_XTINY) - 2, Graphics.FONT_XTINY, line, Ui.C, Th.accent);
         }
+        var half = (w - 3 * pad) / 2;
+        if (r.resumePct >= 0) { return; }       // odtwarzanie trwa – bez przycisków
+        if (ck != null) {
+            Ui.button(dc, pad, by, w - 2 * pad, btnH, "WZNÓW JAZDĘ", Th.accent, Th.onAccent);
+            hits.add(["resume", pad, by, w - 2 * pad, btnH]);
+            by += btnH + pad;
+            Ui.button(dc, pad, by, half, btnH, "ZAKOŃCZ", Th.card, Th.fg);
+            hits.add(["finalize", pad, by, half, btnH]);
+            Ui.button(dc, 2 * pad + half, by, half, btnH, "MENU", Th.card, Th.fg);
+            hits.add(["menu", 2 * pad + half, by, half, btnH]);
+            return;
+        }
         var startLabel = plan != null ? "START TRENINGU" : "START";
         Ui.button(dc, pad, by, w - 2 * pad, btnH, startLabel, Th.accent, Th.onAccent);
         hits.add(["start", pad, by, w - 2 * pad, btnH]);
         by += btnH + pad;
-        var half = (w - 3 * pad) / 2;
         if (plan != null) {
             Ui.button(dc, pad, by, half, btnH, "SWOBODNA", Th.card, Th.fg);
             hits.add(["free", pad, by, half, btnH]);
@@ -117,7 +149,15 @@ class HomeScreen {
     }
 
     function start(free as Boolean) as Void {
-        if (!getRide().startRide(free)) { flash("Nie udało się rozpocząć nagrywania"); }
+        var r = getRide();
+        if (r.resumePct >= 0) { return; }
+        if (r.interrupted != null) {
+            // przycisk START przy przerwanej jeździe = wznowienie; nowa jazda dopiero po decyzji
+            if (free) { flash("Najpierw wznów albo zakończ jazdę"); } else { r.resumeInterrupted(false); }
+            WatchUi.requestUpdate();
+            return;
+        }
+        if (!r.startRide(free)) { flash("Nie udało się rozpocząć nagrywania"); }
         WatchUi.requestUpdate();
     }
 
@@ -127,6 +167,8 @@ class HomeScreen {
             if (Ui.inside(hit, x, y)) {
                 if (hit[0].equals("start")) { start(false); }
                 else if (hit[0].equals("free")) { start(true); }
+                else if (hit[0].equals("resume")) { getRide().resumeInterrupted(false); WatchUi.requestUpdate(); }
+                else if (hit[0].equals("finalize")) { getRide().resumeInterrupted(true); WatchUi.requestUpdate(); }
                 else if (hit[0].equals("menu")) { menu(); }
                 return;
             }

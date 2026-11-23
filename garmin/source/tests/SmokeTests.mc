@@ -40,6 +40,7 @@ module Smoke {
     function cleanup() as Void {
         Application.Storage.clearValues();
         Cfg.load();
+        getRide().interrupted = null;
     }
 }
 

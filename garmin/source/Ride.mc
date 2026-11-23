@@ -2,6 +2,7 @@ import Toybox.Activity;
 import Toybox.Application;
 import Toybox.Attention;
 import Toybox.Lang;
+import Toybox.StringUtil;
 import Toybox.System;
 import Toybox.Time;
 import Toybox.Timer;
@@ -57,6 +58,13 @@ class Ride {
     hidden var _autoLapSec as Number = 0;
     hidden var _fast as Boolean = false;
     hidden var _slowRun as Number = 0;
+    // --- podjazd (auto-lap „wysiłki”): z trasy GPX albo z wysokościomierza licznika
+    var climbing as Boolean = false;
+    hidden var _segClimb as Boolean = false;    // bieżący mocny odcinek to podjazd
+    hidden var _climbBase as Float = 0.0;
+    hidden var _climbTop as Float = 0.0;
+    hidden var _cdD = null;                     // próbki co 5 s: dystans i wysokość z ostatnich ~2,5 min
+    hidden var _cdA = null;
 
     // --- zapis do wysyłki: próbki 5 s i ślad GPS co 10 s
     hidden var _sStore = null;
@@ -81,6 +89,18 @@ class Ride {
     // --- auto-pauza całej jazdy
     hidden var _stillRun as Number = 0;
     hidden var _moveRun as Number = 0;
+
+    // --- przerwana jazda (wyłączenie licznika, awaria): punkt kontrolny co minutę i wznowienie po uruchomieniu
+    var interrupted = null;     // punkt kontrolny czekający na decyzję: { t, s, name, d, … } albo null
+    var resumePct as Number = -1;       // odtwarzanie przerwanej jazdy: 0–100, -1 = nie trwa
+    var replayAuto as Boolean = true;   // false tylko w testach: odtwarzanie krokami wywoływanymi ręcznie
+    hidden var _rp = null;
+    hidden var _rpTimer = null;
+    hidden var _replaying as Boolean = false;
+    hidden var _distBase as Float = 0.0;
+    hidden var _ascBase as Number = 0;
+    hidden var _ckS as Number = 0;      // pierwszy blok próbek, który trzeba (ponownie) zapisać
+    hidden var _ckG as Number = 0;
 
     var result = null;          // podsumowanie po zapisie
     var recordFit as Boolean = true;   // false tylko w testach: symulator nie pozwala założyć drugiej sesji FIT w tym samym wywołaniu
@@ -109,14 +129,21 @@ class Ride {
         _timer.start(method(:onTick), 1000, true);
         loadPlan();
         course = Course.load();
+        detectInterrupted();
         if (Cfg.paired()) { sync(null); } else { up.kick(); }   // po starcie: świeży plan z VeloIQ
         Demo.boot(self);
     }
 
     function shutdown() as Void {
         if (_timer != null) { _timer.stop(); _timer = null; }
-        // aplikacja zamykana w trakcie jazdy (np. wyłączenie licznika) – zapisz to, co jest
-        if (state == RideState.RECORDING || state == RideState.PAUSED || state == RideState.AUTOPAUSED) { finish(true); }
+        if (_rpTimer != null) { _rpTimer.stop(); _rpTimer = null; }
+        // aplikacja zamykana w trakcie jazdy (np. wyłączenie licznika): plik FIT z dotychczasową częścią zostaje
+        // zapisany, a jazda czeka w punkcie kontrolnym – po uruchomieniu można ją wznowić albo zakończyć i wysłać
+        if (active() && eng != null && !_replaying) {
+            flushSample(true);
+            checkpoint();
+            rec.finish(eng.m.np(), eng.m.tss(), eng.m.intensity(), eng.compliancePct(), _lapTarget, _lapType);
+        }
         hub.stop();
         link.stop();
     }
@@ -276,6 +303,7 @@ class Ride {
     // ------------------------------------------------------------------ start / pauza / koniec
     function startRide(free as Boolean) as Boolean {
         if (state != RideState.IDLE && state != RideState.DONE) { return false; }
+        if (interrupted != null || resumePct >= 0) { return false; }     // najpierw decyzja o przerwanej jeździe
         if (free || plan == null) {
             var w = new Workout();
             w.ftp = Cfg.ftp;
@@ -296,25 +324,38 @@ class Ride {
             nav.owner = self;
         }
         startEpoch = Time.now().value();
-        dist = 0.0; ascent = 0; speed = null;
-        lapNo = 1; lapStartS = 0; lapSumP = 0; lapN = 0; lapSumHr = 0; lapHrN = 0; lapMaxP = 0; lapStartDist = 0.0; prevLap = null;
-        _lapTarget = wk.isFree() ? 0 : (wk.steps[0].lo + wk.steps[0].hi) / 2;
-        _lapType = wk.isFree() ? StepType.FREE : wk.steps[0].type;
-        _autoLapDist = 0.0; _autoLapSec = 0; _fast = false; _slowRun = 0;
-        _sStore = new BlockStore(4, 2248);
-        _gStore = new BlockStore(10, 2250);
-        _dsSum = 0; _dsN = 0; _dsCad = 0; _dsCadN = 0; _gpsSeen = false;
-        cues = []; banner = null; enzoText = null; enzoBusy = false;
-        _stillRun = 0; _moveRun = 0;
-        result = null; saved = false;
+        initRide();
+        clearCheckpoint();
+        if (!wk.isFree() && wk.src != null) {
+            try { Application.Storage.setValue("ck_wk", wk.src); } catch (ex) {}
+        }
         state = RideState.RECORDING;
         tone("start");
         link.event(withAuth({ "t" => "state", "s" => "start", "w" => wk.name, "ftp" => wk.ftp, "free" => (wk.isFree() ? 1 : 0) }));
         return true;
     }
 
+    //! Zerowanie stanu jazdy (wspólne dla startu i wznowienia przerwanej jazdy).
+    hidden function initRide() as Void {
+        dist = 0.0; ascent = 0; speed = null;
+        _distBase = 0.0; _ascBase = 0;
+        lapNo = 1; lapStartS = 0; lapSumP = 0; lapN = 0; lapSumHr = 0; lapHrN = 0; lapMaxP = 0; lapStartDist = 0.0; prevLap = null;
+        _lapTarget = wk.isFree() ? 0 : (wk.steps[0].lo + wk.steps[0].hi) / 2;
+        _lapType = wk.isFree() ? StepType.FREE : wk.steps[0].type;
+        _autoLapDist = 0.0; _autoLapSec = 0; _fast = false; _slowRun = 0;
+        climbing = false; _segClimb = false; _climbBase = 0.0; _climbTop = 0.0; _cdD = []; _cdA = [];
+        _sStore = new BlockStore(4, 2248);
+        _gStore = new BlockStore(10, 2250);
+        _dsSum = 0; _dsN = 0; _dsCad = 0; _dsCadN = 0; _gpsSeen = false;
+        _ckS = 0; _ckG = 0;
+        cues = []; banner = null; enzoText = null; enzoBusy = false;
+        _stillRun = 0; _moveRun = 0;
+        result = null; saved = false;
+    }
+
     function pause() as Void {
         if (state != RideState.RECORDING && state != RideState.AUTOPAUSED) { return; }
+        checkpoint();
         rec.pause();
         state = RideState.PAUSED;
         tone("stop");
@@ -343,6 +384,7 @@ class Ride {
     function finish(save as Boolean) as Void {
         if (!active() || eng == null) { return; }
         var m = eng.m;
+        clearCheckpoint();          // przed kolejką wysyłki – zwalnia miejsce w pamięci licznika
         if (!save) {
             rec.discard();
             state = RideState.IDLE;
@@ -391,8 +433,8 @@ class Ride {
         if (state == RideState.RECORDING || state == RideState.AUTOPAUSED) {
             var ai = hub.simulated ? null : Activity.getActivityInfo();
             if (ai != null) {
-                if (ai.elapsedDistance != null) { dist = ai.elapsedDistance; }
-                if (ai.totalAscent != null) { ascent = ai.totalAscent; }
+                if (ai.elapsedDistance != null) { dist = _distBase + ai.elapsedDistance; }
+                if (ai.totalAscent != null) { ascent = _ascBase + ai.totalAscent; }
                 speed = ai.currentSpeed != null ? ai.currentSpeed : hub.speed;
             } else {
                 speed = hub.speed;
@@ -452,6 +494,14 @@ class Ride {
         if (state == RideState.RECORDING) { rideTick(); }
     }
 
+    //! Tylko testy: stan jazdy znika z pamięci jak po awarii – bez zapisu i bez kasowania punktu kontrolnego.
+    (:test)
+    function dropForTest() as Void {
+        state = RideState.IDLE;
+        eng = null; wk = null; nav = null;
+        _sStore = null; _gStore = null;
+    }
+
     //! Pozycja podana z zewnątrz w mikrostopniach (testy w symulatorze, tryb demo).
     function simPos(latMicro as Number, lonMicro as Number) as Void {
         hub.simulated = true;
@@ -483,6 +533,7 @@ class Ride {
 
         autoLapTick(pw);
         navTick();
+        if (eng.s % 60 == 59) { checkpoint(); }
 
         // telefon: dane na żywo
         if (link != null && Cfg.phoneLink) {
@@ -524,7 +575,7 @@ class Ride {
     //! Zamyka bieżące okrążenie (FIT) i zaczyna nowe o podanym celu / rodzaju.
     hidden function closeLap(nextTarget as Number, nextType as Number, beep as Boolean) as Void {
         if (eng == null) { return; }
-        rec.lap(_lapTarget, _lapType);
+        if (_replaying) { beep = false; } else { rec.lap(_lapTarget, _lapType); }
         prevLap = {
             "no" => lapNo, "sec" => lapN, "avgP" => (lapN > 0 ? Util.round(lapSumP.toFloat() / lapN) : 0),
             "avgHr" => (lapHrN > 0 ? Util.round(lapSumHr.toFloat() / lapHrN) : 0), "dist" => dist - lapStartDist, "type" => _lapType
@@ -552,7 +603,44 @@ class Ride {
         }
     }
 
-    //! Auto-lap w jeździe swobodnej (i po planie): dystans, czas albo „wysiłki” – lap na początku i końcu mocnego odcinka.
+    //! Czy jedziemy teraz pod górę. Z trasą GPX podjazdy są znane z góry (start i szczyt co do metra); bez niej
+    //! decyduje wysokościomierz: start = co najmniej 12 m i 3% na ostatnich 150–400 m, koniec = 8 m poniżej
+    //! najwyższego punktu albo wypłaszczenie poniżej 1% na ostatnich 150 m.
+    hidden function climbTick() as Boolean {
+        if (nav != null && nav.enabled && nav.acquired && !nav.offRoute && nav.course.climbs.size() > 0) {
+            var nc = nav.nextClimb();
+            var on = nc != null && nc[1] == 0;
+            if (on && !climbing) {
+                var cl = nav.course.climbs[nc[0]];
+                _climbBase = 0.0; _climbTop = cl[2].toFloat();
+            }
+            climbing = on;
+            return climbing;
+        }
+        var a = hub.alt;
+        if (a == null || eng.s % 5 != 0) { return climbing; }
+        _cdD.add(dist); _cdA.add(a.toFloat());
+        if (_cdD.size() > 30) { _cdD = _cdD.slice(1, null); _cdA = _cdA.slice(1, null); }
+        var last = _cdD.size() - 1;
+        if (!climbing) {
+            var j = last;
+            while (j > 0 && dist - _cdD[j - 1] <= 400) { j--; }
+            var span = dist - _cdD[j];
+            var gain = a - _cdA[j];
+            if (span >= 150 && gain >= 12 && gain >= span * 0.03) { climbing = true; _climbBase = _cdA[j]; _climbTop = a.toFloat(); }
+        } else {
+            if (a > _climbTop) { _climbTop = a.toFloat(); }
+            // szczyt: krótsze okno (ok. 150 m), żeby lap nie ciągnął się długo po wypłaszczeniu
+            var k = last;
+            while (k > 0 && dist - _cdD[k - 1] <= 150) { k--; }
+            var spanE = dist - _cdD[k];
+            if (_climbTop - a >= 8 || (spanE >= 100 && a - _cdA[k] < spanE * 0.01)) { climbing = false; }
+        }
+        return climbing;
+    }
+
+    //! Auto-lap w jeździe swobodnej (i po planie): dystans, czas albo „wysiłki” – lap na początku i końcu mocnego odcinka
+    //! oraz na początku i na szczycie podjazdu.
     hidden function autoLapTick(pw as Number) as Void {
         if (eng.phase != Phase.FREE || Cfg.autoLapMode == 0) { return; }
         if (Cfg.autoLapMode == 1) {
@@ -561,11 +649,17 @@ class Ride {
             if (eng.s - _autoLapSec >= Cfg.autoLapMin * 60) { autoLap("Auto lap " + Cfg.autoLapMin + " min"); }
         } else if (eng.s >= 30) {
             var ftp = wk.ftp;
+            var uphill = climbTick();
             if (!_fast) {
-                if (lapN >= 30 && eng.hist.avgP(10) >= ftp * 0.9) { _fast = true; _slowRun = 0; autoLap("Wysiłek - start"); }
+                if (uphill && lapN >= 20) { _fast = true; _segClimb = true; _slowRun = 0; autoLap("Podjazd - start"); }
+                else if (lapN >= 30 && eng.hist.avgP(10) >= ftp * 0.9) { _fast = true; _segClimb = false; _slowRun = 0; autoLap("Wysiłek - start"); }
             } else {
+                if (uphill) { _segClimb = true; }
                 _slowRun = eng.hist.avgP(30) < ftp * 0.72 ? _slowRun + 1 : 0;
-                if (_slowRun >= 20) { _fast = false; autoLap("Wysiłek - koniec"); }
+                if (_segClimb) {
+                    // podjazd trzyma lap otwarty także przy spokojnej mocy; koniec lapa = szczyt
+                    if (!uphill) { _fast = false; _segClimb = false; autoLap("Szczyt, +" + Util.round(_climbTop - _climbBase) + " m"); }
+                } else if (_slowRun >= 20) { _fast = false; autoLap("Wysiłek - koniec"); }
             }
         }
     }
@@ -573,6 +667,155 @@ class Ride {
     hidden function autoLap(label as String) as Void {
         closeLap(0, StepType.FREE, true);
         showBanner(label + "\n" + Util.clock(prevLap["sec"]) + ", " + prevLap["avgP"] + " W", "lap", 5);
+    }
+
+    // ------------------------------------------------------------------ przerwana jazda: punkt kontrolny i wznowienie
+    //! Zapis do pamięci licznika: próbki 5 s i ślad GPS (te same bloki, które idą potem do VeloIQ) + stan liczników.
+    //! Wołany co minutę jazdy, przy pauzie i przy zamykaniu aplikacji. Brak miejsca = jazda trwa dalej bez punktu.
+    function checkpoint() as Void {
+        if (eng == null || _sStore == null || _replaying) { return; }
+        try {
+            var nb = _sStore.blockCount();
+            for (var i = _ckS; i < nb; i++) { Application.Storage.setValue("ck_s" + i, Util.b64(_sStore.block(i))); }
+            _ckS = nb > 0 ? nb - 1 : 0;       // ostatni, niepełny blok zapisujemy następnym razem ponownie
+            var gb = _gpsSeen ? _gStore.blockCount() : 0;
+            for (var j = _ckG; j < gb; j++) { Application.Storage.setValue("ck_g" + j, Util.b64(_gStore.block(j))); }
+            _ckG = gb > 0 ? gb - 1 : 0;
+            Application.Storage.setValue("ck", { "t" => startEpoch, "s" => eng.s + 1, "ns" => _sStore.count, "nb" => nb, "gb" => gb,
+                "d" => dist, "a" => ascent, "free" => (wk.isFree() ? 1 : 0), "name" => wk.name, "at" => Time.now().value() });
+        } catch (ex) {
+            // pamięć pełna – nic więcej nie zrobimy; nagranie FIT i jazda trwają normalnie
+        }
+    }
+
+    function clearCheckpoint() as Void {
+        var ck = Application.Storage.getValue("ck") as Dictionary?;
+        var nb = 0;
+        var gb = 0;
+        if (ck != null && ck instanceof Dictionary) { nb = Util.int(ck.get("nb"), 0); gb = Util.int(ck.get("gb"), 0); }
+        for (var i = 0; i <= nb; i++) { Application.Storage.deleteValue("ck_s" + i); }
+        for (var j = 0; j <= gb; j++) { Application.Storage.deleteValue("ck_g" + j); }
+        Application.Storage.deleteValue("ck");
+        Application.Storage.deleteValue("ck_wk");
+        interrupted = null;
+    }
+
+    //! Po uruchomieniu aplikacji: czy została jazda przerwana wyłączeniem licznika albo awarią.
+    //! Świeża (do 12 h) czeka na decyzję na ekranie startowym; starsza jest domykana i wysyłana od razu.
+    function detectInterrupted() as Void {
+        interrupted = null;
+        var ck = Application.Storage.getValue("ck") as Dictionary?;
+        if (ck == null || !(ck instanceof Dictionary)) { return; }
+        if (Util.int(ck.get("ns"), 0) < 12) { clearCheckpoint(); return; }       // mniej niż minuta – nie ma czego ratować
+        interrupted = ck;
+        if (Time.now().value() - Util.int(ck.get("at"), 0) > 12 * 3600) { resumeInterrupted(true); }
+    }
+
+    //! Odtwarza przerwaną jazdę z punktu kontrolnego: silnik dostaje zapisane próbki (po 5 s), więc krok planu,
+    //! serie, NP i TSS wracają do stanu sprzed przerwy. finalize = true → bez dalszej jazdy: zakończ i wyślij.
+    function resumeInterrupted(finalize as Boolean) as Boolean {
+        var ck = interrupted;
+        if (ck == null || resumePct >= 0 || active()) { return false; }
+        var w = null;
+        if (Util.int(ck.get("free"), 1) == 0) { w = Workout.fromDict(Application.Storage.getValue("ck_wk"), Cfg.ftp, Cfg.weightKg); }
+        if (w == null) {
+            w = new Workout();
+            w.ftp = Cfg.ftp;
+            w.weightKg = Cfg.weightKg;
+        }
+        wk = w;
+        eng = new Engine(wk, Cfg.wPrime);
+        eng.listener = self;
+        nav = null;
+        _replaying = true;
+        initRide();
+        startEpoch = Util.int(ck.get("t"), Time.now().value());
+        dist = Util.num(ck.get("d"), 0.0).toFloat();
+        ascent = Util.int(ck.get("a"), 0);
+        _distBase = dist;
+        _ascBase = ascent;
+        // ślad GPS wraca w całości od razu (same bajty), próbki mocy przechodzą przez silnik partiami
+        var gb = Util.int(ck.get("gb"), 0);
+        for (var j = 0; j < gb; j++) {
+            var gs = Application.Storage.getValue("ck_g" + j);
+            if (gs == null || !(gs instanceof String)) { break; }
+            var g = Util.unb64(gs);
+            for (var k = 0; k + 10 <= g.size(); k += 10) { _gStore.add(g.slice(k, k + 10)); }
+            _gpsSeen = true;
+        }
+        _rp = { "b" => 0, "i" => 0, "nb" => Util.int(ck.get("nb"), 0), "ns" => Util.max(1, Util.int(ck.get("ns"), 1)), "done" => 0, "fin" => finalize, "cur" => null };
+        resumePct = 0;
+        if (replayAuto) {
+            _rpTimer = new Timer.Timer();
+            _rpTimer.start(method(:onReplay), 100, true);
+        }
+        return true;
+    }
+
+    //! Jedna partia odtwarzania: do 60 próbek (5 minut jazdy) na wywołanie – zegar licznika ma limit czasu wykonania.
+    function onReplay() as Void {
+        if (_rp == null) { return; }
+        var budget = 60;
+        while (budget > 0) {
+            var cur = _rp["cur"];
+            if (cur == null) {
+                var s = _rp["b"] < _rp["nb"] ? Application.Storage.getValue("ck_s" + _rp["b"]) : null;
+                if (s == null || !(s instanceof String)) { finishReplay(); return; }
+                cur = Util.unb64(s);
+                _rp["cur"] = cur;
+                _rp["i"] = 0;
+            }
+            var o = _rp["i"] * 4;
+            if (o + 4 > cur.size()) { _rp["cur"] = null; _rp["b"] = _rp["b"] + 1; continue; }
+            var p = cur[o] | (cur[o + 1] << 8);
+            var h = cur[o + 2] == 0 ? null : cur[o + 2];
+            var c = cur[o + 3] == 255 ? null : cur[o + 3];
+            _sStore.add(cur.slice(o, o + 4));
+            for (var k = 0; k < 5; k++) {
+                eng.tick(p, h, c);
+                lapN++; lapSumP += p;
+                if (p > lapMaxP) { lapMaxP = p; }
+                if (h != null) { lapSumHr += h; lapHrN++; }
+            }
+            _rp["i"] = _rp["i"] + 1;
+            _rp["done"] = _rp["done"] + 1;
+            budget--;
+        }
+        resumePct = Util.clamp(_rp["done"] * 100 / _rp["ns"], 0, 99);
+        WatchUi.requestUpdate();
+    }
+
+    hidden function finishReplay() as Void {
+        var finalize = _rp["fin"];
+        if (_rpTimer != null) { _rpTimer.stop(); _rpTimer = null; }
+        _rp = null;
+        _replaying = false;
+        resumePct = -1;
+        interrupted = null;
+        _ckS = 0; _ckG = 0;
+        lapStartDist = dist;
+        _autoLapDist = dist;
+        _autoLapSec = eng.s;
+        if (finalize) {
+            // bez dalszej jazdy: podsumowanie i wysyłka tego, co było w punkcie kontrolnym (plik FIT zapisano przy zamykaniu)
+            state = RideState.PAUSED;
+            finish(true);
+            saved = true;
+            WatchUi.requestUpdate();
+            return;
+        }
+        if (recordFit && !rec.start(wk.isFree() ? "VeloIQ" : wk.name, Cfg.indoor)) {
+            showBanner("Nie mogę rozpocząć nagrywania", "error", 6);
+        }
+        rec.pause();                    // nagrywanie rusza dopiero po „Wznów”
+        if (course != null && Cfg.navOn && !Cfg.indoor) {
+            nav = new Nav(course);
+            nav.owner = self;
+        }
+        state = RideState.PAUSED;
+        showBanner("Jazda wznowiona\n" + Util.clock(eng.s + 1) + " odtworzone", "info", 6);
+        link.event(withAuth({ "t" => "state", "s" => "start", "w" => wk.name, "ftp" => wk.ftp, "free" => (wk.isFree() ? 1 : 0), "resumed" => 1 }));
+        WatchUi.requestUpdate();
     }
 
     // ------------------------------------------------------------------ nawigacja po trasie
@@ -615,6 +858,7 @@ class Ride {
 
     // ------------------------------------------------------------------ zdarzenia silnika
     function onCue(kind, key, text, vars) as Void {
+        if (_replaying) { return; }     // odtwarzanie przerwanej jazdy: bez banerów, dźwięków i głosu
         var secs = 6;
         if (kind.equals("countdown")) { secs = 2; }
         else if (kind.equals("summary")) { secs = 10; }

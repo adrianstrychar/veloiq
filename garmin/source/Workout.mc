@@ -49,6 +49,7 @@ class Workout {
     var name as String = "Jazda swobodna";
     var type as String = "";
     var date as String = "";
+    var src = null;             // słownik, z którego powstał trening (do wznowienia przerwanej jazdy)
     var ftp as Number = 250;
     var tss as Number = 0;
     var weightKg as Number = 75;
@@ -88,6 +89,7 @@ class Workout {
     static function fromDict(d, ftp as Number, weightKg as Number) {
         if (d == null || !(d instanceof Dictionary)) { return null; }
         var w = new Workout();
+        w.src = d;
         w.id = Util.str(d.get("id"), "plan");
         w.name = Util.str(d.get("name"), "Trening");
         w.type = Util.str(d.get("type"), "");

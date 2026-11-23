@@ -105,6 +105,14 @@ module Util {
         });
     }
 
+    function unb64(s as String) as ByteArray {
+        if (s.length() == 0) { return []b; }
+        return StringUtil.convertEncodedString(s, {
+            :fromRepresentation => StringUtil.REPRESENTATION_STRING_BASE64,
+            :toRepresentation => StringUtil.REPRESENTATION_BYTE_ARRAY
+        }) as ByteArray;
+    }
+
     //! Skrót tekstu do n znaków z wielokropkiem.
     function ellipsis(s as String, n as Number) as String {
         if (s.length() <= n) { return s; }
