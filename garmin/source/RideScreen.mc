@@ -273,7 +273,7 @@ class RideScreen {
         y += lh + 2;
         var lapHr = r.lapHrN > 0 ? Util.round(r.lapSumHr.toFloat() / r.lapHrN).format("%d") : "--";
         var info = "HR " + lapHr + ",  max " + r.lapMaxP + " W";
-        if (!Cfg.indoor) { info = info + ",  " + ((r.dist - r.lapStartDist) / 1000.0).format("%.2f") + " km"; }
+        if (!Cfg.indoor) { info = info + ",  " + (Util.max(0.0, r.dist - r.lapStartDist) / 1000.0).format("%.2f") + " km"; }
         Ui.text(dc, w / 2, y, xt, info, Ui.C, Th.fg);
         y += lh + 4;
         dc.setColor(Th.line, Th.line);

@@ -34,7 +34,7 @@ jobs:
         if: always()
         run: |
           docker run --rm --entrypoint /bin/bash \
-            -e DEVICE=edge1030 -e SHOT_CROP -e SHOT_ONLY \
+            -e DEVICE=edge1030 -e SHOT_CROP=282x470+99+141 \
             -v "$PWD/garmin:/app" -w /app \
             ghcr.io/matco/connectiq-tester:latest ci/screens.sh
 

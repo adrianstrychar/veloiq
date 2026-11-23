@@ -28,6 +28,7 @@ module Ui {
 
     //! Czy tekst składa się tylko ze znaków obecnych w czcionkach liczbowych.
     function numeric(s as String) as Boolean {
+        if (s.equals("--")) { return false; }     // brak danych: zwykła czcionka, nie dwa grube bloki
         var a = s.toCharArray();
         for (var i = 0; i < a.size(); i++) {
             var code = a[i].toNumber();

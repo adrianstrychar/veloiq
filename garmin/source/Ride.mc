@@ -293,6 +293,7 @@ class Ride {
 
     //! Po ekranie podsumowania – powrót na ekran startowy.
     function reset() as Void {
+        hub.simulated = false;
         state = RideState.IDLE;
         eng = null;
         wk = null;
@@ -307,7 +308,7 @@ class Ride {
         if (enzoText != null && now > _enzoUntil) { enzoText = null; }
 
         if (state == RideState.RECORDING || state == RideState.AUTOPAUSED) {
-            var ai = Activity.getActivityInfo();
+            var ai = hub.simulated ? null : Activity.getActivityInfo();
             if (ai != null) {
                 if (ai.elapsedDistance != null) { dist = ai.elapsedDistance; }
                 if (ai.totalAscent != null) { ascent = ai.totalAscent; }
@@ -315,9 +316,9 @@ class Ride {
             } else {
                 speed = hub.speed;
             }
-            autoPauseTick();
+            if (!hub.simulated) { autoPauseTick(); }
         }
-        if (state == RideState.RECORDING) { rideTick(); }
+        if (state == RideState.RECORDING && !hub.simulated) { rideTick(); }
         if (state == RideState.IDLE && _tickNo % 60 == 0) { up.kick(); }   // ponawiaj zaległą wysyłkę
         Demo.tick(self);
         WatchUi.requestUpdate();
@@ -358,7 +359,8 @@ class Ride {
 
     //! Sekunda jazdy z podanymi odczytami zamiast czujników (testy w symulatorze, tryb demo).
     function simTick(p, h, c, spd) as Void {
-        hub.power = p; hub.hr = h; hub.cad = c;
+        hub.simulated = true;
+        hub.power = p; hub.hr = h; hub.cad = c; hub.speed = spd;
         speed = spd;
         if (spd != null) { dist += spd; }
         if (state == RideState.RECORDING) { rideTick(); }

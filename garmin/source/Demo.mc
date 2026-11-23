@@ -67,15 +67,20 @@ module Demo {
         else if (s == 9) { r.uiPage = 4; shot("10-enzo"); }
         else if (s == 10) { r.uiPage = 0; r.showEnzo("Bravissimo! Pierwsza seria 305 watów, idealnie w celu. Tętno 140 i spada. Zjedz teraz żel, za 90 sekund ruszamy drugą."); shot("11-enzo-odpowiedz"); }
         else if (s == 11) { r.dismissEnzo(); r.pause(); shot("12-pauza"); }
-        else if (s == 12) { r.resume(); ff(r, 95, 150, 138, 84); ff(r, 478, 318, 170, 93); ff(r, 60, 150, 150, 80); r.uiPage = 3; shot("13-serie"); }
-        else if (s == 13) { r.finish(true); shot("14-podsumowanie"); }
-        else if (s == 14) {
+        // dłuższe odcinki dzielimy na etapy – jedno wywołanie zegara ma limit czasu wykonania
+        else if (s == 12) { r.resume(); ff(r, 95, 150, 138, 84); ff(r, 200, 318, 170, 93); wait = 0; }
+        else if (s == 13) { ff(r, 278, 318, 172, 93); wait = 0; }
+        else if (s == 14) { ff(r, 60, 150, 150, 80); r.uiPage = 3; shot("13-serie"); }
+        else if (s == 15) { r.finish(true); shot("14-podsumowanie"); }
+        else if (s == 16) {
             r.reset();
             Cfg.put("theme", 1); Cfg.put("ftp", 305); Cfg.load(); Th.apply(1);
             r.plan = null; r.startRide(true);
-            ff(r, 300, 185, 128, 86); ff(r, 150, 318, 165, 94);
-            r.uiPage = 0; shot("15-swobodna-jasny");
+            ff(r, 300, 185, 128, 86);
+            wait = 0;
         }
-        else if (s == 15) { r.finish(false); Th.apply(0); System.println("SHOT END"); }
+        else if (s == 17) { ff(r, 150, 318, 165, 94); r.uiPage = 0; shot("15-swobodna-jasny"); }
+        else if (s == 18) { r.uiPage = 3; shot("16-swobodna-okrazenia"); }
+        else if (s == 19) { r.finish(false); r.reset(); Th.apply(0); System.println("SHOT END"); }
     }
 }

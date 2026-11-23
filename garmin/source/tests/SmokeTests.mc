@@ -1,6 +1,7 @@
 import Toybox.Application;
 import Toybox.Graphics;
 import Toybox.Lang;
+import Toybox.System;
 import Toybox.Test;
 import Toybox.WatchUi;
 
@@ -81,7 +82,9 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
     r.finish(false);
     r.reset();
     r.plan = Smoke.plan();
+    System.println("CP start");
     if (!r.startRide(false)) { logger.debug("startRide failed"); return false; }
+    System.println("CP started");
     var e = r.eng;
     var phases = {};
     var sawFs = false;
@@ -97,6 +100,7 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
         phases.put(e.phase, true);
         if (e.falseStartLeft() > 0) { sawFs = true; }
         if (i % 7 == 0 || r.banner != null) { Smoke.drawAll(scr, g); }
+        if (i % 50 == 0) { System.println("CP tick " + i); }
         if (i == 140) { Menus.ride(scr); }
         if (i == 200) { r.showEnzo("Bravissimo! Trzymasz 302 waty, dokładnie w celu. Jeszcze dwie minuty, forca!"); Smoke.drawAll(scr, g); r.dismissEnzo(); }
         if (i == 300) { r.pause(); Smoke.drawAll(scr, g); scr.tap(100, 300); r.resume(); }
@@ -113,7 +117,9 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
     scr.turn(1); scr.turn(-1);
     scr.key(WatchUi.KEY_LAP);
     r.onPhoneCommand("eat"); r.onPhoneCommand("lap"); r.onPhoneSay("Test");
+    System.println("CP finish");
     r.finish(true);
+    System.println("CP finished");
     var sum = new SummaryScreen();
     sum.draw(g);
     var q = Application.Storage.getValue("upq");

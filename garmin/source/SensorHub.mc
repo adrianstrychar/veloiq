@@ -20,6 +20,7 @@ class SensorHub {
     hidden var _cadAt as Number = 0;
     hidden var _fixAt as Number = 0;
     hidden var _on as Boolean = false;
+    var simulated as Boolean = false;   // odczyty podawane z zewnątrz (testy, demo) – prawdziwe czujniki ich nie nadpisują
 
     function initialize() {}
 
@@ -42,6 +43,7 @@ class SensorHub {
     }
 
     function onSensor(info as Sensor.Info) as Void {
+        if (simulated) { return; }
         var now = System.getTimer();
         if (info.power != null) { power = info.power; _powerAt = now; }
         if (info.heartRate != null) { hr = info.heartRate; _hrAt = now; }
@@ -56,6 +58,7 @@ class SensorHub {
     }
 
     function onPosition(info as Position.Info) as Void {
+        if (simulated) { return; }
         gpsQuality = info.accuracy;
         if (info.position != null && info.accuracy >= Position.QUALITY_POOR) {
             var d = info.position.toDegrees();
