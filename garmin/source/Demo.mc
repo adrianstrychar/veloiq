@@ -33,6 +33,7 @@ module Demo {
         Application.Storage.clearValues();
         Cfg.put("token", "demo"); Cfg.put("athlete", "Adrian"); Cfg.put("ftp", 305); Cfg.put("hrmax", 189);
         Cfg.put("autoPause", false); Cfg.put("tones", false); Cfg.put("phoneLink", false);
+        Cfg.put("apiBase", "https://localhost");     // demo nie rozmawia z prawdziwym serwerem
         Cfg.load();
         r.plan = plan();
     }

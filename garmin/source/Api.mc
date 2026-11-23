@@ -161,6 +161,15 @@ class Uploader {
         var k = _key.format("%d");
         var st = _meta["st"];
         if (st == 0) {
+            // serwer ma już tę jazdę (odpowiedź na wcześniejsze „finish” nie dotarła) → nic więcej nie wysyłamy
+            if (data.get("done") == true) {
+                drop();
+                _running = false;
+                status = "Jazda w VeloIQ";
+                notify();
+                kick();
+                return;
+            }
             _meta["st"] = 1;
             _meta["i"] = 0;
         } else if (st == 1) {

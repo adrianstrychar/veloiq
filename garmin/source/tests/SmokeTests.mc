@@ -171,6 +171,53 @@ function testSmokeFreeRide(logger as Test.Logger) as Boolean {
 }
 
 (:test)
+function testSyncAndEnzo(logger as Test.Logger) as Boolean {
+    Smoke.cleanup();
+    var r = getRide();
+    Cfg.put("token", "t"); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
+    var today = r.todayIso();
+    // odpowiedź /api/garmin/sync w formacie serwera (lib/garmin/sync.ts)
+    r.onSync(200, {
+        "ok" => true, "t" => 1763850000, "today" => today,
+        "athlete" => { "name" => "Adrian", "ftp" => 305, "hrmax" => 189, "kg" => 67 },
+        "workouts" => [
+            { "id" => "plan-" + today, "date" => today, "name" => "Threshold 2x20 min", "type" => "THR", "dur" => 5400, "tss" => 95, "ftp" => 305,
+              "steps" => [["Rozgrzewka", 0, 900, 155, 200, 0, 0, 0, 0, 142], ["Interwał 1", 1, 1200, 291, 309, 0, 0, 0, 0, 0],
+                  ["Przerwa", 2, 300, 120, 185, 0, 0, 0, 0, 132], ["Interwał 2", 1, 1200, 291, 309, 0, 0, 0, 0, 0], ["Schłodzenie", 4, 600, 135, 170, 0, 0, 0, 0, 136]] },
+            { "id" => "plan-jutro", "date" => "2099-01-01", "name" => "Endurance", "type" => "Z2", "dur" => 3600, "tss" => 50, "ftp" => 305,
+              "steps" => [["Jazda", 3, 3600, 170, 230, 0, 0, 2, 129, 149]] }
+        ],
+        "brief" => { "readiness" => 72, "state" => "Dobra gotowość", "yTss" => 60, "hrA" => 71.5, "hrB" => 0.31 }
+    });
+    var ok = Cfg.ftp == 305 && Cfg.hrmax == 189 && Cfg.weightKg == 67 && Cfg.athlete.equals("Adrian");
+    ok = ok && r.plan != null && r.plan.steps.size() == 5 && r.plan.totalSec() == 4200 && r.plan.readiness != null && r.workoutList().size() == 2;
+    logger.debug("ftp=" + Cfg.ftp + " plan=" + (r.plan == null ? "null" : r.plan.name) + " list=" + r.workoutList().size());
+    // wybór innego treningu z listy i powrót do dzisiejszego po kolejnej synchronizacji
+    Cfg.save("pick", "plan-jutro");
+    r.loadPlan();
+    ok = ok && r.plan != null && r.plan.name.equals("Endurance") && r.plan.steps[0].start == 2 && r.plan.steps[0].hrHi == 149;
+    // błąd serwera nie kasuje planu
+    r.onSync(500, null);
+    ok = ok && r.plan != null;
+    // Enzo: odpowiedź + polecenie
+    r.recordFit = false;
+    Application.Storage.deleteValue("pick");
+    r.loadPlan();
+    if (!r.startRide(false)) { r.recordFit = true; return false; }
+    r.recordFit = true;
+    for (var i = 0; i < 30; i++) { r.simTick(180, 120, 85, 8.0); }
+    r.onEnzo(200, { "say" => "Trzymasz 180 W, spokojnie. Forza!", "action" => "next" });
+    logger.debug("enzo=" + r.enzoText + " step=" + r.eng.stepIdx + " cues=" + r.cues.size());
+    ok = ok && r.enzoText != null && r.eng.stepIdx == 1 && !r.enzoBusy;
+    r.onEnzo(502, null);
+    ok = ok && r.banner != null;
+    r.finish(false);
+    r.reset();
+    Smoke.cleanup();
+    return ok;
+}
+
+(:test)
 function testStores(logger as Test.Logger) as Boolean {
     var hst = new Hist();
     for (var i = 0; i < 4000; i++) { hst.push(i % 500, 100 + (i % 50), i % 3 == 0 ? null : 90); }
