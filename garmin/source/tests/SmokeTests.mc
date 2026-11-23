@@ -97,7 +97,9 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
         r.simTick(p, 120 + (p / 10), p == 0 ? 0 : 88, 8.0);
         phases.put(e.phase, true);
         if (e.falseStartLeft() > 0) { sawFs = true; }
-        if (i % 7 == 0 || r.banner != null) { Smoke.drawAll(scr, g); }
+        // wszystkie strony co kilka sekund; z banerem częściej, ale tylko stronę główną (symulator rysuje wolno)
+        if (i % 10 == 0) { Smoke.drawAll(scr, g); }
+        else if (r.banner != null && i % 3 == 0) { scr.page = (i / 3) % 5; scr.draw(g); }
         if (i == 140) { Menus.ride(scr); }
         if (i == 200) { r.showEnzo("Bravissimo! Trzymasz 302 waty, dokładnie w celu. Jeszcze dwie minuty, forca!"); Smoke.drawAll(scr, g); r.dismissEnzo(); }
         if (i == 300) { r.pause(); Smoke.drawAll(scr, g); scr.tap(100, 300); r.resume(); }
@@ -148,7 +150,7 @@ function testSmokeFreeRide(logger as Test.Logger) as Boolean {
         if (i >= 420 && i < 450) { p = 0; }            // postój
         var spd = p == 0 ? 0.0 : 8.5;
         r.simTick(p, 140, p == 0 ? 0 : 90, spd);
-        if (i % 9 == 0) { Smoke.drawAll(scr, g); }
+        if (i % 14 == 0) { Smoke.drawAll(scr, g); }
     }
     logger.debug("efforts=" + e.efforts.size() + " laps=" + r.lapNo + " fitLaps=" + r.rec.laps + " n=" + e.m.n + " np=" + e.m.np() + " dist=" + r.dist);
     var ok = e.efforts.size() == 1 && r.lapNo == 3 && e.m.n == 700;

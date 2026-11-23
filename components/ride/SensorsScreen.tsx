@@ -4,6 +4,7 @@ import s from './ride.module.css';
 import type { Ride } from './useRide';
 import { BackHeader, IconBolt, IconHeart, IconInfo, StatusDot } from './parts';
 import { FlicCard } from './FlicCard';
+import { GarminCard } from './GarminCard';
 
 export function SensorsScreen({ ride, onBack }: { ride: Ride; onBack: () => void }) {
   // skanuj od razu po wejściu, zatrzymaj po wyjściu
@@ -70,6 +71,8 @@ export function SensorsScreen({ ride, onBack }: { ride: Ride; onBack: () => void
       </section>
 
       <FlicCard ride={ride} />
+
+      <GarminCard />
 
       <h2 className={s.h2}>W pobliżu</h2>
       <div className={s.list} role="list">
