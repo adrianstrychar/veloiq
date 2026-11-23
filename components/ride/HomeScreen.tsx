@@ -20,6 +20,8 @@ interface Props {
   onSensors: () => void;
   route: RideRoute | null;
   onRoute: (r: RideRoute | null) => void;
+  /** Trasa dla licznika Garmin (z celami mocy ze strategii, gdy tryb startowy jest włączony). */
+  garminRoute?: RideRoute | null;
   /** Tryb startowy: najbliższy start ze strategią (cele mocy na podjazdach). */
   race?: RacePacing;
   raceOn?: boolean;
@@ -27,7 +29,7 @@ interface Props {
   onRaceRide?: () => void;
 }
 
-export function HomeScreen({ ride, plan, planLabel, dateLabel, settings, onSettings, onStart, onFree, onSensors, route, onRoute, race, raceOn, onRaceOn, onRaceRide }: Props) {
+export function HomeScreen({ ride, plan, planLabel, dateLabel, settings, onSettings, onStart, onFree, onSensors, route, onRoute, garminRoute, race, raceOn, onRaceOn, onRaceRide }: Props) {
   const st = plan ? scriptStats(plan) : null;
   const power = ride.sensors.power;
   const hr = ride.sensors.hr;
@@ -129,7 +131,7 @@ export function HomeScreen({ ride, plan, planLabel, dateLabel, settings, onSetti
       )}
 
       {settings.outdoor
-        ? <RouteCard route={route} onRoute={onRoute} />
+        ? <RouteCard route={route} onRoute={onRoute} garminRoute={garminRoute} />
         : route && <span className={s.small}>Trasa „{route.name}” działa tylko na zewnątrz (GPS).</span>}
 
       <details className={s.card} style={{ gap: 0 }}>

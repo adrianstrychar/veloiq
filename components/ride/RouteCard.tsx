@@ -1,6 +1,6 @@
 'use client';
 // Trasa GPX do nawigacji Enzo: wgranie pliku, podgląd (mapa + profil), zapamiętanie na kolejne jazdy.
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import s from './ride.module.css';
 import { routeFromGpx, type RideRoute } from '@/lib/ride/gpx';
 
@@ -59,7 +59,76 @@ function RouteProfile({ route }: { route: RideRoute }) {
   );
 }
 
-export function RouteCard({ route, onRoute }: { route: RideRoute | null; onRoute: (r: RideRoute | null) => void }) {
+interface GarminCourseInfo { id: string; name: string; total: number; climbs: number; targets: number; points: number }
+
+/** Trasa na liczniku Garmin Edge (aplikacja VeloIQ na liczniku): wysyłka wybranej trasy i podgląd tego, co czeka
+ *  na licznik. Widoczne tylko, gdy konto ma sparowany licznik. Licznik pobiera trasę przy synchronizacji. */
+function GarminCourse({ route }: { route: RideRoute | null }) {
+  const [paired, setPaired] = useState(false);
+  const [course, setCourse] = useState<GarminCourseInfo | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const d = await fetch('/api/garmin/devices', { cache: 'no-store' });
+      const dj = d.ok ? ((await d.json()) as { devices?: unknown[] }) : null;
+      if (!dj?.devices?.length) { setPaired(false); return; }
+      setPaired(true);
+      const c = await fetch('/api/garmin/course', { cache: 'no-store' });
+      if (c.ok) setCourse(((await c.json()) as { course?: GarminCourseInfo | null }).course ?? null);
+    } catch { /* offline – sekcja zostaje w ostatnim stanie */ }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  if (!paired) return null;
+
+  const send = async () => {
+    if (!route || busy) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch('/api/garmin/course', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ route }) });
+      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; course?: GarminCourseInfo; message?: string };
+      if (r.ok && j.ok && j.course) {
+        setCourse(j.course);
+        setMsg({ ok: true, text: 'Wysłane. Na liczniku: MENU → Synchronizuj (albo uruchom aplikację VeloIQ na nowo).' });
+      } else setMsg({ ok: false, text: j.message ?? 'Nie udało się wysłać trasy.' });
+    } catch { setMsg({ ok: false, text: 'Brak połączenia z serwerem.' }); }
+    finally { setBusy(false); }
+  };
+  const remove = async () => {
+    setBusy(true); setMsg(null);
+    try { await fetch('/api/garmin/course', { method: 'DELETE' }); setCourse(null); } catch { /* spróbuj ponownie */ }
+    finally { setBusy(false); }
+  };
+
+  const same = !!route && !!course && course.name === route.name.trim().slice(0, 40) && Math.abs(course.total - route.total) < 50;
+  return (
+    <div className={s.stack} style={{ gap: 8, backgroundColor: '#14171C', borderRadius: 12, padding: 12 }}>
+      <div className={s.row} style={{ gap: 10 }}>
+        <span style={{ fontSize: 14, fontWeight: 600 }}>Licznik Garmin</span>
+        {course && <button type="button" className={s.btnText} style={{ height: 32, fontSize: 13, padding: '0 6px' }} onClick={() => void remove()} disabled={busy}>Usuń z licznika</button>}
+      </div>
+      <span className={s.small} style={{ fontSize: 13 }}>
+        {course
+          ? `Na licznik czeka: ${course.name} · ${(course.total / 1000).toFixed(1)} km${course.targets ? ` · cele mocy na ${course.targets} podjazdach` : course.climbs ? ` · podjazdy: ${course.climbs}` : ''}.`
+          : 'Na liczniku nie ma trasy. Wyślij ją, a VeloIQ na Edge pokaże ślad, skręty i podjazdy.'}
+      </span>
+      {route && (
+        <button type="button" className={s.btnGhost} style={{ height: 44 }} onClick={() => void send()} disabled={busy}>
+          {busy ? 'Wysyłam…' : same ? 'Wyślij ponownie na licznik' : 'Wyślij tę trasę na licznik'}
+        </button>
+      )}
+      {msg && <span className={s.small} style={{ fontSize: 13, color: msg.ok ? 'var(--ok)' : '#D98A57' }} role="status">{msg.text}</span>}
+    </div>
+  );
+}
+
+export function RouteCard({ route, onRoute, garminRoute }: {
+  route: RideRoute | null; onRoute: (r: RideRoute | null) => void;
+  /** Trasa do wysłania na licznik Garmin – z celami mocy na podjazdach, gdy włączony jest tryb startowy. */
+  garminRoute?: RideRoute | null;
+}) {
   const input = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -103,6 +172,7 @@ export function RouteCard({ route, onRoute }: { route: RideRoute | null; onRoute
         {busy ? 'Wczytuję…' : route ? 'Zmień trasę (GPX)' : 'Wgraj trasę (GPX)'}
       </button>
       {err && <span className={s.small} style={{ color: '#D98A57' }} role="alert">{err}</span>}
+      <GarminCourse route={garminRoute ?? route} />
     </section>
   );
 }
