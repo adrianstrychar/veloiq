@@ -30,7 +30,8 @@ run_pid=$!
 seen=0
 for i in $(seq 1 240); do
   sleep 0.5
-  n=$(grep -c "^SHOT " bin/demo-run.log 2>/dev/null || echo 0)
+  n=$(grep -c "^SHOT " bin/demo-run.log 2>/dev/null)
+  n=${n:-0}
   if [ "$n" -gt "$seen" ]; then
     name=$(grep "^SHOT " bin/demo-run.log | sed -n "$((seen + 1))p" | cut -d' ' -f2)
     seen=$((seen + 1))

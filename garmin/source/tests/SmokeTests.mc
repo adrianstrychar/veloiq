@@ -96,7 +96,13 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
         if (i >= 250 && i < 330) { p = 140; }
         if (i >= 330 && i < 455) { p = 345; }
         if (i >= 455) { p = 150; }
+        if (i == 0) { System.println("CP pre-tick"); }
         r.simTick(p, 120 + (p / 10), p == 0 ? 0 : 88, 8.0);
+        if (i == 0) {
+            System.println("CP ticked");
+            for (var pg = 0; pg < 5; pg++) { scr.page = pg; System.println("CP draw " + pg); scr.draw(g); }
+            System.println("CP drawn");
+        }
         phases.put(e.phase, true);
         if (e.falseStartLeft() > 0) { sawFs = true; }
         if (i % 7 == 0 || r.banner != null) { Smoke.drawAll(scr, g); }
