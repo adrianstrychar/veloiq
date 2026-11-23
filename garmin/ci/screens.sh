@@ -28,7 +28,7 @@ sleep 6
 monkeydo bin/demo.prg "$DEVICE" > bin/demo-run.log 2>&1 &
 run_pid=$!
 seen=0
-for i in $(seq 1 240); do
+for i in $(seq 1 320); do
   sleep 0.5
   n=$(grep -c "^SHOT " bin/demo-run.log 2>/dev/null)
   n=${n:-0}
@@ -49,7 +49,8 @@ rm -f bin/demo.prg
 if [ "${SHOT_LOG:-1}" = "1" ]; then
   for f in bin/shots/$DEVICE-*.png; do
     [ -f "$f" ] || continue
-    convert "$f" ${SHOT_CROP:+-crop $SHOT_CROP +repage} -quality "${SHOT_Q:-55}" /tmp/shot.jpg 2>/dev/null
+    if [ -n "${SHOT_LOG_FILTER:-}" ] && ! echo "$f" | grep -qE "$SHOT_LOG_FILTER"; then continue; fi
+    convert "$f" -trim +repage ${SHOT_CROP:+-crop $SHOT_CROP +repage} -quality "${SHOT_Q:-55}" /tmp/shot.jpg 2>/dev/null
     echo "SHOTB64 $(basename "$f" .png) $(base64 -w0 /tmp/shot.jpg)"
   done
 fi

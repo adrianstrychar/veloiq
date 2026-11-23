@@ -81,6 +81,17 @@ module Demo {
         }
         else if (s == 17) { ff(r, 150, 318, 165, 94); r.uiPage = 0; shot("15-swobodna-jasny"); }
         else if (s == 18) { r.uiPage = 3; shot("16-swobodna-okrazenia"); }
-        else if (s == 19) { r.finish(false); r.reset(); Th.apply(0); System.println("SHOT END"); }
+        else if (s == 19) {
+            // na koniec kilkanaście sekund PRAWDZIWEJ ścieżki: zegar 1 Hz, czujniki symulatora, auto-pauza, dane z Activity.Info
+            r.finish(false); r.reset(); Th.apply(0);
+            Cfg.put("theme", 0); Cfg.put("autoPause", true); Cfg.load();
+            r.plan = plan(); r.startRide(false);
+            wait = 14;
+        }
+        else if (s == 20) {
+            System.println("REAL s=" + (r.eng == null ? -1 : r.eng.s) + " state=" + r.state + " simulated=" + r.hub.simulated);
+            r.uiPage = 0; shot("17-prawdziwe-czujniki");
+        }
+        else if (s == 21) { r.finish(false); r.reset(); System.println("SHOT END"); }
     }
 }
