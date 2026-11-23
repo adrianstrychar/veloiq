@@ -4,6 +4,8 @@
     <iq:application id="6f1d2c8e-4b7a-4d53-9a1e-5c0b7e2f9a41" type="watch-app" name="@Strings.AppName" entry="VeloIQApp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="3.2.0">
         <iq:products>
             <iq:product id="edge1030"/>
+            <iq:product id="edge1030plus"/>
+            <iq:product id="edge1030bontrager"/>
         </iq:products>
         <iq:permissions>
             <iq:uses-permission id="Communications"/>

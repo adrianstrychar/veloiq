@@ -1,4 +1,4 @@
-# Tylko Edge 1030 – paczka testowa do sklepu (diagnostyka uploadu).
+# Rodzina Edge 1030 (1030, 1030 Plus, 1030 Bontrager) – paczka do sklepu Connect IQ.
 project.manifest = manifest-1030.xml
 
 # Tryb demo (zrzuty ekranu w CI) jest w kodzie pod adnotacja (:demo) - w zwyklym buildzie wykluczony.
