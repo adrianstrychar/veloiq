@@ -77,6 +77,7 @@ class Ride {
     hidden var _moveRun as Number = 0;
 
     var result = null;          // podsumowanie po zapisie
+    var recordFit as Boolean = true;   // false tylko w testach: symulator nie pozwala założyć drugiej sesji FIT w tym samym wywołaniu
     var uiPage as Number = -1;  // prośba o przełączenie strony ekranu jazdy (tryb demo)
     var saved as Boolean = false;
     hidden var _timer = null;
@@ -210,7 +211,7 @@ class Ride {
         } else {
             wk = plan;
         }
-        if (!rec.start(wk.isFree() ? "VeloIQ" : wk.name, Cfg.indoor)) {
+        if (recordFit && !rec.start(wk.isFree() ? "VeloIQ" : wk.name, Cfg.indoor)) {
             showBanner("Nie mogę rozpocząć nagrywania", "error", 6);
             return false;
         }
