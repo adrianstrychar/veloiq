@@ -48,7 +48,8 @@ module Menus {
         m.addItem(toggle("Dźwięki", "tones", Cfg.tones));
         m.addItem(toggle("Trenażer (bez GPS)", "indoor", Cfg.indoor));
         m.addItem(toggle("Jasny motyw", "theme", Cfg.theme == 1));
-        m.addItem(toggle("Most do telefonu (beta)", "phone", Cfg.phoneLink));
+        m.addItem(toggle("Most do telefonu", "phone", Cfg.phoneLink));
+        if (getRide().course != null) { m.addItem(toggle("Nawigacja po trasie", "nav", Cfg.navOn)); }
         m.addItem(item("Pola danych: strona 1", null, "fields0"));
         m.addItem(item("Pola danych: strona 2", null, "fields1"));
         return m;
@@ -66,6 +67,7 @@ module Menus {
         } else {
             m.addItem(item("Okrążenie", null, "lap"));
         }
+        if (r.nav != null) { m.addItem(item(r.nav.enabled ? "Wyłącz nawigację" : "Włącz nawigację", r.nav.course.name, "navtoggle")); }
         m.addItem(item("Zjadłem", "przesuń przypomnienie", "eat"));
         m.addItem(item("Wypiłem", null, "drink"));
         if (scr.page == 1 || scr.page == 2) { m.addItem(item("Pola danych tej strony", null, "fields")); }
@@ -201,6 +203,7 @@ class SettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
         }
         else if (id.equals("theme")) { Cfg.save("theme", (item as WatchUi.ToggleMenuItem).isEnabled() ? 1 : 0); Th.apply(Cfg.theme); }
         else if (id.equals("phone")) { Cfg.save("phoneLink", (item as WatchUi.ToggleMenuItem).isEnabled()); }
+        else if (id.equals("nav")) { Cfg.save("navOn", (item as WatchUi.ToggleMenuItem).isEnabled()); }
         else if (id.equals("fields0")) { WatchUi.pushView(Menus.fields(0), new FieldsMenuDelegate(0), WatchUi.SLIDE_LEFT); }
         else if (id.equals("fields1")) { WatchUi.pushView(Menus.fields(1), new FieldsMenuDelegate(1), WatchUi.SLIDE_LEFT); }
     }
@@ -293,6 +296,9 @@ class RideMenuDelegate extends WatchUi.Menu2InputDelegate {
         else if (id.equals("next") || id.equals("lap")) { r.lapButton(); }
         else if (id.equals("eat")) { if (r.eng != null) { r.eng.fueled(true); r.showBanner("Zapisane: jedzenie", "info", 3); } }
         else if (id.equals("drink")) { if (r.eng != null) { r.eng.fueled(false); r.showBanner("Zapisane: picie", "info", 3); } }
+        else if (id.equals("navtoggle")) {
+            if (r.nav != null) { r.setNav(!r.nav.enabled); r.showBanner(r.nav.enabled ? "Nawigacja włączona" : "Nawigacja wyłączona", "info", 3); }
+        }
         else if (id.equals("pause")) { r.togglePause(); }
         WatchUi.popView(WatchUi.SLIDE_RIGHT);
     }

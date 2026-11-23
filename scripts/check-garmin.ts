@@ -8,6 +8,7 @@ import { parseAnswer, stateLines } from '../lib/garmin/ask';
 import { deviceName, newCode, newToken, sha256 } from '../lib/garmin/auth';
 import { planDayToScript } from '../lib/ride/plan-to-script';
 import type { PlanDayRow } from '../lib/planned-day';
+import { buildCourse, courseMeta, CourseError, decodeParts, MAX_POINTS, PART_POINTS } from '../lib/garmin/course';
 
 let n = 0;
 const ok = (name: string, fn: () => void) => { fn(); n++; console.log(`ok  ${name}`); };
@@ -119,6 +120,48 @@ ok('token i kod parowania', () => {
   assert.match(newCode(), /^\d{6}$/);
   assert.equal(deviceName('006-B2713-00'), 'Edge 1030');
   assert.equal(deviceName('???'), 'Garmin Edge');
+});
+
+ok('trasa GPX dla licznika: uproszczenie, pakowanie binarne, skręty i podjazdy', () => {
+  // kręta trasa 120 km: sinusoida z podjazdem, punkty co 10 m (jak z lib/ride/gpx.ts)
+  const pts: [number, number, number | null, number][] = [];
+  const kLon = 1 / (111_320 * Math.cos((50.78 * Math.PI) / 180));
+  for (let d = 0; d <= 120_000; d += 10) {
+    const east = d * 0.9, north = 1500 * Math.sin(d / 900) + 400 * Math.sin(d / 130);
+    pts.push([50.78 + north / 110_540, 15.75 + east * kLon, 600 + 300 * Math.sin(d / 9000), d]);
+  }
+  const route = { name: 'Runda – „Karkonosze” 120', total: 120_000, gain: 2100, pts,
+    cues: [{ d: 5000, dir: 'left', angle: -80 }, { d: 300, dir: 'sharpRight', angle: 130 }, { d: 9000, dir: 'bogus', angle: 0 }],
+    climbs: [{ start: 20_000, end: 26_500, gain: 410, grade: 6.3, low: 280, high: 300, tier: 'atak' }, { start: 60_000, end: 61_000, gain: 60, grade: 6 }] };
+  const c = buildCourse(route);
+  assert.ok(c.n <= MAX_POINTS && c.n > 200, `punktów: ${c.n}`);
+  assert.equal(c.parts.length, Math.ceil(c.n / PART_POINTS));
+  for (const part of c.parts) assert.ok(part.length <= 2992, 'część mieści się w jednej wartości pamięci licznika');
+  const dec = decodeParts(c.parts);
+  assert.equal(dec.length, c.n);
+  assert.ok(Math.abs(dec[dec.length - 1].d - 120_000) <= c.n, 'dystans po trasie zachowany (zaokrąglenia do 1 m na punkt)');
+  assert.ok(Math.abs(dec[0].lat - 50.78) < 1e-5 && Math.abs(dec[0].lon - 15.75) < 1e-5);
+  // żaden punkt oryginału nie leży dalej niż 60 m od uproszczonego śladu, a odstępy nie przekraczają 200 m + krok
+  let j = 0, worst = 0;
+  for (const p of pts) {
+    while (j < dec.length - 2 && dec[j + 1].d < p[3]) j++;
+    const a = dec[j], b = dec[j + 1];
+    const t = Math.max(0, Math.min(1, (p[3] - a.d) / Math.max(1, b.d - a.d)));
+    const dy = (p[0] - (a.lat + (b.lat - a.lat) * t)) * 110_540, dx = (p[1] - (a.lon + (b.lon - a.lon) * t)) / kLon;
+    worst = Math.max(worst, Math.hypot(dx, dy));
+  }
+  assert.ok(worst < 60, `największe odchylenie ${worst.toFixed(1)} m`);
+  for (let i = 1; i < dec.length; i++) assert.ok(dec[i].d - dec[i - 1].d <= 215, 'punkt co najwyżej co ~200 m');
+  assert.deepEqual(c.cues, [[300, 5], [5000, 0]]);                     // posortowane, nieznany kierunek pominięty
+  assert.deepEqual(c.climbs, [[20000, 26500, 410, 63, 280, 300, 2], [60000, 61000, 60, 60, 0, 0, 0]]);
+  assert.equal(c.name, 'Runda - "Karkonosze" 120');
+  assert.ok(JSON.stringify(courseMeta(c)).length < 6000);
+  assert.throws(() => buildCourse({ pts: [[50, 15, null, 0], [50.001, 15, null, 100]] }), CourseError);   // krótsza niż 500 m
+  assert.throws(() => buildCourse({ pts: 'x' }), CourseError);
+  // krótka trasa: uproszczenie zostawia narożniki
+  const short = buildCourse({ name: 'L', pts: Array.from({ length: 201 }, (_, i) => (i <= 100
+    ? [50 + (i * 10) / 110_540, 15, 500, i * 10] : [50 + 1000 / 110_540, 15 + ((i - 100) * 10) * kLon, 500, i * 10])) });
+  assert.ok(short.n >= 3 && short.n <= 14, `krótka trasa: ${short.n} punktów`);
 });
 
 console.log(`\n${n} testów OK`);

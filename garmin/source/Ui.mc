@@ -1,5 +1,6 @@
 import Toybox.Graphics;
 import Toybox.Lang;
+import Toybox.Math;
 import Toybox.System;
 
 //! Rysowanie: dobór czcionek do miejsca (ten sam kod na 282×470, 246×322 i 480×800), zawijanie tekstu, przyciski.
@@ -106,6 +107,36 @@ module Ui {
         dc.drawText(x + w / 2, y + h / 2, f, label, C | VC);
     }
 
+    //! Strzałka skrętu: trzon od dołu do środka, potem ramię pod kątem deg (0 = prosto, dodatnie w prawo) z grotem.
+    function arrow(dc as Graphics.Dc, cx, cy, size, deg, color) as Void {
+        var pw = Util.max(3, size / 6);
+        dc.setColor(color, Graphics.COLOR_TRANSPARENT);
+        dc.setPenWidth(pw);
+        var a = deg * Math.PI / 180.0;
+        var half = size / 2;
+        // trzon (dojazd do skrętu)
+        dc.drawLine(cx, cy + half, cx, cy);
+        // ramię po skręcie
+        var ex = cx + Math.sin(a) * half;
+        var ey = cy - Math.cos(a) * half;
+        dc.drawLine(cx, cy, ex, ey);
+        dc.fillCircle(cx, cy, pw / 2);
+        // grot
+        var hl = size / 3.2;
+        var l = a + 2.6;
+        var rr = a - 2.6;
+        dc.fillPolygon([[Util.round(ex + Math.sin(a) * hl * 0.6), Util.round(ey - Math.cos(a) * hl * 0.6)],
+            [Util.round(ex + Math.sin(l) * hl * 0.7), Util.round(ey - Math.cos(l) * hl * 0.7)],
+            [Util.round(ex + Math.sin(rr) * hl * 0.7), Util.round(ey - Math.cos(rr) * hl * 0.7)]]);
+        dc.setPenWidth(1);
+    }
+
+    //! Odległość do pokazania: metry do 950 m (co 10), dalej kilometry z jednym miejscem po przecinku.
+    function meters(m) as String {
+        if (m < 950) { return (Util.round(m / 10.0) * 10).format("%d") + " m"; }
+        return (m / 1000.0).format("%.1f") + " km";
+    }
+
     function inside(hit, x, y) as Boolean {
         return x >= hit[1] && x < hit[1] + hit[3] && y >= hit[2] && y < hit[2] + hit[4];
     }
@@ -156,13 +187,13 @@ module Ui {
 
 //! Własne pola danych VeloIQ. id → etykieta + wartość liczona z bieżącej jazdy.
 module Fields {
-    const COUNT = 34;
+    const COUNT = 38;
 
     function label(id as Number) as String {
         var t = ["MOC 3s", "MOC 10s", "MOC 30s", "TĘTNO", "KADENCJA", "KM/H", "DYSTANS", "CZAS", "ŚR. MOC", "NP",
             "IF", "TSS", "PRACA kJ", "W'BAL %", "MOC LAP", "CZAS LAP", "HR LAP", "ŚR. HR", "PRZEWYŻ.", "GODZINA",
             "CEL W", "DO KOŃCA LAPA", "ŚR. LAP PLANU", "ZGODNOŚĆ %", "% FTP", "W/KG", "HR % MAX", "ŚR. KAD.", "STREFA", "DO KOŃCA PLANU",
-            "MAX MOC", "TEMP.", "WYSOKOŚĆ", "OD JEDZENIA"];
+            "MAX MOC", "TEMP.", "WYSOKOŚĆ", "OD JEDZENIA", "DO METY km", "DO SKRĘTU", "DO SZCZYTU", "CEL PODJAZDU"];
         return (id >= 0 && id < t.size()) ? t[id] : "?";
     }
 
@@ -220,6 +251,18 @@ module Fields {
         if (id == 31) { return hub.temp == null ? "--" : hub.temp.format("%.0f"); }
         if (id == 32) { return hub.alt == null ? "--" : hub.alt.format("%.0f"); }
         if (id == 33) { return Util.clock(e.s - e.lastEat); }
+        // nawigacja po trasie
+        var nav = r.nav;
+        if (nav == null || !nav.acquired) { return "--"; }
+        if (id == 34) { return (nav.left() / 1000.0).format("%.1f"); }
+        if (id == 35) { var t = nav.nextTurn(); return t == null ? "--" : Ui.meters(t[1]); }
+        var nc = nav.nextClimb();
+        if (id == 36) { return nc == null ? "--" : (nc[2] / 1000.0).format("%.1f"); }
+        if (id == 37) {
+            if (nc == null) { return "--"; }
+            var cl = nav.course.climbs[nc[0]];
+            return cl[4] > 0 ? cl[4].format("%d") + "-" + cl[5].format("%d") : "--";
+        }
         return "--";
     }
 
@@ -239,7 +282,13 @@ module Fields {
         var e = r.eng;
         if (e == null || r.hub.power == null) { return Th.dim; }
         var st = e.step();
-        if (st == null) { return Th.zone(e.m.zoneOf(p)); }
+        if (st == null) {
+            // jazda swobodna na podjeździe z celem mocy (strategia wyścigu) – kolor względem celu
+            var cn = r.climbNow();
+            if (cn == null) { return Th.zone(e.m.zoneOf(p)); }
+            var ct = Util.max(10.0, (cn[0] + cn[1]) / 2.0 * 0.03) / 2;
+            return p > cn[1] + ct ? Th.bad : (p < cn[0] - ct ? Th.cold : Th.good);
+        }
         var tol = Util.max(10.0, (st.lo + st.hi) / 2.0 * 0.03) / 2;
         if (p > st.hi + tol) { return Th.bad; }
         if (p < st.lo - tol) { return st.type == StepType.RECOVERY || st.type == StepType.COOLDOWN ? Th.good : Th.cold; }

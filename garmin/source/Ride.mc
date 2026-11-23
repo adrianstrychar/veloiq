@@ -25,6 +25,12 @@ class Ride {
     var up as Uploader;
     var link as PhoneLink;
 
+    var course = null;          // trasa GPX z VeloIQ (Course) albo null
+    var nav = null;             // nawigacja bieżącej jazdy (Nav) albo null
+    var courseNote = null;      // stan pobierania trasy do pokazania na ekranie startowym
+    hidden var _cMeta = null;   // nagłówek pobieranej trasy
+    hidden var _cPart as Number = 0;
+
     var plan = null;            // trening wybrany na ekranie startowym (Workout) albo null
     var wk = null;              // trening bieżącej jazdy (plan albo jazda swobodna)
     var eng = null;             // Engine bieżącej jazdy
@@ -79,6 +85,7 @@ class Ride {
     var result = null;          // podsumowanie po zapisie
     var recordFit as Boolean = true;   // false tylko w testach: symulator nie pozwala założyć drugiej sesji FIT w tym samym wywołaniu
     var uiPage as Number = -1;  // prośba o przełączenie strony ekranu jazdy (tryb demo)
+    var uiZoom as Number = -1;  // jw. – skala mapy na stronie TRASA
     var saved as Boolean = false;
     hidden var _timer = null;
     hidden var _tickNo as Number = 0;
@@ -101,6 +108,7 @@ class Ride {
         _timer = new Timer.Timer();
         _timer.start(method(:onTick), 1000, true);
         loadPlan();
+        course = Course.load();
         if (Cfg.paired()) { sync(null); } else { up.kick(); }   // po starcie: świeży plan z VeloIQ
         Demo.boot(self);
     }
@@ -154,11 +162,75 @@ class Ride {
         Application.Storage.setValue("brief", data.get("brief"));
         Application.Storage.setValue("briefDate", Util.str(data.get("today"), ""));
         Application.Storage.setValue("rtk", Util.str(data.get("rideToken"), ""));
+        courseSync(data.get("courseId"));
         Application.Storage.deleteValue("pick");     // po synchronizacji znów domyślnie trening na dziś
         Cfg.load();
         if (!active()) { loadPlan(); }
         up.kick();
         if (scr != null) { scr.flash(plan != null ? "Pobrano: " + Util.ellipsis(plan.name, 26) : "Zsynchronizowano, dziś bez treningu"); }
+        WatchUi.requestUpdate();
+    }
+
+    // ------------------------------------------------------------------ trasa GPX z VeloIQ
+    //! Po synchronizacji: serwer podaje identyfikator trasy przygotowanej dla licznika (null = brak).
+    //! Nowa trasa jest pobierana częściami (małe odpowiedzi), stara zostaje do końca pobierania nietknięta w pamięci RAM.
+    hidden function courseSync(idv) as Void {
+        var id = idv == null ? "" : idv.toString();
+        if (id.length() == 0) {
+            if (Course.storedId().length() > 0) { Course.clear(); }
+            if (!active()) { course = null; }
+            return;
+        }
+        if (id.equals(Course.storedId())) { return; }
+        courseNote = "Pobieram trasę...";
+        api.get("/api/garmin/course/part", { "i" => "meta" }, method(:onCourseMeta));
+    }
+
+    function onCourseMeta(code as Number, data) as Void {
+        if (code != 200 || data == null || !(data instanceof Dictionary) || Util.int(data.get("parts"), 0) <= 0) {
+            courseNote = "Trasa: " + Api.errorText(code);
+            return;
+        }
+        Course.clear();
+        _cMeta = data;
+        _cPart = 0;
+        nextCoursePart();
+    }
+
+    hidden function nextCoursePart() as Void {
+        var parts = Util.int(_cMeta.get("parts"), 0);
+        courseNote = "Pobieram trasę " + (_cPart + 1) + "/" + parts;
+        api.get("/api/garmin/course/part", { "i" => _cPart, "id" => Util.str(_cMeta.get("id"), "") }, method(:onCoursePart));
+        WatchUi.requestUpdate();
+    }
+
+    function onCoursePart(code as Number, data) as Void {
+        if (_cMeta == null) { return; }
+        if (code != 200 || data == null || !(data instanceof Dictionary) || data.get("d") == null) {
+            courseNote = "Trasa: " + Api.errorText(code);
+            _cMeta = null;
+            return;
+        }
+        try {
+            Application.Storage.setValue("crs_p" + _cPart, data.get("d").toString());
+        } catch (ex) {
+            courseNote = "Trasa: brak miejsca w pamięci";
+            _cMeta = null;
+            return;
+        }
+        _cPart++;
+        if (_cPart < Util.int(_cMeta.get("parts"), 0)) { nextCoursePart(); return; }
+        // komplet: nagłówek, skręty i podjazdy osobno (jedna wartość w pamięci licznika ma ograniczony rozmiar)
+        var id = Util.str(_cMeta.get("id"), "");
+        Application.Storage.setValue("crs_t", _cMeta.get("cues"));
+        Application.Storage.setValue("crs_c", _cMeta.get("climbs"));
+        Application.Storage.setValue("crs", { "id" => id, "name" => _cMeta.get("name"), "total" => _cMeta.get("total"),
+            "gain" => _cMeta.get("gain"), "n" => _cMeta.get("n"), "parts" => _cMeta.get("parts") });
+        Application.Storage.setValue("crs_ok", id);
+        _cMeta = null;
+        var c = Course.load();
+        if (!active()) { course = c; }
+        courseNote = c == null ? "Trasa: błąd danych" : null;
         WatchUi.requestUpdate();
     }
 
@@ -218,6 +290,11 @@ class Ride {
         }
         eng = new Engine(wk, Cfg.wPrime);
         eng.listener = self;
+        nav = null;
+        if (course != null && Cfg.navOn && !Cfg.indoor) {
+            nav = new Nav(course);
+            nav.owner = self;
+        }
         startEpoch = Time.now().value();
         dist = 0.0; ascent = 0; speed = null;
         lapNo = 1; lapStartS = 0; lapSumP = 0; lapN = 0; lapSumHr = 0; lapHrN = 0; lapMaxP = 0; lapStartDist = 0.0; prevLap = null;
@@ -298,6 +375,8 @@ class Ride {
         hub.simulated = false;
         state = RideState.IDLE;
         eng = null;
+        nav = null;
+        if (course == null || !course.id.equals(Course.storedId())) { course = Course.load(); }
         wk = null;
         loadPlan();
     }
@@ -373,6 +452,13 @@ class Ride {
         if (state == RideState.RECORDING) { rideTick(); }
     }
 
+    //! Pozycja podana z zewnątrz w mikrostopniach (testy w symulatorze, tryb demo).
+    function simPos(latMicro as Number, lonMicro as Number) as Void {
+        hub.simulated = true;
+        hub.lat = latMicro / 1000000.0d;
+        hub.lon = lonMicro / 1000000.0d;
+    }
+
     hidden function rideTick() as Void {
         var p = hub.power;
         var h = hub.hr;
@@ -396,6 +482,7 @@ class Ride {
         if (eng.s % 10 == 0) { pushGps(); }
 
         autoLapTick(pw);
+        navTick();
 
         // telefon: dane na żywo
         if (link != null && Cfg.phoneLink) {
@@ -486,6 +573,44 @@ class Ride {
     hidden function autoLap(label as String) as Void {
         closeLap(0, StepType.FREE, true);
         showBanner(label + "\n" + Util.clock(prevLap["sec"]) + ", " + prevLap["avgP"] + " W", "lap", 5);
+    }
+
+    // ------------------------------------------------------------------ nawigacja po trasie
+    hidden function navTick() as Void {
+        if (nav == null || hub.lat == null || hub.lon == null) { return; }
+        if (!hub.simulated && !hub.hasGps()) { return; }
+        nav.update(hub.lat, hub.lon, speed == null ? null : speed * 3.6, eng.s);
+    }
+
+    //! Zdarzenie nawigacji: baner na liczniku + ten sam klucz do telefonu (głos Enzo ma nagrania skrętów i podjazdów).
+    function onNav(key, vars) as Void {
+        var text = Phrases.nav(key, vars);
+        if (text != null) {
+            showBanner(text, key.equals("navOff") ? "error" : "nav", key.equals("navTurn") ? 6 : 8);
+            if (cues.size() >= 12) { cues = cues.slice(1, null); }
+            cues.add([eng == null ? 0 : eng.s, "nav", text]);
+            if (key.equals("navTurn")) { tone(Util.int(vars.get("m"), 0) > 0 ? "msg" : "go"); }
+            else if (key.equals("navOff")) { tone("error"); }
+            else if (key.equals("navBack") || key.equals("navTop") || key.equals("navDone")) { tone("good"); }
+            else { tone("msg"); }
+        }
+        link.event({ "t" => "cue", "k" => key, "kind" => "nav", "x" => (text == null ? "" : text), "v" => vars });
+    }
+
+    //! Włączenie / wyłączenie nawigacji w trakcie jazdy (menu).
+    function setNav(on as Boolean) as Void {
+        if (nav != null) { nav.setEnabled(on); }
+    }
+
+    //! Podjazd z trasy, na którym teraz jesteśmy, jeśli ma cel mocy (strategia wyścigu):
+    //! [cel↓, cel↑, metry do szczytu, numer, liczba podjazdów, taktyka] albo null.
+    function climbNow() {
+        if (nav == null || !nav.enabled || !nav.acquired || nav.offRoute) { return null; }
+        var nc = nav.nextClimb();
+        if (nc == null || nc[1] > 0) { return null; }
+        var cl = nav.course.climbs[nc[0]];
+        if (cl[4] <= 0 || cl[5] <= 0) { return null; }
+        return [cl[4], cl[5], nc[2], nc[0] + 1, nav.course.climbs.size(), cl[6]];
     }
 
     // ------------------------------------------------------------------ zdarzenia silnika
@@ -627,6 +752,7 @@ class Ride {
             }
             d.put("series", ser);
         }
+        if (nav != null && nav.enabled) { d.put("route", nav.state()); }
         if (wk.readiness != null) { d.put("readiness", Util.round(wk.readiness)); d.put("readyState", wk.readyState); }
         if (wk.recovery != null) { d.put("recovery", Util.round(wk.recovery)); }
         return d;

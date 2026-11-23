@@ -47,6 +47,20 @@ module Demo {
         }
     }
 
+    var track = null;
+    var ti as Number = 0;
+
+    //! n sekund jazdy po trasie demonstracyjnej (10 m na sekundę) z zadaną mocą.
+    function drive(r, n as Number, pw as Number, hr as Number, cad as Number) as Void {
+        if (track == null) { track = DemoCourse.drive(); }
+        for (var i = 0; i < n && ti * 2 + 1 < track.size(); i++) {
+            t++;
+            r.simPos(track[ti * 2], track[ti * 2 + 1]);
+            ti++;
+            r.simTick(pw + ((t * 7919) % 11) - 5, hr, cad, 10.0);
+        }
+    }
+
     function shot(name as String) as Void {
         System.println("SHOT " + name);
         wait = 3;
@@ -93,6 +107,21 @@ module Demo {
             System.println("REAL s=" + (r.eng == null ? -1 : r.eng.s) + " state=" + r.state + " simulated=" + r.hub.simulated);
             r.uiPage = 0; shot("17-prawdziwe-czujniki");
         }
-        else if (s == 22) { r.finish(false); r.reset(); System.println("SHOT END"); }
+        // --- nawigacja po trasie GPX: jazda swobodna po pętli demonstracyjnej z podjazdem i celem mocy ze strategii
+        else if (s == 22) {
+            r.finish(false); r.reset();
+            Cfg.put("autoPause", false); Cfg.put("autoLapMode", 0); Cfg.load();
+            DemoCourse.install();
+            r.course = Course.load();
+            r.plan = null;
+            r.hub.power = 0; r.hub.hr = 71;
+            shot("18-start-z-trasa");
+        }
+        else if (s == 23) { r.startRide(true); drive(r, 100, 205, 134, 89); r.banner = null; r.uiPage = 5; r.uiZoom = 1; shot("19-trasa-skret"); }
+        else if (s == 24) { drive(r, 18, 240, 141, 88); shot("20-trasa-teraz"); }
+        else if (s == 25) { drive(r, 72, 291, 158, 84); r.banner = null; r.uiPage = 0; shot("21-podjazd-cel"); }
+        else if (s == 26) { r.uiPage = 5; r.uiZoom = 4; shot("22-trasa-cala"); }
+        else if (s == 27) { drive(r, 76, 289, 163, 83); r.uiZoom = 0; shot("23-trasa-w-lewo"); }
+        else if (s == 28) { r.finish(false); r.reset(); System.println("SHOT END"); }
     }
 }

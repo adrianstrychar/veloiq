@@ -28,7 +28,7 @@ sleep 6
 monkeydo bin/demo.prg "$DEVICE" > bin/demo-run.log 2>&1 &
 run_pid=$!
 seen=0
-for i in $(seq 1 320); do
+for i in $(seq 1 440); do
   sleep 0.5
   n=$(grep -c "^SHOT " bin/demo-run.log 2>/dev/null)
   n=${n:-0}

@@ -13,7 +13,7 @@ export const MAX_POINTS = 1496;        // 8 części × 187 punktów
 export const PART_POINTS = 187;        // 2244 B → 2992 znaki base64 (jedna wartość w pamięci licznika)
 const MAX_CUES = 300;
 const MAX_CLIMBS = 40;
-const MAX_GAP_M = 400;                 // najdłuższy odcinek bez punktu (profil wysokości na prostych)
+const MAX_GAP_M = 200;                 // najdłuższy odcinek bez punktu (profil wysokości na prostych)
 
 export const DIR_CODES = ['left', 'right', 'slightLeft', 'slightRight', 'sharpLeft', 'sharpRight', 'uturn'] as const;
 export const TIER_CODES = ['', 'oszczedz', 'atak', 'full'] as const;
@@ -82,11 +82,12 @@ function dpMask(p: CoursePoint[], tolM: number): boolean[] {
   return keep;
 }
 
-/** Uproszczenie do najwyżej `max` punktów: tolerancja rośnie od 5 m, a na prostych zostaje punkt co MAX_GAP_M. */
+/** Uproszczenie śladu: Douglas–Peucker od 4 m (tolerancja rośnie, aż zostanie najwyżej `max` punktów),
+ *  a na prostych zostaje punkt co MAX_GAP_M – żeby profil wysokości między punktami nie był zbyt zgrubny. */
 export function simplify(p: CoursePoint[], max = MAX_POINTS): CoursePoint[] {
-  if (p.length <= max) return p;
-  let tol = 5;
-  for (let round = 0; round < 12; round++) {
+  if (p.length <= 2) return p;
+  let tol = 4;
+  for (let round = 0; round < 14; round++) {
     const keep = dpMask(p, tol);
     let last = 0;
     for (let i = 1; i < p.length; i++) {

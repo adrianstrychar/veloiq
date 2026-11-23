@@ -50,6 +50,22 @@ module Phrases {
         };
     }
 
+    //! Komunikaty nawigacji po trasie (klucze jak w telefonie). null = nic na ekranie (tylko głos w telefonie).
+    function nav(key as String, vars as Dictionary) {
+        var t = null;
+        if (key.equals("navTurn")) { t = Util.int(vars.get("m"), 0) > 0 ? "Za {m} m\n{dirTxt}" : "Teraz\n{dirTxt}"; }
+        else if (key.equals("navStart")) { t = "Nawigacja\n{name}"; }
+        else if (key.equals("navToStart")) { t = "Do trasy {m} m\njedź do startu"; }
+        else if (key.equals("navOff")) { t = "Poza trasą\nwróć na ślad"; }
+        else if (key.equals("navBack")) { t = "Z powrotem na trasie"; }
+        else if (key.equals("navClimb")) { t = "Podjazd za 1 km\n{len} km, {grade}%, {target}"; }
+        else if (key.equals("navClimbStart")) { t = "Podjazd {len} km, {grade}%\n{target}"; }
+        else if (key.equals("navTop")) { t = "Szczyt!\nmożna odetchnąć"; }
+        else if (key.equals("navLeft")) { t = "Do mety {km} km"; }
+        else if (key.equals("navDone")) { t = "Meta!\nkoniec trasy"; }
+        return t == null ? null : Util.render(t, vars);
+    }
+
     function verdictText(v as String) as String {
         if (v.equals("high")) { return "mocniej niż plan"; }
         if (v.equals("low")) { return "trochę poniżej planu"; }

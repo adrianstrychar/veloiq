@@ -1,14 +1,22 @@
 import Toybox.Graphics;
 import Toybox.Lang;
+import Toybox.Math;
 import Toybox.System;
 import Toybox.WatchUi;
 
-//! Ekrany jazdy: TRENING (cel mocy, odliczanie, profil), dwie strony własnych pól danych, OKRĄŻENIA / SERIE, ENZO.
+//! Ekrany jazdy: TRENING (cel mocy, odliczanie, profil), dwie strony własnych pól danych, OKRĄŻENIA / SERIE, ENZO
+//! oraz – gdy jedziemy po trasie GPX – TRASA (ostatnia strona: jedno przesunięcie wstecz z ekranu treningu).
 //! Strony: przesunięcie palcem w bok albo przyciski góra/dół. Rysowany przez RootView.
 class RideScreen {
     const PAGES = 5;
+    const NAV_PAGE = 5;
     var page as Number = 0;
     var hits;
+    var zoom as Number = 1;      // strona TRASA: 0 = 400 m, 1 = 1 km, 2 = 3 km, 3 = 10 km, 4 = cała trasa
+
+    function pageCount() as Number {
+        return getRide().nav != null ? PAGES + 1 : PAGES;
+    }
 
     function initialize() {
         hits = [];
@@ -23,8 +31,10 @@ class RideScreen {
         if (e == null) { return; }
         var w = dc.getWidth();
         var h = dc.getHeight();
+        if (page >= pageCount()) { page = 0; }
         var top = drawBar(dc, r, w, h);
         if (page == 0) { drawMain(dc, r, e, top, w, h); }
+        else if (page == NAV_PAGE) { drawNav(dc, r, e, top, w, h); }
         else if (page == 1 || page == 2) { drawGrid(dc, r, top, w, h, page - 1); }
         else if (page == 3) { drawLaps(dc, r, e, top, w, h); }
         else { drawEnzo(dc, r, top, w, h); }
@@ -42,8 +52,9 @@ class RideScreen {
         Ui.text(dc, pad, 1, f, Ui.clockNow(), Ui.L, Th.dim);
         // kropki stron
         var gap = bh / 2 + 2;
-        var x0 = w / 2 - (PAGES - 1) * gap / 2;
-        for (var i = 0; i < PAGES; i++) {
+        var np = pageCount();
+        var x0 = w / 2 - (np - 1) * gap / 2;
+        for (var i = 0; i < np; i++) {
             dc.setColor(i == page ? Th.accent : Th.line, Graphics.COLOR_TRANSPARENT);
             dc.fillCircle(x0 + i * gap, bh / 2, i == page ? 4 : 3);
         }
@@ -70,6 +81,8 @@ class RideScreen {
         var p3 = Util.round(e.hist.avgP(3));
         var xt = Graphics.FONT_XTINY;
         var xtH = dc.getFontHeight(xt);
+        // jazda swobodna po trasie: podjazd z celem mocy ze strategii zachowuje się jak krok planu
+        var cn = st == null ? r.climbNow() : null;
 
         // --- A. nagłówek kroku
         var y = top;
@@ -95,6 +108,13 @@ class RideScreen {
                 if (nx.type == StepType.INTERVAL) { sub = sub + ", " + nx.lo + "-" + nx.hi + " W"; }
             }
             Ui.text(dc, pad + 5, y + hh - xtH - 1, xt, Util.ellipsis(sub, 38), Ui.L, Th.dim);
+        } else if (cn != null) {
+            Ui.fillRect(dc, 0, y, 5, hh, Th.stepColor(StepType.INTERVAL));
+            Ui.text(dc, pad + 5, y, Graphics.FONT_SMALL, "PODJAZD " + cn[3] + "/" + cn[4], Ui.L, Th.fg);
+            var tier = ["", "oszczędzaj", "atak", "na maksa"][cn[5]];
+            if (tier.length() > 0) { Ui.text(dc, w - pad, y, Graphics.FONT_SMALL, tier, Ui.R, cn[5] == 1 ? Th.cold : Th.warn); }
+            var lapAvgC = r.lapN > 0 ? Util.round(r.lapSumP.toFloat() / r.lapN) : 0;
+            Ui.text(dc, pad + 5, y + hh - xtH - 1, xt, "okrążenie " + r.lapNo + ": " + Util.clock(r.lapN) + ", " + lapAvgC + " W", Ui.L, Th.dim);
         } else {
             Ui.fillRect(dc, 0, y, 5, hh, e.inEffort() ? Th.warn : Th.line);
             if (e.inEffort()) {
@@ -119,6 +139,8 @@ class RideScreen {
         var tgt = "";
         if (st != null) {
             tgt = (st.type == StepType.RECOVERY || st.type == StepType.COOLDOWN) ? "luźno, poniżej " + st.hi + " W" : "cel " + st.lo + "-" + st.hi + " W";
+        } else if (cn != null) {
+            tgt = "cel " + cn[0] + "-" + cn[1] + " W";
         } else {
             tgt = "Z" + (e.m.zoneOf(p3) + 1) + ", " + Util.round(p3 * 100.0 / e.m.ftp) + "% FTP";
         }
@@ -127,7 +149,13 @@ class RideScreen {
 
         // --- C. wskaźnik względem celu / stref
         var gh = Util.round(H * 0.05);
-        drawGauge(dc, e, st, p3, pad, y + 2, w - 2 * pad, gh - 4, hub.power != null);
+        if (st != null) {
+            drawGauge(dc, e, [st.lo, st.hi, st.type == StepType.RECOVERY || st.type == StepType.COOLDOWN], p3, pad, y + 2, w - 2 * pad, gh - 4, hub.power != null);
+        } else if (cn != null) {
+            drawGauge(dc, e, [cn[0], cn[1], false], p3, pad, y + 2, w - 2 * pad, gh - 4, hub.power != null);
+        } else {
+            drawGauge(dc, e, null, p3, pad, y + 2, w - 2 * pad, gh - 4, hub.power != null);
+        }
         y += gh;
 
         // --- D. czas
@@ -140,6 +168,8 @@ class RideScreen {
             else if (e.phase == Phase.ARMED) { tLabel = "START ZA (albo ruszaj wcześniej)"; tVal = Util.clock(e.stepRemaining()); tCol = Th.accent; }
             else if (e.phase == Phase.AUTOPAUSED) { tLabel = "PAUZA INTERWAŁU, ZOSTAŁO"; tVal = Util.clock(e.stepRemaining()); tCol = Th.warn; }
             else { tLabel = "DO KOŃCA LAPA"; tVal = Util.clock(e.stepRemaining()); }
+        } else if (cn != null) {
+            tLabel = "DO SZCZYTU"; tVal = Ui.meters(cn[2]); tCol = Th.accent;
         }
         var fsLeft = e.falseStartLeft();
         var tw = w;
@@ -199,12 +229,13 @@ class RideScreen {
     }
 
     //! Pasek: w planie zakres celu ze znacznikiem bieżącej mocy, w jeździe swobodnej strefy Z1–Z7.
-    hidden function drawGauge(dc, e, st, p, x, y, w, h, live) as Void {
+    //! tg = [cel↓, cel↑, krok luźny (liczy się tylko górna granica)] – krok planu albo podjazd ze strategii; null = strefy.
+    hidden function drawGauge(dc, e, tg, p, x, y, w, h, live) as Void {
         if (h < 4) { h = 4; }
-        if (st != null) {
-            var lo = st.lo;
-            var hi = st.hi;
-            var rest = st.type == StepType.RECOVERY || st.type == StepType.COOLDOWN;
+        if (tg != null) {
+            var lo = tg[0];
+            var hi = tg[1];
+            var rest = tg[2];
             if (rest) { lo = 0; }
             var span = Util.max(hi - lo, 20) * 1.5;
             var a = rest ? 0.0 : lo - span;
@@ -232,6 +263,253 @@ class RideScreen {
                 dc.fillRectangle(px - 2, y - 3, 4, h + 6);
             }
         }
+    }
+
+    // ------------------------------------------------------------------ strona TRASA
+    hidden function drawNav(dc, r, e, top, w, h) as Void {
+        var nav = r.nav;
+        if (nav == null) { return; }
+        var c = nav.course;
+        var pad = w / 28;
+        var H = h - top;
+        var xt = Graphics.FONT_XTINY;
+        var xtH = dc.getFontHeight(xt);
+        var y = top;
+
+        // --- A. skręt / stan
+        var ah = Util.round(H * 0.17);
+        var tn = nav.nextTurn();
+        if (!nav.enabled) {
+            Ui.text(dc, w / 2, y + (ah - dc.getFontHeight(Graphics.FONT_SMALL)) / 2, Graphics.FONT_SMALL, "NAWIGACJA WYŁĄCZONA", Ui.C, Th.dim);
+        } else if (!nav.acquired) {
+            Ui.text(dc, pad, y, xt, "JEDŹ DO STARTU TRASY", Ui.L, Th.warn);
+            Ui.value(dc, w / 2, y + xtH + (ah - xtH) / 2, w - 2 * pad, ah - xtH, Ui.meters(nav.offDist), Th.fg);
+        } else if (nav.offRoute) {
+            Ui.fillRect(dc, 0, y, w, ah, Th.bad);
+            Ui.text(dc, w / 2, y, xt, "POZA TRASĄ", Ui.C, 0xFFFFFF);
+            Ui.value(dc, w / 2, y + xtH + (ah - xtH) / 2, w - 2 * pad, ah - xtH, Ui.meters(nav.offDist), 0xFFFFFF);
+        } else if (tn != null && tn[1] < 5000) {
+            var near = tn[1] <= 150;
+            var asz = ah - 8;
+            Ui.arrow(dc, pad + asz / 2 + 4, y + ah / 2, asz, Dir.angle(tn[0]), near ? Th.warn : Th.accent);
+            var tx = pad + asz + 14;
+            Ui.text(dc, tx, y, xt, Dir.label(tn[0]).toUpper(), Ui.L, Th.dim);
+            var dTxt = Ui.meters(tn[1]);
+            var df = Ui.fit(dc, dTxt, w - tx - pad, ah - xtH, [Graphics.FONT_NUMBER_MEDIUM, Graphics.FONT_NUMBER_MILD, Graphics.FONT_LARGE, Graphics.FONT_MEDIUM]);
+            // „350 m” zawiera litery – czcionka liczbowa ich nie ma, więc liczba i jednostka osobno
+            var sp = dTxt.find(" ");
+            var numTxt = sp == null ? dTxt : dTxt.substring(0, sp);
+            var unit = sp == null ? "" : dTxt.substring(sp + 1, dTxt.length());
+            dc.setColor(near ? Th.warn : Th.fg, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(tx, y + xtH + (ah - xtH) / 2, df, numTxt, Ui.L | Ui.VC);
+            var nw = dc.getTextWidthInPixels(numTxt, df);
+            Ui.text(dc, tx + nw + 6, y + ah - dc.getFontHeight(Graphics.FONT_SMALL) - 2, Graphics.FONT_SMALL, unit, Ui.L, Th.dim);
+        } else {
+            Ui.arrow(dc, pad + (ah - 8) / 2 + 4, y + ah / 2, ah - 8, 0, Th.dim);
+            Ui.text(dc, pad + ah + 10, y + (ah - dc.getFontHeight(Graphics.FONT_MEDIUM)) / 2, Graphics.FONT_MEDIUM, "PROSTO", Ui.L, Th.fg);
+        }
+        y += ah;
+        dc.setColor(Th.line, Th.line);
+        dc.fillRectangle(0, y, w, 1);
+
+        // --- B. mapa (dotknięcie zmienia skalę)
+        var mh = Util.round(H * 0.42);
+        drawMap(dc, r, nav, c, 0, y + 1, w, mh - 1);
+        hits.add(["zoom", 0, y, w, mh]);
+        y += mh;
+
+        // --- C. profil wysokości przed nami
+        var ph = Util.round(H * 0.13);
+        drawElevation(dc, nav, c, pad, y + 2, w - 2 * pad, ph - 4);
+        y += ph;
+
+        // --- D. najbliższy podjazd
+        var lh = xtH + 2;
+        var nc = nav.acquired ? nav.nextClimb() : null;
+        var line = c.name;
+        var lcol = Th.dim;
+        if (nc != null) {
+            var cl = c.climbs[nc[0]];
+            var tg = cl[4] > 0 ? ", " + cl[4] + "-" + cl[5] + " W" : "";
+            var cdesc = ((cl[1] - cl[0]) / 1000.0).format("%.1f") + " km " + Util.round(cl[3] / 10.0) + "%";
+            if (nc[1] == 0) { line = "Szczyt za " + Ui.meters(nc[2]) + tg; lcol = Th.warn; }
+            else if (nc[1] < 20000) { line = "Podjazd za " + Ui.meters(nc[1]) + ": " + cdesc + tg; lcol = Th.fg; }
+        }
+        Ui.text(dc, w / 2, y, xt, Util.ellipsis(line, 44), Ui.C, lcol);
+        y += lh;
+
+        // --- E. trzy pola: moc, prędkość, do mety
+        dc.setColor(Th.line, Th.line);
+        dc.fillRectangle(0, y, w, 1);
+        var fh = h - y;
+        var p3 = Util.round(e.hist.avgP(3));
+        var labels = ["MOC 3s", "KM/H", "DO METY km"];
+        var vals = [r.hub.power == null ? "--" : p3.format("%d"), r.speed == null ? "--" : (r.speed * 3.6).format("%.1f"),
+            nav.acquired ? (nav.left() / 1000.0).format("%.1f") : (c.total / 1000.0).format("%.1f")];
+        var cw = w / 3;
+        for (var i = 0; i < 3; i++) {
+            var cx = cw * i + cw / 2;
+            Ui.text(dc, cx, y + 1, xt, labels[i], Ui.C, Th.dim);
+            Ui.value(dc, cx, y + xtH + (fh - xtH) / 2, cw - 8, fh - xtH - 2, vals[i], i == 0 ? Fields.powerColor(r, p3) : Th.fg);
+            if (i > 0) { dc.setColor(Th.line, Th.line); dc.fillRectangle(cw * i, y + 4, 1, fh - 8); }
+        }
+    }
+
+    //! Mapa śladu: w zbliżeniu obrócona kierunkiem jazdy do góry (pozycja w dolnej części), „cała trasa” – północ u góry.
+    hidden function drawMap(dc, r, nav, c, x, y, w, h) as Void {
+        var spans = [400.0, 1000.0, 3000.0, 10000.0];
+        dc.setClip(x, y, w, h);
+        var hub = r.hub;
+        var useGps = hub.lat != null && hub.lon != null && (hub.simulated || hub.hasGps());
+        var i0 = Util.clamp(nav.idx, 0, c.n - 2);
+        var la0;
+        var lo0;
+        if (useGps) {
+            la0 = (hub.lat * 1000000.0).toNumber();
+            lo0 = (hub.lon * 1000000.0).toNumber();
+        } else {
+            la0 = c.lat(i0);
+            lo0 = c.lon(i0);
+        }
+        var kx = Math.cos(la0 / 1000000.0 * Math.PI / 180.0) * 0.11132;
+        var ky = 0.11054;
+        var whole = zoom >= spans.size();
+        var scale;       // px na metr
+        var ox;
+        var oy;
+        var sn = 0.0;
+        var cs = 1.0;
+        var from = 0;
+        var to = c.n - 1;
+        if (whole) {
+            var mw = Util.max(1.0, (c.maxLon - c.minLon) * kx);
+            var mhh = Util.max(1.0, (c.maxLat - c.minLat) * ky);
+            scale = Util.min((w - 24) / mw, (h - 24) / mhh);
+            // środek trasy w środku pola
+            ox = x + w / 2 - ((c.minLon + c.maxLon) / 2 - lo0) * kx * scale;
+            oy = y + h / 2 + ((c.minLat + c.maxLat) / 2 - la0) * ky * scale;
+        } else {
+            var span = spans[zoom];
+            scale = w / span;
+            ox = x + w / 2;
+            oy = y + h * 0.72;
+            // kierunek: odcinek trasy, na którym jesteśmy (stabilny), poza trasą – kurs z GPS
+            var hd = 0.0;
+            if (nav.acquired && !nav.offRoute) {
+                hd = Math.atan2((c.lon(i0 + 1) - c.lon(i0)) * kx, (c.lat(i0 + 1) - c.lat(i0)) * ky);
+            } else if (hub.heading != null) {
+                hd = hub.heading;
+            }
+            sn = Math.sin(hd);
+            cs = Math.cos(hd);
+            var back = nav.progress - span * 0.5;
+            var fwd = nav.progress + span * 1.6;
+            from = c.segAt(back < 0 ? 0 : back);
+            to = Util.min(c.n - 1, c.segAt(fwd) + 2);
+        }
+        var step = (to - from) / 220 + 1;
+        var px = 0;
+        var py = 0;
+        var first = true;
+        dc.setPenWidth(whole ? 2 : 4);
+        var i = from;
+        while (true) {
+            var dx = (c.lon(i) - lo0) * kx;
+            var dy = (c.lat(i) - la0) * ky;
+            var sx = Util.round(ox + (dx * cs - dy * sn) * scale);
+            var sy = Util.round(oy - (dx * sn + dy * cs) * scale);
+            if (!first) {
+                dc.setColor(nav.acquired && c.cum[i] <= nav.progress ? Th.line : Th.accent, Graphics.COLOR_TRANSPARENT);
+                dc.drawLine(px, py, sx, sy);
+            }
+            first = false;
+            px = sx; py = sy;
+            if (i >= to) { break; }
+            i += step;
+            if (i > to) { i = to; }
+        }
+        dc.setPenWidth(1);
+        // start i meta
+        if (whole) {
+            _mt = [la0, lo0, kx, ky, ox, oy, sn, cs, scale];
+            marker(dc, c, 0, Th.good);
+            marker(dc, c, c.n - 1, Th.warn);
+        }
+        // pozycja: w zbliżeniu trójkąt „do przodu”, na całej trasie kropka
+        var mx = Util.round(ox);
+        var my = Util.round(oy);
+        if (nav.offRoute || !nav.acquired) {
+            // linia do najbliższego punktu śladu
+            var ndx = (nav.nearLon - lo0) * kx;
+            var ndy = (nav.nearLat - la0) * ky;
+            dc.setColor(Th.bad, Graphics.COLOR_TRANSPARENT);
+            dc.setPenWidth(2);
+            dc.drawLine(mx, my, Util.round(ox + (ndx * cs - ndy * sn) * scale), Util.round(oy - (ndx * sn + ndy * cs) * scale));
+            dc.setPenWidth(1);
+        }
+        if (whole) {
+            dc.setColor(Th.fg, Graphics.COLOR_TRANSPARENT);
+            dc.fillCircle(mx, my, 6);
+            dc.setColor(Th.accent, Graphics.COLOR_TRANSPARENT);
+            dc.fillCircle(mx, my, 3);
+        } else {
+            dc.setColor(Th.bg, Graphics.COLOR_TRANSPARENT);
+            dc.fillPolygon([[mx, my - 13], [mx + 11, my + 10], [mx, my + 5], [mx - 11, my + 10]]);
+            dc.setColor(Th.fg, Graphics.COLOR_TRANSPARENT);
+            dc.fillPolygon([[mx, my - 10], [mx + 8, my + 8], [mx, my + 3], [mx - 8, my + 8]]);
+        }
+        dc.clearClip();
+        var zl = whole ? "cała trasa" : (zoom == 0 ? "400 m" : (zoom == 1 ? "1 km" : (zoom == 2 ? "3 km" : "10 km")));
+        Ui.text(dc, x + w - 6, y + 2, Graphics.FONT_XTINY, zl, Ui.R, Th.dim);
+    }
+
+    hidden var _mt = null;     // przekształcenie mapy: [szer.0, dług.0, kx, ky, ox, oy, sin, cos, skala]
+
+    hidden function marker(dc, c, i, color) as Void {
+        var t = _mt;
+        var dx = (c.lon(i) - t[1]) * t[2];
+        var dy = (c.lat(i) - t[0]) * t[3];
+        dc.setColor(color, Graphics.COLOR_TRANSPARENT);
+        dc.fillCircle(Util.round(t[4] + (dx * t[7] - dy * t[6]) * t[8]), Util.round(t[5] - (dx * t[6] + dy * t[7]) * t[8]), 4);
+    }
+
+    //! Profil wysokości: 500 m za nami i do 9,5 km przed nami; podjazdy z trasy wyróżnione, pionowa kreska = pozycja.
+    hidden function drawElevation(dc, nav, c, x, y, w, h) as Void {
+        if (!c.hasEle || h < 8) {
+            Ui.text(dc, x + w / 2, y, Graphics.FONT_XTINY, "+" + c.gain + " m na trasie", Ui.C, Th.dim);
+            return;
+        }
+        var win = Util.min(10000, c.total);
+        var d0 = nav.progress - 500;
+        if (d0 > c.total - win) { d0 = c.total - win; }
+        if (d0 < 0) { d0 = 0; }
+        var cols = 47;
+        var cwid = w / cols;
+        var es = new [cols + 1];
+        var mn = 100000.0;
+        var mx = -100000.0;
+        for (var i = 0; i <= cols; i++) {
+            var ev = c.eleAt(d0 + win * i / cols);
+            if (ev == null) { ev = 0.0; }
+            es[i] = ev;
+            if (ev < mn) { mn = ev; }
+            if (ev > mx) { mx = ev; }
+        }
+        if (mx - mn < 40) { mx = mn + 40; }
+        var cls = c.climbs;
+        for (var k = 0; k < cols; k++) {
+            var dm = d0 + win * (k + 0.5) / cols;
+            var onClimb = false;
+            for (var j = 0; j < cls.size(); j++) {
+                if (dm >= cls[j][0] && dm <= cls[j][1]) { onClimb = true; break; }
+            }
+            var eh = Util.round(((es[k] + es[k + 1]) / 2 - mn) * (h - 3) / (mx - mn)) + 3;
+            Ui.fillRect(dc, x + k * cwid, y + h - eh, cwid, eh, onClimb ? Th.warn : (dm <= nav.progress ? Th.line : Th.dim));
+        }
+        var pxx = x + Util.round((nav.progress - d0) * (cols * cwid) / win);
+        dc.setColor(Th.fg, Th.fg);
+        dc.fillRectangle(Util.clamp(pxx, x, x + cols * cwid - 2), y, 2, h);
+        Ui.text(dc, x + cols * cwid, y - 1, Graphics.FONT_XTINY, Util.round(mx).format("%d") + " m", Ui.R, Th.dim);
     }
 
     // ------------------------------------------------------------------ strony pól danych
@@ -475,6 +753,7 @@ class RideScreen {
             else if (id.equals("resume")) { r.resume(); }
             else if (id.equals("end")) { WatchUi.pushView(Menus.pause(), new PauseMenuDelegate(), WatchUi.SLIDE_UP); }
             else if (id.equals("talk")) { r.talkToPhone(); }
+            else if (id.equals("zoom")) { zoom = (zoom + 1) % 5; WatchUi.requestUpdate(); }
             else if (id.equals("ask")) { WatchUi.pushView(Menus.questions(), new QuestionMenuDelegate(), WatchUi.SLIDE_UP); }
             return;
         }
@@ -503,7 +782,8 @@ class RideScreen {
     }
 
     function turn(d as Number) as Void {
-        page = (page + d + PAGES) % PAGES;
+        var np = pageCount();
+        page = (page + d + np) % np;
         WatchUi.requestUpdate();
     }
 

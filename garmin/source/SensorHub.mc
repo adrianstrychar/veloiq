@@ -14,6 +14,7 @@ class SensorHub {
     var temp = null;        // °C
     var lat = null;         // stopnie
     var lon = null;
+    var heading = null;     // rad, kierunek jazdy z GPS (null = nieznany)
     var gpsQuality as Number = 0;
     hidden var _powerAt as Number = 0;
     hidden var _hrAt as Number = 0;
@@ -66,6 +67,7 @@ class SensorHub {
             lon = d[1];
             _fixAt = System.getTimer();
         }
+        heading = info.heading;
         if (info.altitude != null && alt == null) { alt = info.altitude; }
         if (speed == null && info.speed != null) { speed = info.speed; }
     }

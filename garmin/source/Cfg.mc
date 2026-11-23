@@ -22,6 +22,7 @@ module Cfg {
     var tones as Boolean = true;
     var theme as Number = 0;           // 0 ciemny VeloIQ, 1 jasny (pełne słońce)
     var indoor as Boolean = false;     // trenażer: bez GPS, podtyp „indoor cycling”
+    var navOn as Boolean = true;        // nawigacja po trasie GPX z VeloIQ (gdy trasa jest pobrana)
     var phoneLink as Boolean = false;  // wysyłaj dane na telefon (aplikacja VeloIQ z mostem Garmin) – domyślnie wyłączone
     var pages = null;                  // konfiguracja stron pól danych: [[id, id, …], [id, …]]
 
@@ -55,6 +56,7 @@ module Cfg {
         theme = get("theme", 0);
         indoor = get("indoor", false);
         phoneLink = get("phoneLink", false);
+        navOn = get("navOn", true);
         pages = get("pages", null);
     }
 

@@ -90,6 +90,10 @@ class HomeScreen {
         var line = note;
         if (line == null && r.up.pending() > 0) { line = r.up.status.length() > 0 ? r.up.status : "Jazda czeka na wysyłkę"; }
         if (line == null && r.up.status.length() > 0) { line = r.up.status; }
+        if (line == null && r.courseNote != null) { line = r.courseNote; }
+        if (line == null && r.course != null && !Cfg.indoor) {
+            line = "Trasa: " + Util.ellipsis(r.course.name, 16) + ", " + (r.course.total / 1000.0).format("%.0f") + " km" + (Cfg.navOn ? "" : " (wył.)");
+        }
 
         // --- przyciski
         var by = h - 2 * (btnH + pad);
