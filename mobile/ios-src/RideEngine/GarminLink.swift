@@ -121,7 +121,7 @@ final class GarminLink: NSObject {
 
     /// Otwiera Garmin Connect z listą urządzeń; wynik wraca przez URL → handle(url:).
     func chooseDevice() {
-        ConnectIQ.sharedInstance().showConnectIQDeviceSelection()
+        ConnectIQ.sharedInstance().showDeviceSelection()
     }
 
     /// Z SceneDelegate – true, gdy URL był odpowiedzią Garmin Connect (wtedy nie idzie dalej do Capacitora).
