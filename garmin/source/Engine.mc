@@ -721,11 +721,14 @@ class Engine {
             if (remaining == 10 && lead2 > 15 && once("ten")) { say("tenSec", {}, "countdown"); }
             if (remaining >= 1 && remaining <= 3) { countdown(remaining); }
             if (remaining == 0 && once("go")) { say("goNow", {}, "countdown"); }
-        } else if (stepIdx + 1 < wk.steps.size() && remaining >= 1 && remaining <= 3 && st.dur >= 10
-            && (wk.steps[stepIdx + 1].type == StepType.INTERVAL || st.type == StepType.INTERVAL)) {
-            // 3-2-1 przed zmianą z zegarem, gdy zaczyna się lub kończy interwał (tylko sygnał na liczniku –
-            // osobny klucz, bo silnik telefonu tego nie mówi)
-            say("endCount", { "n" => remaining }, "countdown");
+        } else if (remaining >= 1 && remaining <= 3) {
+            if (stepIdx + 1 < wk.steps.size() && wk.steps[stepIdx + 1].type == StepType.INTERVAL) {
+                // 3-2-1 przed interwałem ruszającym z zegarem
+                countdown(remaining);
+            } else if (st.type == StepType.INTERVAL && st.dur >= 10) {
+                // 3-2-1 przed końcem interwału: tylko sygnał na liczniku (osobny klucz – telefon tego nie mówi)
+                say("endCount", { "n" => remaining }, "countdown");
+            }
         }
     }
 
