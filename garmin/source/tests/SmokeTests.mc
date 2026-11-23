@@ -96,7 +96,8 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
         if (i >= 250 && i < 330) { p = 140; }
         if (i >= 330 && i < 455) { p = 345; }
         if (i >= 455) { p = 150; }
-        if (i == 0) { System.println("CP pre-tick"); }
+        if (i == 0) { System.println("CP pre-tick"); r.dbg = true; }
+        if (i == 1) { r.dbg = false; }
         r.simTick(p, 120 + (p / 10), p == 0 ? 0 : 88, 8.0);
         if (i == 0) {
             System.println("CP ticked");
