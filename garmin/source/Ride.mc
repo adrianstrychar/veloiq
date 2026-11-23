@@ -792,7 +792,7 @@ class Ride {
     //! Przycisk Enzo, gdy działa most do telefonu: telefon włącza mikrofon słuchawek i odpowiada głosem.
     function talkToPhone() as Void {
         link.event(withAuth({ "t" => "talk", "st" => coachState() }));
-        showBanner("Enzo słucha\nmów do słuchawek", "enzo", 5);
+        showBanner("Enzo słucha\nmów teraz", "enzo", 5);
         tone("msg");
     }
 

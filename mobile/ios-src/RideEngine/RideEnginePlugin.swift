@@ -650,12 +650,41 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func setupGarmin() {
         let g = GarminLink.shared
-        g.onStatus = { [weak self] d in self?.notifyListeners("garmin", data: d) }
+        g.onStatus = { [weak self] d in
+            self?.notifyListeners("garmin", data: d)
+            self?.garminMic(streaming: (d["streaming"] as? Bool) ?? false)
+        }
         g.onLive = { [weak self] live in self?.garminLive(live) }
         g.onCue = { [weak self] key, kind, text, vars in self?.garminCue(key, kind, text, vars) }
         g.onTalk = { [weak self] msg in self?.garminTalk(msg) }
         g.onState = { [weak self] st, info in self?.garminRideState(st, info) }
         g.configure()
+        // powrót aplikacji na pierwszy plan przy nadającym liczniku = moment na włączenie mikrofonu
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.garminMic(streaming: GarminLink.shared.isStreaming)
+        }
+    }
+
+    /// Przycisk ENZO na liczniku przy zablokowanym telefonie: iOS nie pozwala WŁĄCZYĆ mikrofonu w tle, więc
+    /// włączamy go wcześniej – gdy aplikacja jest na pierwszym planie, a licznik nadaje – i trzymamy do końca
+    /// jazdy na liczniku (albo 10 minut po utracie połączenia). Przy treningu w telefonie mikrofonem rządzi
+    /// start jazdy (armMicForFlic). Główny wątek.
+    private var garminDisarm: DispatchWorkItem?
+    private func garminMic(streaming: Bool) {
+        let phoneLeads: Bool = engineQueue.sync { self.engine != nil }
+        if streaming {
+            garminDisarm?.cancel(); garminDisarm = nil
+            if !phoneLeads && !coach.armed && UIApplication.shared.applicationState == .active { _ = coach.arm() }
+        } else if coach.armed && !phoneLeads && garminDisarm == nil {
+            let w = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                self.garminDisarm = nil
+                let leads: Bool = self.engineQueue.sync { self.engine != nil }
+                if !GarminLink.shared.isStreaming && !leads { self.coach.disarm() }
+            }
+            garminDisarm = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 600, execute: w)
+        }
     }
 
     @objc func garminStatus(_ call: CAPPluginCall) {
@@ -730,6 +759,14 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             _ = localAnswer(q)
             return
         }
+        if !coach.armed && UIApplication.shared.applicationState == .background {
+            // mikrofonu nie da się włączyć przy zablokowanym telefonie – powiedz to (także na liczniku), zamiast milczeć
+            let t = "Mikrofon w telefonie jest wyłączony. Przed jazdą otwórz VeloIQ w telefonie przy włączonym liczniku."
+            notifyListeners("coach", data: ["state": "error", "text": t])
+            GarminLink.shared.sendEnzoAnswer(t)
+            if voiceMode == "enzo", let d = director, let seg = d.compose("repeat", [:]) { d.play(seg) }
+            return
+        }
         coach.start()
     }
 
@@ -748,6 +785,8 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         let phoneLeads: Bool = engineQueue.sync { self.engine != nil }
         guard !phoneLeads else { return }
         useGarminToken(info)
+        // koniec jazdy na liczniku: mikrofon nie jest już potrzebny (włączy się znów, gdy aplikacja będzie otwarta)
+        if s == "end" && coach.armed { coach.disarm() }
         let auto = (info["auto"] as? NSNumber)?.intValue == 1
         let quiet: Bool = engineQueue.sync { self.voiceLevel == "off" }
         guard !auto, !quiet else { return }   // auto-pauza na światłach: licznik pokazuje baner, Enzo milczy
