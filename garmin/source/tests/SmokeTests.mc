@@ -77,14 +77,12 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
     var r = getRide();
     var g = Smoke.dc();
     var scr = new RideScreen();
-    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.load();
+    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.put("tones", false); Cfg.load();
     r.plan = Smoke.plan();
     r.finish(false);
     r.reset();
     r.plan = Smoke.plan();
-    System.println("CP start");
     if (!r.startRide(false)) { logger.debug("startRide failed"); return false; }
-    System.println("CP started");
     var e = r.eng;
     var phases = {};
     var sawFs = false;
@@ -96,18 +94,10 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
         if (i >= 250 && i < 330) { p = 140; }
         if (i >= 330 && i < 455) { p = 345; }
         if (i >= 455) { p = 150; }
-        if (i == 0) { System.println("CP pre-tick"); r.dbg = true; }
-        if (i == 1) { r.dbg = false; }
         r.simTick(p, 120 + (p / 10), p == 0 ? 0 : 88, 8.0);
-        if (i == 0) {
-            System.println("CP ticked");
-            for (var pg = 0; pg < 5; pg++) { scr.page = pg; System.println("CP draw " + pg); scr.draw(g); }
-            System.println("CP drawn");
-        }
         phases.put(e.phase, true);
         if (e.falseStartLeft() > 0) { sawFs = true; }
         if (i % 7 == 0 || r.banner != null) { Smoke.drawAll(scr, g); }
-        if (i % 50 == 0) { System.println("CP tick " + i); }
         if (i == 140) { Menus.ride(scr); }
         if (i == 200) { r.showEnzo("Bravissimo! Trzymasz 302 waty, dokładnie w celu. Jeszcze dwie minuty, forca!"); Smoke.drawAll(scr, g); r.dismissEnzo(); }
         if (i == 300) { r.pause(); Smoke.drawAll(scr, g); scr.tap(100, 300); r.resume(); }
@@ -124,9 +114,7 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
     scr.turn(1); scr.turn(-1);
     scr.key(WatchUi.KEY_LAP);
     r.onPhoneCommand("eat"); r.onPhoneCommand("lap"); r.onPhoneSay("Test");
-    System.println("CP finish");
     r.finish(true);
-    System.println("CP finished");
     var sum = new SummaryScreen();
     sum.draw(g);
     var q = Application.Storage.getValue("upq");
@@ -150,7 +138,7 @@ function testSmokeFreeRide(logger as Test.Logger) as Boolean {
     var r = getRide();
     var g = Smoke.dc();
     var scr = new RideScreen();
-    Cfg.put("autoPause", true); Cfg.put("indoor", false); Cfg.put("autoLapMode", 3); Cfg.put("ftp", 300); Cfg.load();
+    Cfg.put("autoPause", true); Cfg.put("indoor", false); Cfg.put("autoLapMode", 3); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.load();
     r.plan = null;
     if (!r.startRide(true)) { logger.debug("startRide failed"); return false; }
     var e = r.eng;

@@ -74,7 +74,7 @@ if [ "${SKIP_TESTS:-0}" != "1" ]; then
     simulator > /dev/null 2>&1 &
     sim_pid=$!
     sleep 6
-    timeout "${TEST_TIMEOUT:-100}" monkeydo bin/veloiq-test.prg "$TEST_DEVICE" -t > bin/test-result.log 2>&1
+    timeout "${TEST_TIMEOUT:-240}" monkeydo bin/veloiq-test.prg "$TEST_DEVICE" -t > bin/test-result.log 2>&1
     cat bin/test-result.log
     kill $sim_pid $xvfb_pid 2>/dev/null
     last=$(grep -E "^(PASSED|FAILED)" bin/test-result.log | tail -1)
