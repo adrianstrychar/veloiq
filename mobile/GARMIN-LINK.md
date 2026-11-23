@@ -1,44 +1,61 @@
-# Most iPhone ↔ Garmin Edge (szkic)
+# Most iPhone ↔ Garmin Edge
 
-Cel: czujniki sparowane tylko z licznikiem (ANT+), a telefon dostaje z niego dane co sekundę i mówi głosem Enzo;
-przycisk **ENZO** na liczniku włącza pytanie głosowe przez słuchawki (jak przycisk Flic), odpowiedź pojawia się też na liczniku.
+Czujniki są sparowane tylko z licznikiem (ANT+). Aplikacja VeloIQ na Edge nadaje do aplikacji VeloIQ na iPhonie dane
+i zdarzenia, a telefon mówi głosem Enzo i obsługuje rozmowę. Kanał: Connect IQ Mobile SDK (Bluetooth licznika,
+ten sam co Garmin Connect) – na telefonie musi być zainstalowany Garmin Connect, a licznik z nim sparowany.
 
-Strona licznika jest gotowa i przetestowana na poziomie kolejkowania (`garmin/source/PhoneLink.mc`, ustawienie
-„Most do telefonu (beta)”, domyślnie wyłączone). Strona iPhone'a to `GarminLink.swift` w tym katalogu –
-**napisany pod nagłówki SDK, ale niekompilowany w Xcode i niewpięty w projekt** (celowo leży poza
-`mobile/ios-src/RideEngine/`, żeby nie mógł zepsuć bieżącego builda).
+## Kto prowadzi trening
 
-## Wpięcie (do zrobienia na Macu)
+- **Trening uruchomiony na liczniku** (w telefonie nie ma aktywnej jazdy): licznik prowadzi, telefon mówi.
+  Komunikaty silnika licznika mają te same klucze i zmienne co silnik telefonu, więc `DirectorVoice.compose`
+  składa z nich te same nagrania Enzo – także skręty i podjazdy z nawigacji. Odliczanie 3-2-1 telefon robi sam
+  po otrzymaniu „3” (radio ma za duże opóźnienia na komunikaty co sekundę).
+- **Trening uruchomiony w telefonie**: licznik jest źródłem mocy / tętna / kadencji tam, gdzie telefon nie ma
+  własnego czujnika Bluetooth; komunikaty licznika są pomijane (jeden głos naraz).
 
-1. Xcode → Package Dependencies → `https://github.com/garmin/connectiq-companion-app-sdk-ios` (ConnectIQ, binarny xcframework).
-2. `Info.plist`: `CFBundleURLTypes` ze schematem `veloiq` (powrót z Garmin Connect po wyborze urządzenia),
-   `LSApplicationQueriesSchemes` → `gcm-ciq`. Tryb tła `bluetooth-central` już jest. Wymagane jest też
-   `CFBundleDisplayName` (bez niego Garmin Connect nie wraca do aplikacji – znany problem SDK).
-3. Skopiować `GarminLink.swift` do `mobile/ios-src/RideEngine/` (`setup-ios.sh` doda go do targetu).
-4. `SceneDelegate.scene(_:openURLContexts:)` → `GarminLink.shared.handle(url:)`.
-5. `RideEnginePlugin.load()`:
-   - `GarminLink.shared.configure()`;
-   - `onLive` → na `engineQueue`: `engine.ingestPower / ingestHr / ingestCadence` + `advance()` – tylko gdy nie ma
-     połączonych czujników Bluetooth (jedno źródło danych naraz);
-   - `onTalk` → to samo co `talk()` (pytanie do Enzo przez mikrofon słuchawek);
-   - odpowiedź Enzo (zdarzenie `coach` „answer”) → `GarminLink.shared.sendEnzoAnswer(text)`;
-   - `onStatus` → zdarzenie `garmin` do JS + karta w „Czujnikach” (wybór licznika: `chooseDevice()`).
-6. Metody pluginu `garminStatus / garminChoose / garminForget` + typy w `lib/ride/ride-engine.ts`.
+## Protokół (słowniki z krótkimi kluczami)
 
-## Decyzja do podjęcia: kto prowadzi trening
+| Kierunek | Wiadomość |
+|---|---|
+| Edge → telefon | `{t:"live", v:[s, moc, tętno, kadencja, prędkość×10, faza, krok, zostało, cel↓, cel↑, 0]}` – co sekundę w trakcie jazdy, co 2 s przed startem (`s = -1`); `-1` = brak czujnika |
+| | `{t:"cue", k, kind, x, v}` – komunikat silnika albo nawigacji (`kind:"nav"`) |
+| | `{t:"talk", st:{stan jazdy}, q?, tk?, b?}` – przycisk ENZO; `q` = gotowe pytanie (raport), `tk`/`b` = token rozmowy i adres serwera |
+| | `{t:"state", s:"start\|pause\|resume\|end", …}` |
+| telefon → Edge | `{cmd:"next\|pause\|resume\|cancel\|lap\|eat\|drink\|talk\|report"}`, `{say:"odpowiedź Enzo"}`, `{hello:1}` |
 
-Licznik ma własny silnik (ten sam co telefon, zgodność sprawdzana testami). Gdy telefon dostaje dane z licznika, są dwie drogi:
+`hello` włącza nadawanie na liczniku bez wchodzenia w ustawienia. Token rozmowy (`tk`) licznik dostaje z
+`/api/garmin/sync` (ważny 36 h) – dzięki niemu pytania do trenera działają także wtedy, gdy jazda nie była
+uruchamiana w telefonie.
 
-- **Licznik prowadzi, telefon mówi** – telefon nie uruchamia swojego silnika, tylko zamienia zdarzenia `cue`
-  (klucz + zmienne, te same co w `FLEX_PHRASES`) na klipy Enzo przez `DirectorVoice.compose`. Jeden stan treningu,
-  zero rozjazdów. Zalecane.
-- **Telefon prowadzi** – licznik jest tylko źródłem czujników i ekranem. Mniej zmian w iOS, ale dwa silniki
-  mogą różnić się o sekundy (dane po Bluetooth przychodzą z opóźnieniem i bywają gubione).
+## Kod
 
-## Do sprawdzenia na sprzęcie
+| Plik | Rola |
+|---|---|
+| `garmin/source/PhoneLink.mc`, `Ride.mc` | strona licznika: kolejka wysyłki, stan jazdy w formacie telefonu, polecenia |
+| `mobile/ios-src/RideEngine/GarminLink.swift` | SDK Garmina: wybór licznika, stan połączenia, wiadomości |
+| `mobile/ios-src/RideEngine/RideEnginePlugin.swift` (sekcja „Licznik Garmin Edge”) | głos, rozmowa, dane czujników, mikrofon |
+| `mobile/setup-ios.sh` | pakiet Swift `connectiq-companion-app-sdk-ios`, schemat `veloiq://`, `gcm-ciq` w Info.plist |
+| `components/ride/GarminCard.tsx` | ekran Czujniki: wybór licznika, stan mostu, podgląd odczytów |
 
-- Czy Mobile SDK na iOS widzi aplikację wgraną kablem (`.prg`), czy wymaga instalacji ze sklepu Connect IQ
-  (wersja beta) – w zgłoszeniach na forum Garmina wgrane ręcznie aplikacje bywają niewidoczne dla SDK.
-- Przepustowość: licznik wysyła najwyżej jedną wiadomość naraz; próbka „live” czekająca na wysłanie jest zastępowana nowszą.
-- W symulatorze Connect IQ w kontenerze `Communications.transmit` zatrzymuje aplikację, więc ta ścieżka nie jest
-  pokryta testami automatycznymi – stąd domyślne wyłączenie.
+## Pierwsze uruchomienie
+
+1. Na liczniku: aplikacja VeloIQ wgrana i sparowana z kontem (kod z ekranu licznika).
+2. W telefonie: **Jedź → Czujniki → Licznik Garmin Edge → Wybierz licznik w Garmin Connect** – otworzy się
+   Garmin Connect, zaznacz Edge i wróć do VeloIQ. Przy okazji aplikacja zapyta o mikrofon i rozpoznawanie mowy.
+3. Otwórz VeloIQ na liczniku. Karta w telefonie powinna pokazać „Licznik nadaje” i odczyty czujników.
+4. **Mikrofon:** iOS nie pozwala włączyć mikrofonu, gdy aplikacja jest w tle. Dlatego telefon włącza go w chwili,
+   gdy VeloIQ jest na ekranie, a licznik nadaje – i trzyma do końca jazdy na liczniku (albo 10 minut po utracie
+   połączenia). W praktyce: przed jazdą otwórz VeloIQ w telefonie przy włączonej aplikacji na liczniku, potem
+   możesz zablokować ekran. Bez tego przycisk ENZO na liczniku pokaże komunikat, a pytania z listy na ekranie
+   licznika działają dalej.
+
+## Stan weryfikacji
+
+- Kompilacja aplikacji iOS z mostem: workflow **iOS (kompilacja)** (symulator, bez podpisu) – przechodzi.
+- Strona licznika: buduje się na 9 modeli; kolejkowanie i polecenia są w testach w symulatorze Garmina,
+  ale samo nadawanie (`Communications.transmit`) zatrzymuje symulator w kontenerze, więc **nie jest pokryte testem**.
+- **Niesprawdzone na sprzęcie** (pierwsza jazda to zweryfikuje):
+  - czy Mobile SDK widzi aplikację wgraną kablem (`.prg`) – w zgłoszeniach na forum Garmina takie aplikacje
+    bywają niewidoczne i potrzebna jest wersja beta w sklepie Connect IQ;
+  - opóźnienia i gubienie wiadomości przy 1 Hz, zachowanie w tle przy zablokowanym telefonie;
+  - mikrofon trzymany od otwarcia aplikacji do końca jazdy (zużycie baterii, przełączanie tras audio).

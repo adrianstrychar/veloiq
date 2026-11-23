@@ -15,14 +15,17 @@ Układ ekranów jest liczony z rozmiaru ekranu i wysokości czcionek, więc ten 
 | **Trening z planu** | Po synchronizacji licznik ma treningi na dziś i 6 kolejnych dni (te same waty co w zakładce „Jedź”). Działa bez telefonu – plan leży w pamięci licznika. |
 | **Silnik elastyczny** | Port `lib/ride/flex-engine.ts`: interwał rusza, gdy zawodnik faktycznie przyspieszy (start cofany do pierwszej sekundy wzrostu), **falstart** (automatyczny i przyciskiem), auto-pauza w interwale, wcześniejsze przerwanie, interwały łańcuchowe (over-under), korekty „za mocno / za słabo” liczone na średniej, tętno ponad strefą, podsumowanie serii z oceną, przypomnienia o jedzeniu i piciu, odprawa (gotowość, kondycja dnia). |
 | **Jazda swobodna** | Automatyczne wykrywanie wysiłków ≥ 2 min (jak w telefonie), kolor mocy według strefy, pasek stref Z1–Z7. |
-| **Auto-lapy** | W planie: lap na każdej zmianie kroku (start interwału, koniec, przerwa). Poza planem do wyboru: wysiłki (lap na początku i końcu mocnego odcinka), co 5/10 km, co 10 min, wyłączone. Przycisk Lap: w planie następny krok („start teraz”, gdy silnik czeka), poza planem zwykłe okrążenie. |
+| **Auto-lapy** | W planie: lap na każdej zmianie kroku (start interwału, koniec, przerwa). Poza planem do wyboru: wysiłki i podjazdy (lap na początku i końcu mocnego odcinka oraz na początku i na szczycie podjazdu – z trasy GPX albo z wysokościomierza), co 5/10 km, co 10 min, wyłączone. Przycisk Lap: w planie następny krok („start teraz”, gdy silnik czeka), poza planem zwykłe okrążenie. |
 | **Auto-pauza jazdy** | Jak w telefonie: zero mocy i kadencji, a na zewnątrz dodatkowo < 3 km/h przez 3 s; wznowienie po 2 s ruchu. |
-| **Własne pola danych** | 34 pola (moc 3/10/30 s, NP, IF, TSS, kJ, W'bal, moc i czas okrążenia, cel kroku, do końca kroku / planu, zgodność z planem, % FTP, W/kg, strefa…). Dwie strony po 4–10 pól, ustawiane na liczniku (MENU → Ustawienia → Pola danych albo MENU w trakcie jazdy). |
-| **Ekrany jazdy** | TRENING (moc w kolorze względem celu, pasek celu, odliczanie, przycisk FALSTART, profil treningu), DANE 1, DANE 2, OKRĄŻENIA / SERIE, ENZO (historia komunikatów). Komunikaty silnika jako baner + sygnał dźwiękowy, 3-2-1 dużą cyfrą. |
+| **Własne pola danych** | 38 pól (moc 3/10/30 s, NP, IF, TSS, kJ, W'bal, moc i czas okrążenia, cel kroku, do końca kroku / planu, zgodność z planem, % FTP, W/kg, strefa, do mety, do skrętu, do szczytu, cel podjazdu…). Dwie strony po 4–10 pól, ustawiane na liczniku (MENU → Ustawienia → Pola danych albo MENU w trakcie jazdy). |
+| **Ekrany jazdy** | TRENING (moc dużymi cyframi z własnej czcionki, w kolorze względem celu; pasek celu, odliczanie, przycisk FALSTART, tętno / kadencja / prędkość / średnia lapa, profil treningu), DANE 1, DANE 2, OKRĄŻENIA / SERIE, ENZO (historia komunikatów) i – gdy jest trasa – TRASA. Komunikaty silnika jako baner + sygnał dźwiękowy, 3-2-1 dużą cyfrą. |
 | **Enzo** | Przycisk ENZO → lista pytań („Jak mi idzie?”, „Co dalej?”, „Jeść albo pić?”…) → odpowiedź trenera na ekranie (`/api/garmin/ask`, ten sam Enzo i te same dane co w rozmowie głosowej). Enzo może też wykonać polecenie (następny krok, pauza, falstart). |
 | **Plik FIT** | Zwykła aktywność kolarska w historii licznika (→ Garmin Connect → Strava) + pola VeloIQ: cel mocy i W'bal w każdej sekundzie, cel i rodzaj kroku na lapach, NP / TSS / IF / zgodność w podsumowaniu. |
 | **Wysyłka do VeloIQ** | Po zapisie licznik wysyła podsumowanie, serie, lapy, wysiłki, próbki co 5 s i ślad GPS co 10 s. Jazda trafia do `rides` i na listę aktywności tą samą drogą co jazda z telefonu; gdy ta sama jazda przyjdzie potem ze Stravy, kopie same się scalają. Bez telefonu w chwili zapisu jazda czeka w pamięci licznika. |
-| **Most do telefonu (beta)** | Licznik potrafi nadawać co sekundę dane czujników i zdarzenia silnika do aplikacji VeloIQ na iPhonie oraz przyjąć polecenia i tekst odpowiedzi Enzo (głos w słuchawkach). Strona iPhone'a nie jest jeszcze wpięta – patrz `mobile/garmin-link/`. Domyślnie wyłączone. |
+| **Nawigacja po trasie GPX** | Trasa wybrana w „Jedź” (przycisk „Wyślij tę trasę na licznik”) trafia na licznik przy synchronizacji: uproszczony ślad (do 1496 punktów), skręty wyliczone z geometrii, podjazdy z wysokości. Strona TRASA: strzałka i dystans do skrętu, mapa śladu (kierunkiem jazdy do góry; dotknięcie zmienia skalę 400 m → 1 km → 3 km → 10 km → cała trasa), profil wysokości przed nami, najbliższy podjazd, moc / prędkość / do mety. Komunikaty: skręt (500 lub 300 m wcześniej i „teraz”), podjazd za kilometr, start podjazdu, szczyt, kilometry do mety, zjechanie z trasy i powrót. Bez mapy drogowej i bez wyznaczania trasy – to prowadzenie po śladzie. |
+| **Podjazdy z celem mocy** | W trybie startowym (strategia wyścigu) podjazdy trasy mają cel mocy i taktykę. W jeździe swobodnej ekran TRENING na takim podjeździe zachowuje się jak krok planu: „PODJAZD 2/5”, cel, pasek celu, kolor mocy względem celu, „DO SZCZYTU”. |
+| **Przerwana jazda** | Co minutę (i przy pauzie) licznik zapisuje punkt kontrolny: próbki, ślad GPS, liczniki. Po wyłączeniu licznika albo awarii ekran startowy proponuje WZNÓW (silnik odtwarza zapisane próbki – krok planu, serie, NP i TSS wracają – i jazda toczy się dalej w tej samej aktywności VeloIQ) albo ZAKOŃCZ (zapis i wysyłka tego, co było). Punkt starszy niż 12 h jest domykany i wysyłany sam. Plik FIT w historii licznika ma wtedy dwie części: przed przerwą i po niej. |
+| **Most do telefonu** | Czujniki sparowane tylko z licznikiem (ANT+), a aplikacja VeloIQ na iPhonie dostaje z niego co sekundę moc, tętno i kadencję oraz komunikaty silnika i nawigacji – i mówi je głosem Enzo. Przycisk ENZO na liczniku uruchamia pytanie głosowe w telefonie, odpowiedź wraca też na ekran licznika; polecenia głosowe (następny lap, pauza, falstart, zjadłem) sterują licznikiem. Włącza się sam, gdy telefon się przedstawi (albo MENU → Ustawienia → Most do telefonu). Szczegóły i ograniczenia: `mobile/GARMIN-LINK.md`. |
 
 ## Sterowanie
 
@@ -36,7 +39,7 @@ Układ ekranów jest liczony z rozmiaru ekranu i wysokości czcionek, więc ten 
 
 ## Instalacja na liczniku (wersja testowa)
 
-1. Pobierz `veloiq-edge1030.prg` z artefaktów ostatniego przebiegu **Garmin Connect IQ** (zakładka Actions w GitHubie → `veloiq-garmin`).
+1. Pobierz `veloiq-edge1030.prg` z artefaktów ostatniego przebiegu **Garmin Connect IQ** (zakładka Actions w GitHubie → `veloiq-garmin`). Ten sam plik jest też w logu przebiegu (linie `PRGB64`, suma kontrolna w `PRGSHA`).
 2. Podłącz Edge kablem USB do komputera i skopiuj plik do katalogu `GARMIN/APPS` na liczniku.
 3. Odłącz licznik. Aplikacja jest w **IQ → VeloIQ** (na Edge 1030: ekran główny → ikona Connect IQ).
 4. W VeloIQ na liczniku: **MENU → Sparuj z VeloIQ**. Licznik pokaże 6 cyfr.
@@ -54,7 +57,9 @@ Wersję do sklepu Connect IQ trzeba podpisać własnym kluczem dewelopera Garmin
 | `GET /api/garmin/pair?device=&secret=` | licznik | czy kod został wpisany → token urządzenia |
 | `POST /api/garmin/pair/confirm` | zalogowany zawodnik | wpisanie kodu z licznika |
 | `GET / DELETE /api/garmin/devices` | zalogowany zawodnik | lista i odłączanie liczników |
-| `GET /api/garmin/sync` | licznik (token) | zawodnik, treningi na 7 dni, odprawa |
+| `GET /api/garmin/sync` | licznik (token) | zawodnik, treningi na 7 dni, odprawa, identyfikator trasy, token rozmowy z trenerem dla mostu |
+| `GET / POST / DELETE /api/garmin/course` | zalogowany zawodnik | trasa GPX dla licznika: podgląd, wysyłka (RideRoute z „Jedź”), usunięcie |
+| `GET /api/garmin/course/part?i=meta|N` | licznik (token) | nagłówek trasy (skręty, podjazdy) i kolejne części punktów |
 | `POST /api/garmin/ride` | licznik (token) | wysyłka jazdy: `begin` → `chunk`… → `finish` |
 | `POST /api/garmin/ask` | licznik (token) | pytanie do Enzo, odpowiedź na ekran |
 
@@ -78,7 +83,7 @@ garmin/
   ci/parity/gen.ts                   generator testów zgodności z silnika referencyjnego
 lib/garmin/, app/api/garmin/         strona serwera
 components/ride/GarminCard.tsx       karta parowania w „Czujnikach”
-mobile/garmin-link/                  szkic mostu po stronie iPhone'a (jeszcze niewpięty)
+mobile/GARMIN-LINK.md               most do telefonu: protokół, kod po stronie iPhone'a, co sprawdzić na sprzęcie
 ```
 
 ## Budowanie i testy
