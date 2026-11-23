@@ -60,7 +60,7 @@ class HomeScreen {
             }
             var info = (plan.totalSec() / 60).format("%d") + " min";
             if (plan.tss > 0) { info = info + ", TSS " + plan.tss; }
-            info = info + ", kroków: " + plan.steps.size();
+            info = info + ", lapów: " + plan.steps.size();
             Ui.text(dc, 2 * pad, cy, Graphics.FONT_XTINY, info, Ui.L, Th.dim);
             cy += dc.getFontHeight(Graphics.FONT_XTINY) + pad / 2;
             var ph = y + cardH - cy - pad;

@@ -161,7 +161,7 @@ module Fields {
     function label(id as Number) as String {
         var t = ["MOC 3s", "MOC 10s", "MOC 30s", "TĘTNO", "KADENCJA", "KM/H", "DYSTANS", "CZAS", "ŚR. MOC", "NP",
             "IF", "TSS", "PRACA kJ", "W'BAL %", "MOC LAP", "CZAS LAP", "HR LAP", "ŚR. HR", "PRZEWYŻ.", "GODZINA",
-            "CEL W", "DO KOŃCA", "ŚR. KROKU", "ZGODNOŚĆ %", "% FTP", "W/KG", "HR % MAX", "ŚR. KAD.", "STREFA", "DO KOŃCA PLANU",
+            "CEL W", "DO KOŃCA LAPA", "ŚR. LAP PLANU", "ZGODNOŚĆ %", "% FTP", "W/KG", "HR % MAX", "ŚR. KAD.", "STREFA", "DO KOŃCA PLANU",
             "MAX MOC", "TEMP.", "WYSOKOŚĆ", "OD JEDZENIA"];
         return (id >= 0 && id < t.size()) ? t[id] : "?";
     }

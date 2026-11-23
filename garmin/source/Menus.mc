@@ -62,7 +62,7 @@ module Menus {
         m.addItem(item("Zapytaj Enzo", "odpowiedź na ekranie", "ask"));
         if (e != null && e.phase != Phase.FREE) {
             if (e.falseStartLeft() > 0) { m.addItem(item("Falstart", "nie licz tego startu", "falstart")); }
-            m.addItem(item((e.phase == Phase.ARMED || e.phase == Phase.WAITING) ? "Start interwału teraz" : "Następny krok", null, "next"));
+            m.addItem(item((e.phase == Phase.ARMED || e.phase == Phase.WAITING) ? "Start interwału teraz" : "Następny lap", null, "next"));
         } else {
             m.addItem(item("Okrążenie", null, "lap"));
         }

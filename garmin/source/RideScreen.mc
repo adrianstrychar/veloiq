@@ -89,7 +89,7 @@ class RideScreen {
                 Ui.text(dc, w - pad - bw / 2, y + 2, xt, badge, Ui.C, Th.bg);
             }
             var nx = e.nextStep();
-            var sub = "ostatni krok";
+            var sub = "ostatni lap";
             if (nx != null) {
                 sub = "potem: " + nx.name + " " + Util.durShort(nx.dur);
                 if (nx.type == StepType.INTERVAL) { sub = sub + ", " + nx.lo + "-" + nx.hi + " W"; }
@@ -139,7 +139,7 @@ class RideScreen {
             if (e.phase == Phase.WAITING) { tLabel = "PRZERWA DŁUŻSZA O"; tVal = Util.clock(e.overrunSec()); tCol = Th.warn; }
             else if (e.phase == Phase.ARMED) { tLabel = "START ZA (albo ruszaj wcześniej)"; tVal = Util.clock(e.stepRemaining()); tCol = Th.accent; }
             else if (e.phase == Phase.AUTOPAUSED) { tLabel = "PAUZA INTERWAŁU, ZOSTAŁO"; tVal = Util.clock(e.stepRemaining()); tCol = Th.warn; }
-            else { tLabel = "DO KOŃCA KROKU"; tVal = Util.clock(e.stepRemaining()); }
+            else { tLabel = "DO KOŃCA LAPA"; tVal = Util.clock(e.stepRemaining()); }
         }
         var fsLeft = e.falseStartLeft();
         var tw = w;
@@ -155,20 +155,22 @@ class RideScreen {
         Ui.value(dc, tw / 2, y + xtH + (th - xtH) / 2, tw - 2 * pad, th - xtH, tVal, tCol);
         y += th;
 
-        // --- E. trzy małe pola
+        // --- E. cztery małe pola: tętno, kadencja, prędkość, średnia moc lapa
+        // (w planie lap = krok treningu liczony przez silnik, bez sekund postoju; poza planem bieżące okrążenie)
         var mh = Util.round(H * 0.13);
-        var labels = ["TĘTNO", "KADENCJA", st != null ? "ŚR. KROKU" : "KM/H"];
-        var third = st != null ? e.stepAvgPower().format("%d") : (r.speed == null ? "--" : (r.speed * 3.6).format("%.1f"));
-        var vals = [Fields.n(hub.hr), Fields.n(hub.cad), third];
-        var cw = w / 3;
+        var lapAvgP = st != null ? e.stepAvgPower() : (r.lapN > 0 ? Util.round(r.lapSumP.toFloat() / r.lapN) : 0);
+        var labels = ["TĘTNO", "KADENCJA", "KM/H", "ŚR. LAP"];
+        var vals = [Fields.n(hub.hr), Fields.n(hub.cad), r.speed == null ? "--" : (r.speed * 3.6).format("%.1f"), lapAvgP.format("%d")];
+        var cw = w / 4;
         dc.setColor(Th.line, Th.line);
         dc.fillRectangle(0, y, w, 1);
-        for (var i = 0; i < 3; i++) {
+        for (var i = 0; i < 4; i++) {
             var cx = cw * i + cw / 2;
             Ui.text(dc, cx, y + 1, xt, labels[i], Ui.C, Th.dim);
             var col = Th.fg;
             if (i == 0 && st != null && st.hrHi > 0 && hub.hr != null && st.type != StepType.INTERVAL && hub.hr > st.hrHi + 3) { col = Th.bad; }
             if (i == 1 && st != null && hub.cad != null && ((st.cadLo > 0 && hub.cad < st.cadLo) || (st.cadHi > 0 && hub.cad > st.cadHi))) { col = Th.warn; }
+            if (i == 3 && st != null && st.type == StepType.INTERVAL && e.inStep >= 10) { col = Fields.powerColor(r, lapAvgP); }
             Ui.value(dc, cx, y + xtH + (mh - xtH) / 2, cw - 6, mh - xtH, vals[i], col);
             if (i > 0) { dc.setColor(Th.line, Th.line); dc.fillRectangle(cw * i, y + 4, 1, mh - 8); }
         }
@@ -192,7 +194,7 @@ class RideScreen {
         hits.add(["enzo", pad, by, ew, btnH]);
         var lx = 2 * pad + ew;
         var lw = w - lx - pad;
-        Ui.button(dc, lx, by, lw, btnH, st != null ? "KROK >" : "LAP", Th.card, Th.fg);
+        Ui.button(dc, lx, by, lw, btnH, st != null ? "LAP >" : "LAP", Th.card, Th.fg);
         hits.add(["lap", lx, by, lw, btnH]);
     }
 

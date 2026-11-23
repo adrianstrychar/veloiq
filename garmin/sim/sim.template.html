@@ -86,7 +86,7 @@ input[type=range] { width: 100%; accent-color: var(--cyan); height: 28px; }
       </div>
       <div class="brand">GARMIN</div>
       <div class="keys">
-        <button id="k-lap">LAP<small>następny krok / okrążenie</small></button>
+        <button id="k-lap">LAP<small>następny lap / okrążenie</small></button>
         <button id="k-start">START / STOP<small>start, pauza, wznowienie</small></button>
       </div>
     </div>
@@ -335,7 +335,7 @@ function drawHome() {
   rrect(pad, y, W - 2 * pad, cardH, 6, T.card); let cy = y + 5;
   if (wk.steps.length) {
     text(2 * pad, cy, 'xt', 'TRENING NA DZIŚ', 'left', T.accent); cy += FH.xt; text(2 * pad, cy, 's', wk.name, 'left', T.fg); cy += FH.s;
-    text(2 * pad, cy, 'xt', `${Math.round(wk.steps.reduce((a, s) => a + s.durationSec, 0) / 60)} min, kroków: ${wk.steps.length}`, 'left', T.dim); cy += FH.xt + 5;
+    text(2 * pad, cy, 'xt', `${Math.round(wk.steps.reduce((a, s) => a + s.durationSec, 0) / 60)} min, lapów: ${wk.steps.length}`, 'left', T.dim); cy += FH.xt + 5;
     profile(2 * pad, cy, W - 4 * pad, y + cardH - cy - pad, -1, 0);
   } else { text(2 * pad, cy, 'xt', 'DZIŚ', 'left', T.accent); lines(wrap('Jazda swobodna: wysiłki i lapy zapiszę automatycznie.', 'xt', W - 4 * pad), W / 2, cy + FH.xt + 6, 'xt', T.fg, 4, false); }
   y += cardH + 5; const cw = (W - 2 * pad) / 4;
@@ -356,7 +356,7 @@ function drawMain(top) {
     const badge = eng.phase === 'armed' ? 'GOTOWY?' : eng.phase === 'waiting' ? 'CZEKAM' : eng.phase === 'autoPaused' ? 'PAUZA' : '';
     text(pad + 5, y, hh - FH.xt >= FH.m ? 'm' : 's', s.name, 'left', T.fg);
     if (badge) { g.font = font(F.xt, false); const bw = g.measureText(badge).width + 10; rrect(W - pad - bw, y + 2, bw, FH.xt + 2, 6, T.warn); text(W - pad - bw / 2, y + 2, 'xt', badge, 'center', T.bg); }
-    const nx = wk.steps[eng.stepIdx + 1]; let sub = 'ostatni krok';
+    const nx = wk.steps[eng.stepIdx + 1]; let sub = 'ostatni lap';
     if (nx) sub = `potem: ${nx.name} ${durShort(nx.durationSec)}` + (nx.type === 'interval' ? `, ${nx.powerLow}-${nx.powerHigh} W` : '');
     text(pad + 5, y + hh - FH.xt - 1, 'xt', sub, 'left', T.dim);
   } else {
@@ -377,19 +377,20 @@ function drawMain(top) {
   } else { const e = [0, .56, .76, .91, 1.06, 1.21, 1.51, 1.6]; for (let z = 0; z < 7; z++) rect(gx + e[z] / 1.6 * gw, gy, (e[z + 1] - e[z]) / 1.6 * gw - 1, ghh, ZONE[z]); rect(gx + clamp(p3, 0, FTP * 1.6) * gw / (FTP * 1.6) - 2, gy - 3, 4, ghh + 6, T.fg); }
   y += gh;
   const th = Math.round(HH * .17); let tl = 'CZAS', tv = clock(eng.s + 1), tc = T.fg;
-  if (s) { if (eng.phase === 'waiting') { tl = 'PRZERWA DŁUŻSZA O'; tv = clock(L.overrunSec); tc = T.warn; } else if (eng.phase === 'armed') { tl = 'START ZA (albo ruszaj wcześniej)'; tv = clock(L.stepRemaining); tc = T.accent; } else if (eng.phase === 'autoPaused') { tl = 'PAUZA INTERWAŁU, ZOSTAŁO'; tv = clock(L.stepRemaining); tc = T.warn; } else { tl = 'DO KOŃCA KROKU'; tv = clock(L.stepRemaining); } }
+  if (s) { if (eng.phase === 'waiting') { tl = 'PRZERWA DŁUŻSZA O'; tv = clock(L.overrunSec); tc = T.warn; } else if (eng.phase === 'armed') { tl = 'START ZA (albo ruszaj wcześniej)'; tv = clock(L.stepRemaining); tc = T.accent; } else if (eng.phase === 'autoPaused') { tl = 'PAUZA INTERWAŁU, ZOSTAŁO'; tv = clock(L.stepRemaining); tc = T.warn; } else { tl = 'DO KOŃCA LAPA'; tv = clock(L.stepRemaining); } }
   let tw = W; if (L.falseStartLeft > 0 && mode === 'ride') { tw = W * .55; button('fs', tw, y + 4, W - tw - pad, th - 8, 'FALSTART ' + L.falseStartLeft, T.bad, '#fff'); }
   text(tw / 2, y, 'xt', tl, 'center', T.dim); value(tw / 2, y + FH.xt + (th - FH.xt) / 2, tw - 2 * pad, th - FH.xt, tv, tc); y += th;
-  const mh = Math.round(HH * .13), cw = W / 3; rect(0, y, W, 1, T.line);
-  [['TĘTNO', String(Math.round(hr))], ['KADENCJA', String(cad)], s ? ['ŚR. KROKU', String(L.stepAvgPower || 0)] : ['KM/H', L.vKmh.toFixed(1)]].forEach(([l, v], i) => {
+  const mh = Math.round(HH * .13), cw = W / 4, lapAvg = s ? (L.stepAvgPower || 0) : (lap.n ? Math.round(lap.sum / lap.n) : 0); rect(0, y, W, 1, T.line);
+  [['TĘTNO', String(Math.round(hr))], ['KADENCJA', String(cad)], ['KM/H', L.vKmh.toFixed(1)], ['ŚR. LAP', String(lapAvg)]].forEach(([l, v], i) => {
     text(cw * i + cw / 2, y + 1, 'xt', l, 'center', T.dim);
     let col = T.fg; if (i === 0 && s && s.hrHigh && s.type !== 'interval' && hr > s.hrHigh + 3) col = T.bad; if (i === 1 && s && ((s.cadenceLow && cad < s.cadenceLow) || (s.cadenceHigh && cad > s.cadenceHigh))) col = T.warn;
+    if (i === 3 && s && s.type === 'interval' && eng.inStep >= 10) col = powerColor(lapAvg);
     value(cw * i + cw / 2, y + FH.xt + (mh - FH.xt) / 2, cw - 6, mh - FH.xt, v, col); if (i) rect(cw * i, y + 4, 1, mh - 8, T.line); });
   y += mh;
   const btnH = Math.round(HH * .13), fh = H - y - btnH - pad;
   if (s && fh > 14) profile(pad, y + 4, W - 2 * pad, fh - 8, eng.stepIdx, eng.inStep); else if (fh > FH.xt) text(W / 2, y + (fh - FH.xt) / 2, 'xt', `NP ${np()},  TSS ${tss()},  ${Math.floor(M.sum / 1000)} kJ`, 'center', T.dim);
   const by = H - btnH - pad / 2, ew = (W - 3 * pad) * .62;
-  button('enzo', pad, by, ew, btnH, 'ENZO', T.accent, T.onAccent); button('lap', 2 * pad + ew, by, W - 3 * pad - ew, btnH, s ? 'KROK >' : 'LAP', T.card, T.fg);
+  button('enzo', pad, by, ew, btnH, 'ENZO', T.accent, T.onAccent); button('lap', 2 * pad + ew, by, W - 3 * pad - ew, btnH, s ? 'LAP >' : 'LAP', T.card, T.fg);
 }
 function fieldVals() {
   const L = live(), p3 = Math.round(avg(3)), left = eng.phase === 'free' ? '--' : clock(Math.max(0, eng.step.durationSec - eng.inStep) + wk.steps.slice(eng.stepIdx + 1).reduce((a, s) => a + s.durationSec, 0));
