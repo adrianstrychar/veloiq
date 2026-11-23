@@ -495,7 +495,6 @@ class Ride {
     }
 
     //! Tylko testy: stan jazdy znika z pamięci jak po awarii – bez zapisu i bez kasowania punktu kontrolnego.
-    (:test)
     function dropForTest() as Void {
         state = RideState.IDLE;
         eng = null; wk = null; nav = null;
