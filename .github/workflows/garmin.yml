@@ -31,6 +31,15 @@ jobs:
             -v "$PWD/garmin:/app" -w /app \
             ghcr.io/matco/connectiq-tester:latest ci/build.sh
 
+      - name: Plik .prg dla Edge 1030 w logu (base64, do wgrania bez pobierania artefaktu)
+        if: always()
+        run: |
+          f=garmin/bin/veloiq-edge1030.prg
+          if [ -f "$f" ]; then
+            echo "PRGSHA $(sha256sum "$f" | cut -d' ' -f1) $(stat -c %s "$f")"
+            base64 -w 60000 "$f" | awk '{print "PRGB64 " NR " " $0}'
+          fi
+
       - name: Zrzuty ekranu z symulatora (tryb demo)
         if: always()
         run: |
