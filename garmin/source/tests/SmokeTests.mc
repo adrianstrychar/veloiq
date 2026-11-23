@@ -72,6 +72,39 @@ function testSmokeHome(logger as Test.Logger) as Boolean {
 }
 
 (:test)
+function testSmokeFreeRide(logger as Test.Logger) as Boolean {
+    Smoke.cleanup();
+    var r = getRide();
+    var g = Smoke.dc();
+    var scr = new RideScreen();
+    Cfg.put("autoPause", true); Cfg.put("indoor", false); Cfg.put("autoLapMode", 3); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
+    r.plan = null;
+    if (!r.startRide(true)) { logger.debug("startRide failed"); return false; }
+    var e = r.eng;
+    for (var i = 0; i < 700; i++) {
+        var p = 180;
+        if (i >= 100 && i < 300) { p = 310; }          // wysiłek 200 s
+        if (i >= 420 && i < 450) { p = 0; }            // postój
+        var spd = p == 0 ? 0.0 : 8.5;
+        r.simTick(p, 140, p == 0 ? 0 : 90, spd);
+        if (i % 14 == 0) { Smoke.drawAll(scr, g); }
+    }
+    logger.debug("efforts=" + e.efforts.size() + " laps=" + r.lapNo + " fitLaps=" + r.rec.laps + " n=" + e.m.n + " np=" + e.m.np() + " dist=" + r.dist);
+    var ok = e.efforts.size() == 1 && r.lapNo == 3 && e.m.n == 700;
+    r.lapButton();
+    ok = ok && r.lapNo == 4;
+    Cfg.put("autoLapMode", 2); Cfg.put("autoLapMin", 1); Cfg.load();
+    for (var j = 0; j < 130; j++) { r.simTick(150, 130, 85, 7.0); }
+    logger.debug("after time laps=" + r.lapNo);
+    ok = ok && r.lapNo == 6;
+    Smoke.drawAll(scr, g);
+    r.finish(false);
+    ok = ok && r.state == RideState.IDLE && r.up.pending() == 0;
+    Smoke.cleanup();
+    return ok;
+}
+
+(:test)
 function testSmokePlanRide(logger as Test.Logger) as Boolean {
     Smoke.cleanup();
     var r = getRide();
@@ -130,39 +163,6 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
         ok = ok && meta["ns"] == 1 && b != null && b.toString().length() == 600;    // 560 s → 112 próbek × 4 B = 448 B → 600 znaków base64
     }
     sum.done();
-    Smoke.cleanup();
-    return ok;
-}
-
-(:test)
-function testSmokeFreeRide(logger as Test.Logger) as Boolean {
-    Smoke.cleanup();
-    var r = getRide();
-    var g = Smoke.dc();
-    var scr = new RideScreen();
-    Cfg.put("autoPause", true); Cfg.put("indoor", false); Cfg.put("autoLapMode", 3); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
-    r.plan = null;
-    if (!r.startRide(true)) { logger.debug("startRide failed"); return false; }
-    var e = r.eng;
-    for (var i = 0; i < 700; i++) {
-        var p = 180;
-        if (i >= 100 && i < 300) { p = 310; }          // wysiłek 200 s
-        if (i >= 420 && i < 450) { p = 0; }            // postój
-        var spd = p == 0 ? 0.0 : 8.5;
-        r.simTick(p, 140, p == 0 ? 0 : 90, spd);
-        if (i % 14 == 0) { Smoke.drawAll(scr, g); }
-    }
-    logger.debug("efforts=" + e.efforts.size() + " laps=" + r.lapNo + " fitLaps=" + r.rec.laps + " n=" + e.m.n + " np=" + e.m.np() + " dist=" + r.dist);
-    var ok = e.efforts.size() == 1 && r.lapNo == 3 && e.m.n == 700;
-    r.lapButton();
-    ok = ok && r.lapNo == 4;
-    Cfg.put("autoLapMode", 2); Cfg.put("autoLapMin", 1); Cfg.load();
-    for (var j = 0; j < 130; j++) { r.simTick(150, 130, 85, 7.0); }
-    logger.debug("after time laps=" + r.lapNo);
-    ok = ok && r.lapNo == 6;
-    Smoke.drawAll(scr, g);
-    r.finish(false);
-    ok = ok && r.state == RideState.IDLE && r.up.pending() == 0;
     Smoke.cleanup();
     return ok;
 }
