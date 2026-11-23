@@ -2,6 +2,7 @@ import Toybox.Application;
 import Toybox.Communications;
 import Toybox.Lang;
 import Toybox.System;
+import Toybox.WatchUi;
 
 //! Klient API VeloIQ (/api/garmin/*). Zapytania idą przez telefon (Garmin Connect) albo Wi-Fi licznika.
 //! Jedno zapytanie naraz, reszta czeka w kolejce.
@@ -77,7 +78,6 @@ class Uploader {
     hidden var _meta = null;
     var status as String = "";
     var lastError as String = "";
-    var listener = null;        // onUploadChange()
 
     function initialize(api as Api) {
         _api = api;
@@ -117,7 +117,7 @@ class Uploader {
     }
 
     hidden function notify() as Void {
-        if (listener != null) { listener.onUploadChange(); }
+        WatchUi.requestUpdate();
     }
 
     hidden function step() as Void {
