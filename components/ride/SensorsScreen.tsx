@@ -72,7 +72,7 @@ export function SensorsScreen({ ride, onBack }: { ride: Ride; onBack: () => void
 
       <FlicCard ride={ride} />
 
-      <GarminCard />
+      <GarminCard ride={ride} />
 
       <h2 className={s.h2}>W pobliżu</h2>
       <div className={s.list} role="list">

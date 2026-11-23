@@ -35,6 +35,10 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "flicScan", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "flicStopScan", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "flicForget", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "garminStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "garminChoose", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "garminForget", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "garminOpenApp", returnType: CAPPluginReturnPromise),
     ]
 
     private let engineQueue = DispatchQueue(label: "veloiq.engine")
@@ -102,8 +106,15 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         notifyListeners("sensorData", data: d)
     }
     private var announceArm = true
+    // licznik Garmin Edge (most Connect IQ) – engineQueue
+    /// Połączone czujniki Bluetooth telefonu ("power", "power2", "hr") – licznik zastępuje tylko brakujące.
+    private var bleUp = Set<String>()
+    /// Stan jazdy przysłany przez licznik razem z przyciskiem ENZO (gdy trening prowadzi licznik).
+    private var garminState: [String: Any] = [:]
+    private var garminStateAt = Date.distantPast
 
     public override func load() {
+        setupGarmin()
         // przycisk Flic na kierownicy – konfiguracja jak najwcześniej (iOS wznawia połączenie w tle)
         let flic = FlicRemote.shared
         flic.onStatus = { [weak self] d in self?.notifyListeners("flic", data: d) }
@@ -117,6 +128,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             var d: [String: Any] = ["kind": kind, "id": id, "connected": connected]
             if let n = name { d["name"] = n }
             self.notifyListeners("sensor", data: d)
+            self.engineQueue.async { if connected { self.bleUp.insert(kind) } else { self.bleUp.remove(kind) } }
             // druga strona mocy: zgubienie jednej korby nie jest "utratą mocy" (druga ×2 trzyma pomiar)
             if kind != "power2" { self.engineQueue.async { self.engine?.sensorChanged(kind: kind, connected: connected) } }
         }
@@ -613,12 +625,140 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async { FlicRemote.shared.forget { call.resolve(FlicRemote.shared.status()) } }
     }
 
+    // MARK: - Licznik Garmin Edge (most Connect IQ)
+    //
+    // Czujniki są sparowane tylko z licznikiem (ANT+), a telefon dostaje z niego dane i zdarzenia.
+    //  • Trening uruchomiony na liczniku (w telefonie nie ma aktywnego treningu): licznik prowadzi, telefon
+    //    mówi głosem Enzo i obsługuje rozmowę przez mikrofon słuchawek (przycisk ENZO na liczniku).
+    //  • Trening uruchomiony w telefonie: licznik jest źródłem mocy / tętna / kadencji tam, gdzie telefon
+    //    nie ma własnego czujnika Bluetooth; komunikaty licznika są pomijane (jeden głos naraz).
+
+    private func setupGarmin() {
+        let g = GarminLink.shared
+        g.onStatus = { [weak self] d in self?.notifyListeners("garmin", data: d) }
+        g.onLive = { [weak self] live in self?.garminLive(live) }
+        g.onCue = { [weak self] key, kind, text, vars in self?.garminCue(key, kind, text, vars) }
+        g.onTalk = { [weak self] msg in self?.garminTalk(msg) }
+        g.onState = { [weak self] st, info in self?.garminRideState(st, info) }
+        g.configure()
+    }
+
+    @objc func garminStatus(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { GarminLink.shared.hello(); call.resolve(GarminLink.shared.status()) }
+    }
+    /// Otwiera Garmin Connect z listą urządzeń (wybór licznika); wynik wraca do aplikacji linkiem veloiq://.
+    @objc func garminChoose(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            CoachTalk.requestPermissions()   // mikrofon i mowa – pytanie teraz, przy ekranie, a nie w czasie jazdy
+            GarminLink.shared.chooseDevice()
+            call.resolve()
+        }
+    }
+    @objc func garminForget(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { GarminLink.shared.forget(); call.resolve(GarminLink.shared.status()) }
+    }
+    @objc func garminOpenApp(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { GarminLink.shared.openApp(); call.resolve() }
+    }
+
+    /// Sekunda z licznika (główny wątek).
+    private func garminLive(_ l: GarminLive) {
+        engineQueue.async {
+            if let e = self.engine {
+                var fed = false
+                if !self.bleUp.contains("power") && !self.bleUp.contains("power2") {
+                    if let p = l.power { e.ingestPower(p, balanceL: nil); fed = true }
+                    if let c = l.cadence { e.ingestCadence(c) }
+                }
+                if !self.bleUp.contains("hr"), let h = l.hr { e.ingestHr(h); fed = true }
+                if fed { e.advance() }
+            } else {
+                // podgląd na ekranie Czujniki
+                if let p = l.power { self.previewPower = p }
+                if let c = l.cadence { self.previewCadence = c }
+                if let h = l.hr { self.previewHr = h }
+                self.emitPreview()
+            }
+        }
+    }
+
+    /// Komunikat silnika licznika → głos Enzo (te same klucze i zmienne co w silniku telefonu). Główny wątek.
+    private func garminCue(_ key: String, _ kind: String, _ text: String, _ vars: [String: String]) {
+        let k = WorkoutEngine.CueKind(rawValue: kind) ?? .info
+        let (phoneLeads, speak): (Bool, Bool) = engineQueue.sync { (self.engine != nil, self.shouldSpeak(k)) }
+        guard !phoneLeads else { return }
+        let spoken = text.replacingOccurrences(of: "\n", with: ". ")
+        notifyListeners("cue", data: ["text": spoken, "kind": kind, "source": "garmin"])
+        guard speak else { return }
+        if key == "count" {
+            // odliczanie: licznik przysyła tylko „3” – resztę telefon odlicza sam, co sekundę (bez opóźnień radia)
+            let from = Int(vars["n"] ?? "") ?? 3
+            for (i, n) in stride(from: from, through: 1, by: -1).enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i)) {
+                    self.say("count", ["n": "\(n)"], "\(n)", interrupt: i == 0)
+                }
+            }
+            return
+        }
+        say(key, vars, spoken, interrupt: kind == "countdown" || key == "falseStart")
+    }
+
+    /// Przycisk ENZO na liczniku (albo Flic przy treningu z licznika): stan jazdy + pytanie głosem przez
+    /// mikrofon słuchawek; „q” = gotowe pytanie bez słuchania (np. raport). Główny wątek.
+    private func garminTalk(_ msg: [String: Any]) {
+        let phoneLeads: Bool = engineQueue.sync {
+            if let st = msg["st"] as? [String: Any] { self.garminState = st; self.garminStateAt = Date() }
+            return self.engine != nil
+        }
+        if !phoneLeads { useGarminToken(msg) }
+        if let q = msg["q"] as? String, !q.isEmpty {
+            _ = localAnswer(q)
+            return
+        }
+        coach.start()
+    }
+
+    /// Token rozmowy z trenerem, który licznik dostał z serwera przy synchronizacji – dzięki niemu pytania
+    /// działają także wtedy, gdy trening nie był uruchamiany w telefonie.
+    private func useGarminToken(_ msg: [String: Any]) {
+        guard let tk = msg["tk"] as? String, !tk.isEmpty else { return }
+        coach.token = tk
+        if let b = (msg["b"] as? String).flatMap({ URL(string: $0) }) { coach.baseURL = b }
+    }
+
+    /// Start / pauza / wznowienie / koniec jazdy na liczniku. Główny wątek.
+    private func garminRideState(_ s: String, _ info: [String: Any]) {
+        var d = GarminLink.shared.status(); d["ride"] = s
+        notifyListeners("garmin", data: d)
+        let phoneLeads: Bool = engineQueue.sync { self.engine != nil }
+        guard !phoneLeads else { return }
+        useGarminToken(info)
+        let auto = (info["auto"] as? NSNumber)?.intValue == 1
+        let quiet: Bool = engineQueue.sync { self.voiceLevel == "off" }
+        guard !auto, !quiet else { return }   // auto-pauza na światłach: licznik pokazuje baner, Enzo milczy
+        switch s {
+        case "pause": say("manualPause", [:], "Pauza.", interrupt: false)
+        case "resume": say("manualResume", [:], "Jedziemy dalej.", interrupt: false)
+        default: break
+        }
+    }
+
     /// klik → rozmowa z Enzo · 2× klik → okrążenie (swobodna) / następny krok (plan) · przytrzymaj → raport.
     /// Poza jazdą tylko zdarzenie dla ekranu Czujniki (test przycisku). Główny wątek.
     private func handleFlic(_ kind: String) {
         notifyListeners("flic", data: ["press": kind])
         let phase: WorkoutEngine.Phase? = engineQueue.sync { self.engine?.phase }
-        guard let ph = phase else { return }
+        guard let ph = phase else {
+            // trening prowadzi licznik Garmin: przycisk steruje licznikiem (ten odsyła stan jazdy do rozmowy)
+            guard GarminLink.shared.isStreaming else { return }
+            switch kind {
+            case "click": GarminLink.shared.sendCommand("talk")
+            case "double": GarminLink.shared.sendCommand("lap")
+            case "hold": GarminLink.shared.sendCommand("report")
+            default: break
+            }
+            return
+        }
         switch kind {
         case "click":
             coach.start()
@@ -661,6 +801,8 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         c.onEvent = { [weak self] kind, data in
             var d = data; d["state"] = kind
             self?.notifyListeners("coach", data: d)
+            // odpowiedź trenera także na ekran licznika
+            if kind == "answer", let t = data["text"] as? String, GarminLink.shared.isStreaming { GarminLink.shared.sendEnzoAnswer(t) }
         }
         c.playLead = { [weak self] ev, done in
             guard let self = self else { return }
@@ -686,10 +828,22 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         return c
     }
 
+    /// „Zjadłem” / „wypiłem”: do silnika telefonu albo – gdy trening prowadzi licznik Garmin – do licznika.
+    private func fuel(_ kind: String) {
+        engineQueue.async {
+            if let e = self.engine { e.fueled(kind) }
+            else { DispatchQueue.main.async { if GarminLink.shared.isStreaming { GarminLink.shared.sendCommand(kind) } } }
+        }
+    }
+
     /// Polecenia sterujące jazdą (z mowy albo z odpowiedzi trenera AI).
     private func coachAction(_ a: String) {
         engineQueue.async {
-            guard let eng = self.engine else { return }
+            guard let eng = self.engine else {
+                // trening prowadzi licznik Garmin → polecenie idzie do niego
+                DispatchQueue.main.async { if GarminLink.shared.isStreaming { GarminLink.shared.sendCommand(a) } }
+                return
+            }
             switch a {
             case "next":
                 eng.advance(); self.recorder?.appendEvent(second: eng.lastSecond, "skip"); eng.skipStep()
@@ -708,6 +862,8 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
 
     /// Stan jazdy + dystans (na engineQueue).
     private func stateForCoach() -> [String: Any] {
+        // bez treningu w telefonie: stan z licznika Garmin (świeży – przychodzi razem z przyciskiem ENZO)
+        if engine == nil { return Date().timeIntervalSince(garminStateAt) < 90 ? garminState : [:] }
         var d = engine?.coachState() ?? [:]
         if outdoor { d["distanceKm"] = (distKm * 10).rounded() / 10; d["speedKmh"] = Int(speedKmh.rounded()) }
         if let n = navigator { d["route"] = n.state() }
@@ -724,6 +880,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         let enzo = voiceMode == "enzo" ? director : nil
         func play(_ ids: [String], _ text: String) {
             notifyListeners("coach", data: ["state": "answer", "text": text])
+            if GarminLink.shared.isStreaming { GarminLink.shared.sendEnzoAnswer(text) }
             if let d = enzo, !ids.isEmpty { d.play(ids) } else { speaker.speak(text) }
         }
         func lead(_ ev: String) -> [String] { enzo?.compose(ev, [:]) ?? [] }
@@ -739,11 +896,11 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
 
         // --- jedzenie i picie
         if has("zjadlem", "zjadlam", "zjadl ", "zjedzone", "mam zel", "zjadlem zel") {
-            engineQueue.async { self.engine?.fueled("eat") }
+            fuel("eat")
             play(lead("ateOk"), "Zapisane – zjedzone."); return true
         }
         if has("wypilem", "wypilam", "pilem", "pije ") {
-            engineQueue.async { self.engine?.fueled("drink") }
+            fuel("drink")
             play(lead("drankOk"), "Zapisane – wypite."); return true
         }
         if has("co jesc", "kiedy jesc", "ile jesc", "co zjesc", "jedzen", "co pic", "ile pic", "picie", "wegl", "zel ", "glodn") {

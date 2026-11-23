@@ -153,6 +153,7 @@ class Ride {
         Application.Storage.setValue("wkn", n);
         Application.Storage.setValue("brief", data.get("brief"));
         Application.Storage.setValue("briefDate", Util.str(data.get("today"), ""));
+        Application.Storage.setValue("rtk", Util.str(data.get("rideToken"), ""));
         Application.Storage.deleteValue("pick");     // po synchronizacji znów domyślnie trening na dziś
         Cfg.load();
         if (!active()) { loadPlan(); }
@@ -231,7 +232,7 @@ class Ride {
         result = null; saved = false;
         state = RideState.RECORDING;
         tone("start");
-        link.event({ "t" => "state", "s" => "start", "w" => wk.name, "ftp" => wk.ftp, "free" => (wk.isFree() ? 1 : 0) });
+        link.event(withAuth({ "t" => "state", "s" => "start", "w" => wk.name, "ftp" => wk.ftp, "free" => (wk.isFree() ? 1 : 0) }));
         return true;
     }
 
@@ -321,6 +322,11 @@ class Ride {
         }
         if (state == RideState.RECORDING && !hub.simulated) { rideTick(); }
         if (state == RideState.IDLE && _tickNo % 60 == 0) { up.kick(); }   // ponawiaj zaległą wysyłkę
+        // telefon: podgląd czujników przed startem (ekran Czujniki w aplikacji pokazuje, że most działa)
+        if (state == RideState.IDLE && Cfg.phoneLink && _tickNo % 2 == 0 && !hub.simulated) {
+            link.live([-1, hub.power == null ? -1 : hub.power, hub.hr == null ? 0 : hub.hr, hub.cad == null ? -1 : hub.cad,
+                hub.speed == null ? -1 : Util.round(hub.speed * 36), Phase.FREE, 0, 0, 0, 0, 0]);
+        }
         Demo.tick(self);
         WatchUi.requestUpdate();
     }
@@ -393,7 +399,7 @@ class Ride {
 
         // telefon: dane na żywo
         if (link != null && Cfg.phoneLink) {
-            link.live([eng.s, pw, h == null ? 0 : h, c == null ? -1 : c, speed == null ? -1 : Util.round(speed * 36),
+            link.live([eng.s, p == null ? -1 : pw, h == null ? 0 : h, c == null ? -1 : c, speed == null ? -1 : Util.round(speed * 36),
                 eng.phase, eng.stepIdx, eng.stepRemaining(), st == null ? 0 : st.lo, st == null ? 0 : st.hi, 0]);
         }
     }
@@ -495,7 +501,9 @@ class Ride {
             cues.add([eng == null ? 0 : eng.s, kind, text]);
         }
         cueTone(kind, key, vars);
-        if (!key.equals("endCount")) {
+        // odliczanie 3-2-1: telefon dostaje tylko „3” i resztę odlicza sam (radio ma za duże opóźnienia na 1 Hz)
+        var skip = key.equals("endCount") || (key.equals("count") && Util.int(vars.get("n"), 0) != 3);
+        if (!skip) {
             link.event({ "t" => "cue", "k" => key, "kind" => kind, "x" => text, "v" => vars });
         }
     }
@@ -580,6 +588,11 @@ class Ride {
         d.put("sinceEatSec", eng.s - eng.lastEat);
         d.put("sinceDrinkSec", eng.s - eng.lastDrink);
         var st = eng.step();
+        d.put("falseStartLeft", eng.falseStartLeft());
+        var ivLeft = 0;
+        for (var k = eng.stepIdx + 1; k < wk.steps.size(); k++) { if (wk.steps[k].type == StepType.INTERVAL) { ivLeft++; } }
+        d.put("intervalsLeft", eng.phase == Phase.FREE ? 0 : ivLeft);
+        d.put("inInterval", eng.phase != Phase.FREE && st != null && st.type == StepType.INTERVAL);
         if (st != null) {
             var sd = {} as Dictionary;
             sd.put("name", st.name);
@@ -593,12 +606,15 @@ class Ride {
             sd.put("avgPower", eng.stepAvgPower());
             sd.put("elapsedSec", eng.inStep);
             sd.put("remainingSec", eng.stepRemaining());
+            sd.put("durationSec", st.dur);
             if (st.hrHi > 0) { sd.put("hrHigh", st.hrHi); }
             if (st.hrLo > 0) { sd.put("hrLow", st.hrLo); }
             d.put("step", sd);
             var nx = eng.nextStep();
             if (nx != null) {
-                d.put("nextStep", { "name" => nx.name, "type" => StepType.key(nx.type), "durationSec" => nx.dur, "low" => nx.lo, "high" => nx.hi });
+                var nd = { "name" => nx.name, "type" => StepType.key(nx.type), "durationSec" => nx.dur, "targetLow" => nx.lo, "targetHigh" => nx.hi };
+                if (nx.type == StepType.INTERVAL) { nd.put("intervalNo", eng.intervalNo(eng.stepIdx + 1)); nd.put("intervalCount", eng.intervalCount); }
+                d.put("nextStep", nd);
             }
             d.put("planRemainingSec", eng.planLeftSec());
         }
@@ -607,7 +623,7 @@ class Ride {
             var from = eng.series.size() > 8 ? eng.series.size() - 8 : 0;
             for (var i = from; i < eng.series.size(); i++) {
                 var r = eng.series[i];
-                ser.add({ "n" => r["n"], "avg" => r["avgPower"], "vrd" => r["verdict"], "sec" => r["durationSec"] });
+                ser.add({ "n" => r["n"], "avgPower" => r["avgPower"], "verdict" => r["verdict"], "durationSec" => r["durationSec"] });
             }
             d.put("series", ser);
         }
@@ -649,9 +665,29 @@ class Ride {
 
     //! Przycisk Enzo, gdy działa most do telefonu: telefon włącza mikrofon słuchawek i odpowiada głosem.
     function talkToPhone() as Void {
-        link.event({ "t" => "talk" });
+        link.event(withAuth({ "t" => "talk", "st" => coachState() }));
         showBanner("Enzo słucha\nmów do słuchawek", "enzo", 5);
         tone("msg");
+    }
+
+    //! Gotowe pytanie bez słuchania (np. raport po przytrzymaniu przycisku Flic) – telefon odpowiada głosem.
+    function askPhone(question as String) as Void {
+        link.event(withAuth({ "t" => "talk", "q" => question, "st" => coachState() }));
+    }
+
+    //! Dokłada token rozmowy z trenerem (z ostatniej synchronizacji) i adres serwera – dzięki temu telefon
+    //! może pytać Enzo także wtedy, gdy trening nie był uruchamiany w telefonie.
+    hidden function withAuth(m) {
+        var tk = Application.Storage.getValue("rtk");
+        if (tk != null && tk instanceof String && tk.length() > 0) {
+            m.put("tk", tk);
+            m.put("b", Cfg.apiBase);
+        }
+        return m;
+    }
+
+    function onPhoneHello() as Void {
+        showBanner("Telefon połączony\nEnzo mówi w słuchawkach", "enzo", 6);
     }
 
     // ------------------------------------------------------------------ telefon → licznik
@@ -663,6 +699,8 @@ class Ride {
         else if (cmd.equals("lap")) { lapButton(); }
         else if (cmd.equals("eat")) { if (eng != null) { eng.fueled(true); } }
         else if (cmd.equals("drink")) { if (eng != null) { eng.fueled(false); } }
+        else if (cmd.equals("talk")) { if (eng != null) { talkToPhone(); } }
+        else if (cmd.equals("report")) { if (eng != null) { askPhone("raport"); } }
     }
 
     function onPhoneSay(text as String) as Void {

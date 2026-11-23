@@ -81,6 +81,20 @@ export interface FlicStatus {
 }
 export type FlicPress = 'click' | 'double' | 'hold';
 
+/** Most do licznika Garmin Edge (natywnie, Connect IQ Mobile SDK): czujniki sparowane z licznikiem (ANT+),
+ *  telefon dostaje z niego moc / tętno / kadencję i mówi głosem Enzo. available=false → stara wersja aplikacji / web. */
+export interface GarminLinkStatus {
+  available: boolean;
+  paired?: boolean;          // wybrano licznik w Garmin Connect
+  name?: string;
+  connected?: boolean;       // licznik w zasięgu telefonu
+  appInstalled?: boolean;    // aplikacja VeloIQ jest na liczniku (brak pola = jeszcze nie wiadomo)
+  streaming?: boolean;       // licznik nadaje dane (aplikacja VeloIQ na liczniku jest otwarta)
+  recording?: boolean;       // licznik nagrywa jazdę
+  power?: number; hr?: number; cadence?: number;
+  ride?: 'start' | 'pause' | 'resume' | 'end';
+}
+
 export interface CoachEvent { state: 'listening' | 'question' | 'answer' | 'error' | 'idle'; text?: string }
 
 export interface RideEnginePlugin {
@@ -153,6 +167,12 @@ export interface RideEnginePlugin {
   flicForget(): Promise<FlicStatus>;
   /** Zmiana stanu przycisku albo wciśnięcie ({ press }) – też poza jazdą (test na ekranie Czujniki). */
   addListener(event: 'flic', cb: (d: FlicStatus & { press?: FlicPress }) => void): Promise<PluginListenerHandle>;
+  /** Licznik Garmin Edge: stan mostu, wybór licznika (otwiera Garmin Connect), usunięcie, otwarcie VeloIQ na liczniku. */
+  garminStatus(): Promise<GarminLinkStatus>;
+  garminChoose(): Promise<void>;
+  garminForget(): Promise<GarminLinkStatus>;
+  garminOpenApp(): Promise<void>;
+  addListener(event: 'garmin', cb: (d: GarminLinkStatus) => void): Promise<PluginListenerHandle>;
   removeAllListeners(): Promise<void>;
 }
 

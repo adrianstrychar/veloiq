@@ -21,9 +21,10 @@ class LinkListener extends Communications.ConnectionListener {
 //! Protokół (słowniki z krótkimi kluczami):
 //!   Edge → telefon  { "t":"live", "v":[s, moc, tętno, kadencja, prędkość×10, faza, krok, zostało, cel↓, cel↑, pauza] }
 //!                   { "t":"cue", "k":klucz, "kind":rodzaj, "x":tekst, "v":{zmienne} }
-//!                   { "t":"talk" }                       – przycisk Enzo
+//!                   { "t":"talk", "st":{stan jazdy}, "q":gotowe pytanie, "tk":token rozmowy, "b":adres serwera }
 //!                   { "t":"state", "s":"start|pause|resume|end", "w":nazwa treningu, "ftp":… }
-//!   telefon → Edge  { "cmd":"next|pause|resume|cancel|lap" }   { "say":"tekst odpowiedzi Enzo" }   { "hello":1 }
+//!   telefon → Edge  { "cmd":"next|pause|resume|cancel|lap|eat|drink|talk|report" }   { "say":"odpowiedź Enzo" }
+//!                   { "hello":1 }  – telefon ma most; licznik sam włącza nadawanie (bez grzebania w ustawieniach)
 class PhoneLink {
     var active as Boolean = false;     // telefon z aplikacją potwierdził odbiór
     var owner = null;                  // onPhoneCommand(cmd), onPhoneSay(text)
@@ -59,6 +60,10 @@ class PhoneLink {
         active = true;
         _fails = 0;
         if (d == null || !(d instanceof Dictionary) || owner == null) { return; }
+        if (d.get("hello") != null && !Cfg.phoneLink) {
+            Cfg.save("phoneLink", true);
+            owner.onPhoneHello();
+        }
         var cmd = d.get("cmd");
         if (cmd != null) { owner.onPhoneCommand(cmd.toString()); }
         var say = d.get("say");

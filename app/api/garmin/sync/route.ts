@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabaseClient } from '@/lib/supabase';
 import { verifyDevice } from '@/lib/garmin/auth';
 import { buildGarminSync } from '@/lib/garmin/sync';
+import { signRideToken } from '@/lib/ride/ride-token';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 20;
@@ -14,7 +15,9 @@ export async function GET(req: NextRequest) {
   try {
     const out = await buildGarminSync(admin, dev.userId);
     if (!out) return NextResponse.json({ error: 'athlete_not_found' }, { status: 404 });
-    return NextResponse.json(out);
+    // rideToken: krótki token rozmowy z trenerem (/api/ride/ask) – licznik przekazuje go telefonowi przez most,
+    // żeby pytania głosowe działały także przy treningu uruchomionym na liczniku. Ważny 36 h (do następnej synchronizacji).
+    return NextResponse.json({ ...out, rideToken: signRideToken(dev.userId, 36 * 3600) });
   } catch (e) {
     console.error('[garmin/sync]', e instanceof Error ? e.message : e);
     return NextResponse.json({ error: 'server_error' }, { status: 500 });

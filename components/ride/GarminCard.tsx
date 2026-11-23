@@ -1,9 +1,11 @@
 'use client';
 // Licznik Garmin Edge (ekran Czujniki): parowanie aplikacji VeloIQ na liczniku z kontem – kod z ekranu licznika –
 // oraz lista połączonych liczników. Po sparowaniu licznik sam pobiera plan i wysyła jazdy.
+// Druga część (tylko aplikacja na iPhonie): most do telefonu – czujniki sparowane z licznikiem, głos Enzo w słuchawkach.
 import { useCallback, useEffect, useState } from 'react';
 import s from './ride.module.css';
 import { StatusDot } from './parts';
+import type { Ride } from './useRide';
 
 interface Device { id: string; name: string; app?: string | null; createdAt: string; lastSeenAt?: string | null }
 
@@ -26,7 +28,18 @@ const seen = (iso?: string | null) => {
   return `aktywny ${Math.round(min / 1440)} dni temu`;
 };
 
-export function GarminCard() {
+/** Most licznik → telefon: stan w jednym zdaniu + co zrobić dalej. */
+function linkLine(g: Ride['garminLink']): { ok: boolean; text: string } {
+  if (!g.paired) return { ok: false, text: 'Czujniki zostają przy liczniku, a telefon dostaje z niego moc i tętno i mówi głosem Enzo.' };
+  if (!g.connected) return { ok: false, text: `${g.name ?? 'Licznik'} poza zasięgiem – włącz go i sprawdź, czy jest połączony z Garmin Connect.` };
+  if (g.appInstalled === false) return { ok: false, text: 'Na liczniku nie widzę aplikacji VeloIQ. Jeśli jest wgrana kablem, otwórz ją na liczniku – dane mogą popłynąć mimo to.' };
+  if (!g.streaming) return { ok: false, text: 'Połączony. Otwórz aplikację VeloIQ na liczniku i włącz w niej MENU → Ustawienia → „Most do telefonu”.' };
+  const vals = [g.power != null ? `${g.power} W` : null, g.hr != null ? `${g.hr} bpm` : null, g.cadence != null ? `${g.cadence} rpm` : null].filter(Boolean).join(' · ');
+  return { ok: true, text: `${g.recording ? 'Licznik nagrywa jazdę' : 'Licznik nadaje'}${vals ? `: ${vals}` : ' – czekam na czujniki'}.` };
+}
+
+export function GarminCard({ ride }: { ride: Ride }) {
+  const link = ride.garminLink;
   const [devices, setDevices] = useState<Device[]>([]);
   const [ready, setReady] = useState(true);
   const [open, setOpen] = useState(false);
@@ -95,6 +108,29 @@ export function GarminCard() {
           <button type="button" className={s.btnText} style={{ height: 36, fontSize: 13, padding: '0 8px' }} onClick={() => void unpair(d)}>Odłącz</button>
         </div>
       ))}
+
+      {link.available && (
+        <div className={s.stack} style={{ gap: 10, backgroundColor: '#14171C', borderRadius: 12, padding: '12px' }}>
+          <div className={s.row} style={{ gap: 10 }}>
+            <span style={{ fontSize: 14, fontWeight: 600 }}>Czujniki i głos Enzo przez licznik</span>
+            {link.paired && <StatusDot ok={!!link.streaming}>{link.streaming ? 'Nadaje' : link.connected ? 'Czeka' : 'Brak'}</StatusDot>}
+          </div>
+          <span className={s.small} style={{ fontSize: 13, color: linkLine(link).ok ? 'var(--ok)' : undefined }}>{linkLine(link).text}</span>
+          {link.paired ? (
+            <div className={s.row} style={{ gap: 10 }}>
+              {link.connected && !link.streaming && (
+                <button type="button" className={s.btnGhost} style={{ height: 40, flex: 1, fontSize: 13 }} onClick={() => void ride.garminOpenApp()}>Otwórz VeloIQ na liczniku</button>
+              )}
+              <button type="button" className={s.btnText} style={{ height: 40, fontSize: 13, padding: '0 8px' }} onClick={() => void ride.garminForget()}>Zapomnij licznik</button>
+            </div>
+          ) : (
+            <>
+              <button type="button" className={s.btnGhost} style={{ height: 44 }} onClick={() => void ride.garminChoose()}>Wybierz licznik w Garmin Connect</button>
+              <span className={s.small} style={{ fontSize: 12 }}>Otworzy się aplikacja Garmin Connect – zaznacz swój Edge i wróć do VeloIQ.</span>
+            </>
+          )}
+        </div>
+      )}
 
       {!ready && <span className={s.small} style={{ fontSize: 13, color: 'var(--warn, #C99A4E)' }}>Parowanie liczników nie jest jeszcze włączone na serwerze (migracja 026).</span>}
       {msg && <span className={s.small} style={{ fontSize: 13, color: msg.ok ? 'var(--ok)' : 'var(--warn, #C99A4E)' }}>{msg.text}</span>}
