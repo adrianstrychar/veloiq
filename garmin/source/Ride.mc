@@ -77,7 +77,6 @@ class Ride {
     hidden var _moveRun as Number = 0;
 
     var result = null;          // podsumowanie po zapisie
-    var dbg as Boolean = false;
     var uiPage as Number = -1;  // prośba o przełączenie strony ekranu jazdy (tryb demo)
     var saved as Boolean = false;
     hidden var _timer = null;
@@ -371,9 +370,7 @@ class Ride {
         var p = hub.power;
         var h = hub.hr;
         var c = hub.cad;
-        if (dbg) { System.println("CP r0"); }
         eng.tick(p, h, c);
-        if (dbg) { System.println("CP r1"); }
         var pw = p == null ? 0 : p;
 
         // okrążenie
@@ -383,9 +380,7 @@ class Ride {
 
         // FIT: cel kroku i W'bal
         var st = eng.step();
-        if (dbg) { System.println("CP r2"); }
         rec.record(st == null ? 0 : (st.lo + st.hi) / 2, eng.m.wBal / 1000.0);
-        if (dbg) { System.println("CP r3"); }
 
         // próbka 5 s i GPS co 10 s (do wysyłki)
         _dsSum += pw; _dsN++;
@@ -394,7 +389,6 @@ class Ride {
         if (eng.s % 10 == 0) { pushGps(); }
 
         autoLapTick(pw);
-        if (dbg) { System.println("CP r4"); }
 
         // telefon: dane na żywo
         if (link != null && Cfg.phoneLink) {
@@ -489,19 +483,17 @@ class Ride {
 
     // ------------------------------------------------------------------ zdarzenia silnika
     function onCue(kind, key, text, vars) as Void {
-        if (dbg) { System.println("CP cue " + key); }
-        var secs = 7;
+        var secs = 6;
         if (kind.equals("countdown")) { secs = 2; }
-        else if (kind.equals("summary")) { secs = 12; }
-        else if (kind.equals("arm")) { secs = 9; }
+        else if (kind.equals("summary")) { secs = 10; }
+        else if (kind.equals("arm")) { secs = 8; }
+        else if (kind.equals("praise")) { secs = 4; }
         showBanner(text, kind, secs);
         if (!key.equals("count") && !key.equals("endCount")) {
             if (cues.size() >= 12) { cues = cues.slice(1, null); }
             cues.add([eng == null ? 0 : eng.s, kind, text]);
         }
-        if (dbg) { System.println("CP cue-tone"); }
         cueTone(kind, key, vars);
-        if (dbg) { System.println("CP cue-link"); }
         if (!key.equals("endCount")) {
             link.event({ "t" => "cue", "k" => key, "kind" => kind, "x" => text, "v" => vars });
         }
