@@ -1,0 +1,5 @@
+# Tylko Edge 1030 – paczka testowa do sklepu (diagnostyka uploadu).
+project.manifest = manifest-1030.xml
+
+# Tryb demo (zrzuty ekranu w CI) jest w kodzie pod adnotacja (:demo) - w zwyklym buildzie wykluczony.
+base.excludeAnnotations = demo

@@ -52,12 +52,16 @@ jobs:
           docker run --rm --entrypoint /bin/bash \
             -v "$PWD/garmin:/app" -v "$RUNNER_TEMP:/key" -w /app \
             ghcr.io/matco/connectiq-tester:latest -c \
-            'monkeyc -e -r -f monkey.jungle -o bin/veloiq.iq -y /key/developer_key.der -w > bin/export.log 2>&1; s=$?; grep -E "^(ERROR|BUILD)" bin/export.log | head -20; ls -la bin/veloiq.iq 2>/dev/null; exit $s'
+            'monkeyc -e -r -f monkey.jungle -o bin/veloiq.iq -y /key/developer_key.der -w > bin/export.log 2>&1; s=$?; monkeyc -e -r -f monkey-1030.jungle -o bin/veloiq-1030.iq -y /key/developer_key.der -w > bin/export-1030.log 2>&1; grep -E "^(ERROR|BUILD)" bin/export*.log | head -20; ls -la bin/*.iq 2>/dev/null; exit $s'
           rm -f "$RUNNER_TEMP/developer_key.der"
           if [ -f garmin/bin/veloiq.iq ]; then
             echo "IQSHA $(sha256sum garmin/bin/veloiq.iq | cut -d' ' -f1) $(stat -c %s garmin/bin/veloiq.iq)"
             # dwa razy – log GitHuba potrafi zgubić pojedynczą długą linię
             for pass in 1 2; do base64 -w 20000 garmin/bin/veloiq.iq | awk '{print "IQB64 " NR " " $0}'; done
+          fi
+          if [ -f garmin/bin/veloiq-1030.iq ]; then
+            echo "IQ1SHA $(sha256sum garmin/bin/veloiq-1030.iq | cut -d' ' -f1) $(stat -c %s garmin/bin/veloiq-1030.iq)"
+            for pass in 1 2; do base64 -w 20000 garmin/bin/veloiq-1030.iq | awk '{print "IQ1B64 " NR " " $0}'; done
           fi
 
       - name: Zrzuty ekranu z symulatora (tryb demo)

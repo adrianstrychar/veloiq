@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!-- VeloIQ na Garmin Edge – aplikacja urządzenia (device app) Connect IQ. -->
 <iq:manifest version="3" xmlns:iq="http://www.garmin.com/xml/connectiq">
-    <iq:application id="6f1d2c8e-4b7a-4d53-9a1e-5c0b7e2f9a41" type="watch-app" name="@Strings.AppName" entry="VeloIQApp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="3.2.0" version="0.2.0">
+    <iq:application id="6f1d2c8e-4b7a-4d53-9a1e-5c0b7e2f9a41" type="watch-app" name="@Strings.AppName" entry="VeloIQApp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="3.2.0">
         <iq:products>
             <iq:product id="edge1030"/>
             <iq:product id="edge1030plus"/>
