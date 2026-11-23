@@ -85,13 +85,13 @@ module Demo {
             // na koniec kilkanaście sekund PRAWDZIWEJ ścieżki: zegar 1 Hz, czujniki symulatora, auto-pauza, dane z Activity.Info
             r.finish(false); r.reset(); Th.apply(0);
             Cfg.put("theme", 0); Cfg.put("autoPause", true); Cfg.load();
-            r.plan = plan(); r.startRide(false);
-            wait = 14;
+            wait = 2;       // nowa sesja FIT dopiero w następnym wywołaniu zegara
         }
-        else if (s == 20) {
+        else if (s == 20) { r.plan = plan(); r.startRide(false); wait = 14; }
+        else if (s == 21) {
             System.println("REAL s=" + (r.eng == null ? -1 : r.eng.s) + " state=" + r.state + " simulated=" + r.hub.simulated);
             r.uiPage = 0; shot("17-prawdziwe-czujniki");
         }
-        else if (s == 21) { r.finish(false); r.reset(); System.println("SHOT END"); }
+        else if (s == 22) { r.finish(false); r.reset(); System.println("SHOT END"); }
     }
 }
