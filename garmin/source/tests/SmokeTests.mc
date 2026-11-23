@@ -77,7 +77,7 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
     var r = getRide();
     var g = Smoke.dc();
     var scr = new RideScreen();
-    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.put("tones", false); Cfg.load();
+    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
     r.plan = Smoke.plan();
     r.finish(false);
     r.reset();
@@ -140,7 +140,7 @@ function testSmokeFreeRide(logger as Test.Logger) as Boolean {
     var r = getRide();
     var g = Smoke.dc();
     var scr = new RideScreen();
-    Cfg.put("autoPause", true); Cfg.put("indoor", false); Cfg.put("autoLapMode", 3); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.load();
+    Cfg.put("autoPause", true); Cfg.put("indoor", false); Cfg.put("autoLapMode", 3); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
     r.plan = null;
     if (!r.startRide(true)) { logger.debug("startRide failed"); return false; }
     var e = r.eng;
