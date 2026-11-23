@@ -133,7 +133,7 @@ class RideScreen {
         var pTxt = hub.power == null ? "--" : p3.format("%d");
         var pCol = Fields.powerColor(r, p3);
         var subH = dc.getFontHeight(Graphics.FONT_TINY);
-        Ui.value(dc, w / 2, y + (ph - subH) / 2, w - 6 * pad, ph - subH, pTxt, pCol);
+        Ui.power(dc, w / 2, y + (ph - subH) / 2, w - 6 * pad, ph - subH, pTxt, pCol);
         Ui.text(dc, w - pad, y + 2, xt, "W", Ui.R, Th.dim);
         Ui.text(dc, pad, y + 2, xt, "MOC 3s", Ui.L, Th.dim);
         var tgt = "";

@@ -2,6 +2,7 @@ import Toybox.Graphics;
 import Toybox.Lang;
 import Toybox.Math;
 import Toybox.System;
+import Toybox.WatchUi;
 
 //! Rysowanie: dobór czcionek do miejsca (ten sam kod na 282×470, 246×322 i 480×800), zawijanie tekstu, przyciski.
 module Ui {
@@ -44,6 +45,37 @@ module Ui {
         var f = fit(dc, text, maxW, maxH, numeric(text) ? numFonts() : textFonts());
         dc.setColor(color, Graphics.COLOR_TRANSPARENT);
         dc.drawText(cx, cy, f, text, C | VC);
+    }
+
+    var _powerFont = null;
+    var _powerFontTried as Boolean = false;
+
+    //! Własna czcionka dużych cyfr mocy (resources*/fonts, generowana przez ci/make-font.py) – ładowana raz.
+    function powerFont() {
+        if (!_powerFontTried) {
+            _powerFontTried = true;
+            _powerFont = WatchUi.loadResource(Rez.Fonts.PowerDigits);
+        }
+        return _powerFont;
+    }
+
+    //! Moc na ekranie TRENING: duże cyfry z własnej czcionki, gdy liczba mieści się w polu; inaczej jak zwykła wartość.
+    function power(dc as Graphics.Dc, cx, cy, maxW, maxH, text as String, color) as Void {
+        var digits = text.length() > 0;
+        var a = text.toCharArray();
+        for (var i = 0; i < a.size(); i++) {
+            var code = a[i].toNumber();
+            if (code < 48 || code > 57) { digits = false; break; }
+        }
+        if (digits) {
+            var f = powerFont();
+            if (f != null && dc.getFontHeight(f) <= maxH && dc.getTextWidthInPixels(text, f) <= maxW) {
+                dc.setColor(color, Graphics.COLOR_TRANSPARENT);
+                dc.drawText(cx, cy, f, text, C | VC);
+                return;
+            }
+        }
+        value(dc, cx, cy, maxW, maxH, text, color);
     }
 
     function text(dc as Graphics.Dc, x, y, font, s as String, just, color) as Void {
