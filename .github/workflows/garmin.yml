@@ -37,7 +37,7 @@ jobs:
           f=garmin/bin/veloiq-edge1030.prg
           if [ -f "$f" ]; then
             echo "PRGSHA $(sha256sum "$f" | cut -d' ' -f1) $(stat -c %s "$f")"
-            base64 -w 60000 "$f" | awk '{print "PRGB64 " NR " " $0}'
+            for pass in 1 2; do base64 -w 20000 "$f" | awk '{print "PRGB64 " NR " " $0}'; done
           fi
 
       - name: Paczka do sklepu Connect IQ (.iq, wersja beta)
@@ -56,7 +56,8 @@ jobs:
           rm -f "$RUNNER_TEMP/developer_key.der"
           if [ -f garmin/bin/veloiq.iq ]; then
             echo "IQSHA $(sha256sum garmin/bin/veloiq.iq | cut -d' ' -f1) $(stat -c %s garmin/bin/veloiq.iq)"
-            base64 -w 60000 garmin/bin/veloiq.iq | awk '{print "IQB64 " NR " " $0}'
+            # dwa razy – log GitHuba potrafi zgubić pojedynczą długą linię
+            for pass in 1 2; do base64 -w 20000 garmin/bin/veloiq.iq | awk '{print "IQB64 " NR " " $0}'; done
           fi
 
       - name: Zrzuty ekranu z symulatora (tryb demo)
