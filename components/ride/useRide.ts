@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { getRideEngine, isNativeRide, setWebSimSpeed } from '@/lib/ride/ride-client';
-import type { CoachEvent, FlicPress, FlicStatus, LiveSample, SensorData, SensorFound, SensorStatus, WorkoutSummary, VoiceLevel, VoiceInfo, VoiceMode } from '@/lib/ride/ride-engine';
+import type { CoachEvent, FlicPress, FlicStatus, GarminLinkStatus, LiveSample, SensorData, SensorFound, SensorStatus, WorkoutSummary, VoiceLevel, VoiceInfo, VoiceMode } from '@/lib/ride/ride-engine';
 import type { WorkoutScript } from '@/lib/ride/workout-script';
 import type { RideRoute } from '@/lib/ride/gpx';
 import type { NavState } from './RouteCard';
@@ -61,6 +61,8 @@ export function useRide() {
   // przycisk Flic na kierownicy: stan + ostatnie wciśnięcie (test na ekranie Czujniki)
   const [flic, setFlic] = useState<FlicStatus>({ available: false });
   const [flicPress, setFlicPress] = useState<{ press: FlicPress; at: number } | null>(null);
+  // most do licznika Garmin Edge (czujniki sparowane z licznikiem, głos Enzo w telefonie)
+  const [garminLink, setGarminLink] = useState<GarminLinkStatus>({ available: false });
   const cueId = useRef(0);
   const lastElapsed = useRef(0);
 
@@ -90,6 +92,8 @@ export function useRide() {
       if (d.press) setFlicPress({ press: d.press, at: Date.now() });
       else setFlic((f) => ({ ...f, ...d, available: true }));
     }));
+    handles.push(engine.addListener('garmin', (d) => setGarminLink((g) => ({ ...g, ...d, available: d.available !== false }))));
+    engine.garminStatus().then(setGarminLink).catch(() => setGarminLink({ available: false }));
     // stara wersja aplikacji (bez metody) → available: false, sekcja Flic prosi o aktualizację
     engine.flicStatus().then(setFlic).catch(() => setFlic({ available: false }));
     engine.getRecoverable().then((r) => { if (r.available) setRecoverable({ name: r.name, elapsed: r.elapsed }); }).catch(() => {});
@@ -144,6 +148,10 @@ export function useRide() {
     }),
     flicStopScan: () => run(() => engine.flicStopScan()),
     flicForget: () => run(async () => { const r = await engine.flicForget(); setFlic({ ...r, available: true }); }),
+    garminLink,
+    garminChoose: () => run(() => engine.garminChoose()),
+    garminForget: () => run(async () => setGarminLink(await engine.garminForget())),
+    garminOpenApp: () => run(() => engine.garminOpenApp()),
     pause: () => run(async () => { await engine.pause(); setPaused(true); }),
     resume: () => run(async () => { await engine.resume(); setPaused(false); setAutoPaused(false); }),
     skip: () => run(() => engine.skipStep()),

@@ -54,6 +54,19 @@ pset NSLocationWhenInUseUsageDescription string "VeloIQ zapisuje trasę treningu
 pset NSMicrophoneUsageDescription string "Zadaj pytanie trenerowi Enzo głosem – przez mikrofon słuchawek lub okularów."
 pset NSSpeechRecognitionUsageDescription string "VeloIQ zamienia Twoje pytanie do trenera Enzo na tekst."
 pset NSLocalNetworkUsageDescription string "VeloIQ w trybie deweloperskim ładuje aplikację z komputera w tej samej sieci."
+# Licznik Garmin Edge (Connect IQ Mobile SDK): Garmin Connect wraca do aplikacji linkiem veloiq://,
+# a aplikacja musi móc sprawdzić, czy Garmin Connect jest zainstalowany (gcm-ciq).
+if ! $PB -c "Print :CFBundleURLTypes" "$PL" 2>/dev/null | grep -q "veloiq"; then
+  $PB -c "Print :CFBundleURLTypes" "$PL" >/dev/null 2>&1 || $PB -c "Add :CFBundleURLTypes array" "$PL"
+  N=$($PB -c "Print :CFBundleURLTypes" "$PL" | grep -c "Dict {" || true)
+  $PB -c "Add :CFBundleURLTypes:$N dict" "$PL"
+  $PB -c "Add :CFBundleURLTypes:$N:CFBundleURLName string app.veloiq" "$PL"
+  $PB -c "Add :CFBundleURLTypes:$N:CFBundleURLSchemes array" "$PL"
+  $PB -c "Add :CFBundleURLTypes:$N:CFBundleURLSchemes:0 string veloiq" "$PL"
+fi
+$PB -c "Print :LSApplicationQueriesSchemes" "$PL" >/dev/null 2>&1 || $PB -c "Add :LSApplicationQueriesSchemes array" "$PL"
+$PB -c "Print :LSApplicationQueriesSchemes" "$PL" | grep -q "^ *gcm-ciq\$" || $PB -c "Add :LSApplicationQueriesSchemes: string gcm-ciq" "$PL"
+pset CFBundleDisplayName string VeloIQ
 $PB -c "Print :NSAppTransportSecurity" "$PL" >/dev/null 2>&1 || $PB -c "Add :NSAppTransportSecurity dict" "$PL"
 $PB -c "Print :NSAppTransportSecurity:NSAllowsLocalNetworking" "$PL" >/dev/null 2>&1 || $PB -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PL"
 # Cykl życia ze scenami (UIScene) – wymagany przez nowe SDK Xcode, bez niego aplikacja się nie uruchamia.
@@ -123,6 +136,25 @@ unless target.package_product_dependencies.any? { |d| d.product_name == 'flic2li
   dep = proj.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
   dep.package = flic
   dep.product_name = 'flic2lib'
+  target.package_product_dependencies << dep
+  bf = proj.new(Xcodeproj::Project::Object::PBXBuildFile)
+  bf.product_ref = dep
+  target.frameworks_build_phase.files << bf
+end
+# Licznik Garmin Edge: Connect IQ Mobile SDK (Swift Package, binarny xcframework)
+ciq_url = 'https://github.com/garmin/connectiq-companion-app-sdk-ios'
+ciq = proj.root_object.package_references.find { |p| p.respond_to?(:repositoryURL) && p.repositoryURL.to_s.sub(/\.git$/, '') == ciq_url }
+unless ciq
+  ciq = proj.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+  ciq.repositoryURL = ciq_url
+  ciq.requirement = { 'kind' => 'upToNextMajorVersion', 'minimumVersion' => '1.8.0' }
+  proj.root_object.package_references << ciq
+  puts '  + pakiet ConnectIQ (licznik Garmin)'
+end
+unless target.package_product_dependencies.any? { |d| d.product_name == 'ConnectIQ' }
+  dep = proj.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+  dep.package = ciq
+  dep.product_name = 'ConnectIQ'
   target.package_product_dependencies << dep
   bf = proj.new(Xcodeproj::Project::Object::PBXBuildFile)
   bf.product_ref = dep

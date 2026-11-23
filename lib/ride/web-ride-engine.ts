@@ -127,6 +127,10 @@ export class WebRideEngine implements RideEnginePlugin {
   async flicScan() { return { available: false, ok: false, error: 'Przycisk Flic działa w aplikacji na iPhonie.' }; }
   async flicStopScan() { /* tylko natywnie */ }
   async flicForget() { return { available: false }; }
+  async garminStatus() { return { available: false }; }
+  async garminChoose() { /* tylko natywnie */ }
+  async garminForget() { return { available: false }; }
+  async garminOpenApp() { /* tylko natywnie */ }
   async talk() { this.emit('coach', { state: 'error', text: 'Rozmowa z Enzo działa w aplikacji na iPhonie.' }); }
   async skipStep() { this.engine?.skipStep(true); this.emitLive(); }
   async cancelStart() { this.engine?.cancelStart(true); this.emitLive(); }

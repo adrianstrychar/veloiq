@@ -1,0 +1,74 @@
+name: Garmin Connect IQ
+
+# Buduje aplikację VeloIQ na Garmin Edge (garmin/) i uruchamia testy silnika w symulatorze.
+# Gotowe pliki .prg (do wgrania na urządzenie: GARMIN/APPS) są w artefaktach przebiegu.
+
+on:
+  push:
+    paths:
+      - 'garmin/**'
+      - '!garmin/sim/**'
+      - '.github/workflows/garmin.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: garmin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build + test (Connect IQ SDK w kontenerze)
+        run: |
+          docker run --rm --entrypoint /bin/bash \
+            -v "$PWD/garmin:/app" -w /app \
+            ghcr.io/matco/connectiq-tester:latest ci/build.sh
+
+      - name: Plik .prg dla Edge 1030 w logu (base64, do wgrania bez pobierania artefaktu)
+        if: always()
+        run: |
+          f=garmin/bin/veloiq-edge1030.prg
+          if [ -f "$f" ]; then
+            echo "PRGSHA $(sha256sum "$f" | cut -d' ' -f1) $(stat -c %s "$f")"
+            base64 -w 60000 "$f" | awk '{print "PRGB64 " NR " " $0}'
+          fi
+
+      - name: Zrzuty ekranu z symulatora (tryb demo)
+        if: always()
+        run: |
+          docker run --rm --entrypoint /bin/bash \
+            -e DEVICE=edge1030 -e SHOT_CROP=282x470+99+141 \
+            -v "$PWD/garmin:/app" -w /app \
+            ghcr.io/matco/connectiq-tester:latest ci/screens.sh
+          # mniejszy i większy ekran: kontrola układu (do logu tylko kilka zrzutów)
+          for d in edge830 edge1050; do
+            docker run --rm --entrypoint /bin/bash \
+              -e DEVICE=$d -e SHOT_LOG_FILTER='(05|14|19|22)-' \
+              -v "$PWD/garmin:/app" -w /app \
+              ghcr.io/matco/connectiq-tester:latest ci/screens.sh
+          done
+
+      - name: Raport
+        if: always()
+        run: |
+          if [ -f garmin/bin/report.md ]; then cat garmin/bin/report.md >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -f garmin/bin/annotations.txt ]; then cat garmin/bin/annotations.txt; fi
+
+      - name: Artefakty (.prg)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: veloiq-garmin
+          path: |
+            garmin/bin/*.prg
+            garmin/bin/shots/*.png
+            garmin/bin/*.log
+            garmin/bin/report.md
+          if-no-files-found: warn

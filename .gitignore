@@ -45,3 +45,7 @@ scripts/.baseline-*
 
 # OneDrive conflict-copies (np. "Plik-Nazwa Laptop.tsx")
 *[- ]Laptop.*
+
+# Garmin Connect IQ – wynik budowania
+/garmin/bin/
+/garmin/sim/dist/

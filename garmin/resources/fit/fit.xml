@@ -1,0 +1,13 @@
+<resources>
+    <!-- Pola VeloIQ w pliku FIT (Recorder.mc) – opis do wyświetlania w Garmin Connect. Numery = fieldId w createField. -->
+    <fitContributions>
+        <fitField id="0" displayInChart="true" sortOrder="0" precision="0" chartTitle="@Strings.FitTargetTitle" dataLabel="@Strings.FitTarget" unitLabel="@Strings.FitW" fillColor="#00CFFF"/>
+        <fitField id="1" displayInChart="true" sortOrder="1" precision="1" chartTitle="@Strings.FitWbalTitle" dataLabel="@Strings.FitWbal" unitLabel="@Strings.FitKj" fillColor="#FFB020"/>
+        <fitField id="10" displayInActivityLaps="true" sortOrder="2" precision="0" dataLabel="@Strings.FitLapTarget" unitLabel="@Strings.FitW"/>
+        <fitField id="11" displayInActivityLaps="true" sortOrder="3" precision="0" dataLabel="@Strings.FitLapType" unitLabel="@Strings.FitNone"/>
+        <fitField id="20" displayInActivitySummary="true" sortOrder="4" precision="0" dataLabel="@Strings.FitNp" unitLabel="@Strings.FitW"/>
+        <fitField id="21" displayInActivitySummary="true" sortOrder="5" precision="0" dataLabel="@Strings.FitTss" unitLabel="@Strings.FitNone"/>
+        <fitField id="22" displayInActivitySummary="true" sortOrder="6" precision="2" dataLabel="@Strings.FitIf" unitLabel="@Strings.FitNone"/>
+        <fitField id="23" displayInActivitySummary="true" sortOrder="7" precision="0" dataLabel="@Strings.FitCompliance" unitLabel="@Strings.FitPct"/>
+    </fitContributions>
+</resources>

@@ -1,0 +1,67 @@
+name: iOS (kompilacja)
+
+# Sprawdza, czy aplikacja iOS (Capacitor + natywny RideEngine) się kompiluje po zmianach w kodzie Swift
+# albo w skrypcie przygotowującym projekt. Buduje dla symulatora, bez podpisywania – nie wytwarza aplikacji
+# do instalacji, tylko wyłapuje błędy kompilacji przed otwarciem Xcode.
+
+on:
+  push:
+    paths:
+      - 'mobile/ios-src/**'
+      - 'mobile/setup-ios.sh'
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Projekt iOS (mobile/setup-ios.sh)
+        run: bash mobile/setup-ios.sh
+
+      - name: Info.plist i pakiety
+        run: |
+          plutil -p ios/App/App/Info.plist | grep -E -A4 "CFBundleURLTypes|LSApplicationQueriesSchemes" || true
+          echo "PKG ConnectIQ: $(grep -c 'connectiq-companion-app-sdk-ios' ios/App/App.xcodeproj/project.pbxproj)"
+          echo "PKG flic2lib: $(grep -c 'flic2lib-ios' ios/App/App.xcodeproj/project.pbxproj)"
+          echo "SRC GarminLink: $(grep -c 'GarminLink.swift' ios/App/App.xcodeproj/project.pbxproj)"
+
+      - name: Kompilacja (symulator, bez podpisu)
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project ios/App/App.xcodeproj || true
+          set +e
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/dd \
+            CODE_SIGNING_ALLOWED=NO build > xcodebuild.log 2>&1
+          code=$?
+          set -e
+          echo "XCODEBUILD exit $code"
+          grep -E "error:|warning: unre|\*\* BUILD" xcodebuild.log | sed -E "s#$PWD/##" | sort -u | head -80 || true
+          echo "LINK ConnectIQ: $(grep -c 'ConnectIQ.framework' xcodebuild.log)"
+          echo "COMPILED GarminLink: $(grep -c 'GarminLink' xcodebuild.log)"
+          tail -5 xcodebuild.log
+          exit $code
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+          retention-days: 7

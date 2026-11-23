@@ -1,0 +1,6 @@
+<resources>
+    <fonts>
+        <!-- Duże cyfry mocy na ekranie TRENING. Plik generuje garmin/ci/make-font.py. -->
+        <font id="PowerDigits" filename="power.fnt" antialias="true" filter="0123456789" />
+    </fonts>
+</resources>

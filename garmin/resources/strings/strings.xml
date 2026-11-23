@@ -1,0 +1,19 @@
+<strings>
+    <string id="AppName">VeloIQ</string>
+
+    <!-- pola VeloIQ w pliku FIT (Garmin Connect) -->
+    <string id="FitTargetTitle">VeloIQ: cel mocy</string>
+    <string id="FitTarget">Cel mocy</string>
+    <string id="FitWbalTitle">VeloIQ: W'bal</string>
+    <string id="FitWbal">W'bal</string>
+    <string id="FitLapTarget">Cel kroku</string>
+    <string id="FitLapType">Rodzaj kroku</string>
+    <string id="FitNp">NP (VeloIQ)</string>
+    <string id="FitTss">TSS (VeloIQ)</string>
+    <string id="FitIf">IF (VeloIQ)</string>
+    <string id="FitCompliance">Zgodność z planem</string>
+    <string id="FitW">W</string>
+    <string id="FitKj">kJ</string>
+    <string id="FitPct">%</string>
+    <string id="FitNone">-</string>
+</strings>

@@ -150,6 +150,7 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, on
       settings={settings} onSettings={updateSettings}
       onStart={() => setScreen('pre')} onFree={() => start(freeRideScript(ftp))} onSensors={() => setScreen('sensors')}
       route={route} onRoute={setRoute}
+      garminRoute={raceOn && racePacing && route ? applyRaceTargets(route, racePacing.phases, ftp) : route}
       race={racePacing} raceOn={raceOn} onRaceOn={setRaceOn}
       onRaceRide={() => racePacing && start({ ...freeRideScript(ftp), name: racePacing.name })} />
     </>
