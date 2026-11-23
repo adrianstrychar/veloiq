@@ -48,3 +48,4 @@ scripts/.baseline-*
 
 # Garmin Connect IQ – wynik budowania
 /garmin/bin/
+/garmin/sim/dist/

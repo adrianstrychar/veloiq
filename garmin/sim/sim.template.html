@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Symulator VeloIQ Edge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* Układ: po lewej licznik Edge 1030 (płótno 282×419 jak w aplikacji), po prawej pulpit „nóg” i dziennik komunikatów. Jeden, ciemny świat VeloIQ. */
+:root {
+  color-scheme: dark;
+  --bg: #06080A; --panel: #0E1318; --panel-2: #141B21; --line: #26323B;
+  --text: #F2F6F8; --dim: #93A1AD; --cyan: #00CFFF; --good: #21D07A; --warn: #FFB020; --bad: #FF4D4D;
+  --display: "Sora", system-ui, sans-serif; --body: "Sora", system-ui, sans-serif; --lcd: "Roboto Condensed", "Arial Narrow", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); font-size: 15px; line-height: 1.45; }
+body { padding: 20px 16px 40px; }
+h1 { font-family: var(--display); font-size: 22px; font-weight: 700; margin: 0; text-wrap: balance; }
+h2 { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px; }
+.lead { color: var(--dim); margin: 6px 0 0; max-width: 70ch; font-size: 14px; }
+.wrap { max-width: 1060px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.stage { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+.device { flex: 0 0 auto; width: 338px; max-width: 100%; margin: 0 auto; background: linear-gradient(#1b2026, #0b0e11); border-radius: 34px; padding: 22px 22px 18px; border: 1px solid #2c343c; box-shadow: 0 24px 60px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.06); }
+.screen { background: #000; border-radius: 6px; overflow: hidden; border: 1px solid #000; }
+canvas { display: block; width: 100%; height: auto; touch-action: manipulation; cursor: pointer; }
+.sysbar { display: flex; justify-content: space-between; align-items: center; height: 44px; padding: 0 10px; background: #06080A; }
+.sysbar button { background: none; border: 0; color: #fff; font-size: 26px; width: 56px; height: 40px; cursor: pointer; border-radius: 8px; }
+.sysbar button:hover, .keys button:hover { background: rgba(255,255,255,.08); }
+.brand { text-align: center; color: #9aa5ae; font: 700 13px var(--lcd); letter-spacing: .32em; margin: 12px 0 10px; }
+.keys { display: flex; gap: 10px; }
+.keys button { flex: 1; height: 44px; border-radius: 12px; border: 1px solid #333c45; background: #12171c; color: var(--text); font: 600 13px var(--body); cursor: pointer; }
+.keys small { display: block; color: var(--dim); font-weight: 400; font-size: 10px; }
+.side { flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1 1 auto; min-width: 0; }
+select, button.b { height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font: 600 13px var(--body); padding: 0 12px; cursor: pointer; }
+select { flex: 1 1 200px; min-width: 0; }
+button.b:hover { border-color: #3a4a57; }
+button.b.on { background: var(--cyan); color: #06080A; border-color: var(--cyan); }
+button.b.primary { background: var(--cyan); color: #06080A; border-color: var(--cyan); }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg button { height: 38px; min-width: 46px; border: 0; background: var(--panel-2); color: var(--dim); font: 600 13px var(--body); cursor: pointer; }
+.seg button.on { background: var(--cyan); color: #06080A; }
+.big { font: 700 44px/1 var(--lcd); font-variant-numeric: tabular-nums; }
+.unit { color: var(--dim); font-size: 13px; margin-left: 4px; }
+input[type=range] { width: 100%; accent-color: var(--cyan); height: 28px; }
+.readouts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.readouts div { background: var(--panel-2); border-radius: 12px; padding: 10px 12px; }
+.readouts span { display: block; color: var(--dim); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.readouts b { font: 700 24px var(--lcd); font-variant-numeric: tabular-nums; }
+.hint { color: var(--dim); font-size: 12.5px; margin: 8px 0 0; }
+.log { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.log .e { display: grid; grid-template-columns: 52px 1fr; gap: 10px; padding: 8px 10px; background: var(--panel-2); border-radius: 10px; border-left: 3px solid var(--cyan); }
+.log .e.correction { border-left-color: var(--bad); } .log .e.praise { border-left-color: var(--good); } .log .e.pause, .log .e.cadence { border-left-color: var(--warn); }
+.log time { color: var(--dim); font: 700 14px var(--lcd); font-variant-numeric: tabular-nums; }
+.log .scr { font-weight: 600; font-size: 13.5px; } .log .voice { color: var(--dim); font-size: 12.5px; }
+.empty { color: var(--dim); font-size: 13px; }
+.note { font-size: 13px; color: var(--dim); } .note b { color: var(--text); font-weight: 600; }
+.tries { margin: 0; padding-left: 18px; color: var(--dim); font-size: 13.5px; display: flex; flex-direction: column; gap: 6px; } .tries b { color: var(--text); font-weight: 600; }
+.menu { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 5; }
+.menu.open { display: flex; }
+.menu .box { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; width: 340px; max-width: 100%; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.menu .box button { text-align: left; height: 46px; }
+@media (max-width: 420px) { .device { padding: 16px 14px 14px; border-radius: 26px; } .readouts { grid-template-columns: repeat(3, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Symulator VeloIQ na Garmin Edge</h1>
+    <p class="lead">Ty jesteś nogami. Ustaw moc suwakiem albo włącz autopilota i zobacz, co licznik pokaże i kiedy: start interwału po mocy, falstart, auto-pauza, korekty, serie, lapy.</p>
+  </header>
+
+  <div class="stage">
+    <div class="device" aria-label="Licznik Garmin Edge 1030">
+      <div class="screen">
+        <canvas id="lcd" width="564" height="838" aria-label="Ekran licznika"></canvas>
+        <div class="sysbar">
+          <button id="k-back" title="Poprzednia strona" aria-label="Poprzednia strona">&#8249;</button>
+          <button id="k-next" title="Następna strona" aria-label="Następna strona">&#8250;</button>
+        </div>
+      </div>
+      <div class="brand">GARMIN</div>
+      <div class="keys">
+        <button id="k-lap">LAP<small>następny krok / okrążenie</small></button>
+        <button id="k-start">START / STOP<small>start, pauza, wznowienie</small></button>
+      </div>
+    </div>
+
+    <div class="side">
+      <section class="card">
+        <h2>Trening</h2>
+        <div class="row">
+          <select id="workout" aria-label="Trening">
+            <option value="quick">Szybki test 2×2 min (8 min)</option>
+            <option value="thr">Threshold 2×8 min (30 min)</option>
+            <option value="ou">Over-under 2×(2+1+2+1) (22 min)</option>
+            <option value="vo2">VO2max 4×3 min (33 min)</option>
+            <option value="free">Jazda swobodna</option>
+          </select>
+          <button class="b primary" id="restart">Od nowa</button>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <span class="note">Tempo czasu</span>
+          <div class="seg" id="speed" role="group" aria-label="Tempo czasu">
+            <button data-x="1" class="on">1×</button><button data-x="5">5×</button><button data-x="20">20×</button><button data-x="60">60×</button>
+          </div>
+          <button class="b" id="sound" aria-pressed="false">Dźwięk: wył.</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Twoje nogi</h2>
+        <div class="row">
+          <div class="grow"><span class="big" id="pwr">0</span><span class="unit">W</span></div>
+          <button class="b on" id="auto" aria-pressed="true">Autopilot</button>
+        </div>
+        <input type="range" id="slider" min="0" max="700" step="5" value="170" aria-label="Moc w watach">
+        <div class="row" style="margin-top:6px">
+          <button class="b" data-q="target">W celu</button>
+          <button class="b" data-q="hard">Za mocno</button>
+          <button class="b" data-q="soft">Za słabo</button>
+          <button class="b" data-q="easy">Luźno</button>
+          <button class="b" data-q="stop">Stop (0 W)</button>
+        </div>
+        <p class="hint" id="autohint">Autopilot jedzie plan: trzyma środek celu, a interwały zaczyna kilka sekund po sygnale. Ruszenie suwaka albo przycisku przejmuje stery.</p>
+        <div class="readouts" style="margin-top:12px">
+          <div><span>Tętno</span><b id="r-hr">--</b></div>
+          <div><span>Kadencja</span><b id="r-cad">--</b></div>
+          <div><span>Faza silnika</span><b id="r-ph" style="font-size:17px">--</b></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Komunikaty: ekran licznika i głos Enzo w telefonie</h2>
+        <div class="log" id="log"><p class="empty">Naciśnij START na liczniku.</p></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>Co warto sprawdzić</h2>
+    <ul class="tries">
+      <li><b>Start po mocy.</b> Wyłącz autopilota przed interwałem i dodaj mocy wcześniej albo później niż plan. Interwał liczy się od pierwszej sekundy przyspieszenia.</li>
+      <li><b>Falstart.</b> Tuż po starcie interwału kliknij „Stop (0 W)” albo czerwony przycisk FALSTART na ekranie. Sekundy wracają do przerwy.</li>
+      <li><b>Postój w interwale.</b> W połowie interwału „Stop (0 W)” na kilka sekund, potem „W celu”. Interwał się pauzuje i wznawia.</li>
+      <li><b>Korekty.</b> „Za mocno” albo „Za słabo” przez 20–40 sekund. Krótki zryw nie wywoła komunikatu.</li>
+      <li><b>Jazda swobodna.</b> Trzymaj ponad 270 W przez kilka minut: licznik sam oznaczy wysiłek i zrobi lapy.</li>
+    </ul>
+  </section>
+
+  <p class="note"><b>Co tu jest prawdziwe.</b> Silnik treningu to ten sam kod, który działa w telefonie i z którym silnik na Garmina zgadza się w testach co do sekundy. Ekran jest odwzorowaniem ekranów aplikacji na Edge 1030, a nie samą aplikacją Garmina. Odpowiedzi Enzo są tu przykładowe (w aplikacji odpowiada serwer VeloIQ), a prędkość i dystans są wirtualne.</p>
+</div>
+
+<div class="menu" id="menu" role="dialog" aria-label="Zapytaj Enzo"><div class="box">
+  <h2 style="margin:4px 4px 2px">Zapytaj Enzo</h2>
+  <button class="b" data-enzo="status">Jak mi idzie?</button>
+  <button class="b" data-enzo="next">Co teraz i co dalej?</button>
+  <button class="b" data-enzo="left">Ile do końca?</button>
+  <button class="b" data-enzo="fuel">Jeść albo pić?</button>
+  <button class="b" data-enzo="close">Zamknij</button>
+</div></div>
+
+<script>/*ENGINE*/</script>
+<script>
+'use strict';
+const FTP = 305, KG = 67, W = 282, H = 419, K = 2;
+const T = { bg:'#06080A', card:'#141B21', line:'#26323B', fg:'#FFFFFF', dim:'#93A1AD', accent:'#00CFFF', onAccent:'#06080A', good:'#21D07A', bad:'#FF4D4D', warn:'#FFB020', cold:'#4D9BFF' };
+const ZONE = ['#7F8C9A','#4D9BFF','#21D07A','#FFD23F','#FF8A1F','#FF4D4D','#B45CFF'];
+const STEPCOL = { interval:'#FF8A1F', recovery:'#4D9BFF', warmup:'#21D07A', cooldown:'#7F8C9A', steady:'#00CFFF' };
+const st = (name, type, dur, lo, hi, x) => Object.assign({ name, type, durationSec: dur, powerLow: lo, powerHigh: hi }, x || {});
+const WORKOUTS = {
+  quick: { name: 'Szybki test 2x2 min', steps: [st('Rozgrzewka','warmup',90,155,200), st('Interwał 1','interval',120,296,314,{cadenceLow:85,cadenceHigh:100}), st('Przerwa','recovery',90,120,185), st('Interwał 2','interval',120,296,314), st('Schłodzenie','cooldown',60,135,170)] },
+  thr: { name: 'Threshold 2x8 min', steps: [st('Rozgrzewka','warmup',300,155,200,{hrHigh:142}), st('Interwał 1','interval',480,296,314,{cadenceLow:85,cadenceHigh:100}), st('Przerwa','recovery',240,120,185,{hrHigh:132}), st('Interwał 2','interval',480,296,314), st('Schłodzenie','cooldown',300,135,170)] },
+  ou: { name: 'Over-under 2x(2+1+2+1)', steps: [st('Rozgrzewka','warmup',240,155,200), st('Under 1.1','interval',120,275,293), st('Over 1.1','interval',60,305,323,{start:'time'}), st('Under 1.2','interval',120,275,293,{start:'time'}), st('Over 1.2','interval',60,305,323,{start:'time'}), st('Przerwa','recovery',180,120,185),
+    st('Under 2.1','interval',120,275,293), st('Over 2.1','interval',60,305,323,{start:'time'}), st('Under 2.2','interval',120,275,293,{start:'time'}), st('Over 2.2','interval',60,305,323,{start:'time'}), st('Schłodzenie','cooldown',240,135,170)] },
+  vo2: { name: 'VO2max 4x3 min', steps: [st('Rozgrzewka','warmup',300,155,200)].concat(...[1,2,3,4].map(i => [st('Interwał '+i,'interval',180,345,370), st('Przerwa','recovery',180,110,180)])).slice(0, -1).concat([st('Schłodzenie','cooldown',300,135,170)]) },
+  free: { name: 'Jazda swobodna', steps: [] },
+};
+// Krótkie teksty na ekran – jak w garmin/source/Phrases.mc
+const SCR = { armNext:'Za minutę interwał {n}/{total}\n{durS}, {low}-{high} W', tenSec:'10 sekund', goNow:'Możesz startować', chainNext:'Zaraz potem, bez przerwy\n{durS}, {low}-{high} W', chainGo:'Teraz!\n{low}-{high} W',
+  waiting:'Czekam na start interwału {n}\nprzerwa trwa {restS}', autoStart:'START! {durS}\n{low}-{high} W', autoPause:'Pauza interwału\nzostało {leftS}', autoResume:'Wznawiam\nzostało {leftS}', earlyStop:'Interwał przerwany po {doneS}',
+  falseStart:'Falstart, nie liczę\nInterwał {n} ruszy, gdy przyspieszysz', seriesEnd:'Seria {n}/{total}: {avg} W\n{verdict}', intervalStart:'Interwał {n}/{total}: START\n{durS}, {low}-{high} W', recoveryStart:'Przerwa {durS}\nluźno, poniżej {high} W',
+  warmupStart:'Rozgrzewka {durS}\n{low}-{high} W', steadyStart:'{name} {durS}\n{low}-{high} W', cooldownStart:'Schłodzenie {durS}\nluźno, poniżej {high} W', tooHigh:'Za mocno\nodpuść {delta} W', tooLow:'Za słabo\ndodaj {delta} W',
+  recoveryTooHigh:'To odpoczynek\nzejdź poniżej {high} W', cadenceLow:'Kadencja {cad}\npodnieś do {cadLow}', cadenceHigh:'Kadencja {cad}\nzejdź do {cadHigh}', half:'Połowa\nśrednio {avg} W', lastMinute:'Ostatnia minuta\ntrzymaj!', praise:'Idealnie\ntak trzymaj!',
+  planDone:'Plan zrobiony!\nnagrywam dalej', freeStart:'Nagrywanie\njazda swobodna', effort:'Wysiłek {durS}\nśrednio {avg} W', hrHigh:'Tętno {hr}, powyżej zakresu\nzwolnij trochę', hrRecovered:'Tętno {hr}\njesteś gotowy', status:'Średnio {avg} W', count:'{n}', drink:'Pij!\nkilka łyków', eat:'Czas na jedzenie\nżel albo baton, popij' };
+const PHASE_PL = { running:'krok trwa', armed:'czeka na start', waiting:'przerwa się przeciąga', autoPaused:'pauza interwału', free:'jazda swobodna' };
+
+const $ = (id) => document.getElementById(id);
+const clock = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60; return h ? `${h}:${String(m).padStart(2,'0')}:${String(r).padStart(2,'0')}` : `${m}:${String(r).padStart(2,'0')}`; };
+const durShort = (s) => s < 60 ? `${s} s` : s % 60 === 0 ? `${s / 60} min` : clock(s);
+const plSec = (t) => { if (typeof t !== 'string') return null; const m = t.match(/(\d+)\s*minut/), s = t.match(/(\d+)\s*sekund/); return m || s ? (m ? +m[1] * 60 : 0) + (s ? +s[1] : 0) : null; };
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const zoneOf = (p) => { const r = p / FTP; return r < .56 ? 0 : r < .76 ? 1 : r < .91 ? 2 : r < 1.06 ? 3 : r < 1.21 ? 4 : r < 1.51 ? 5 : 6; };
+
+// ------------------------------------------------------------------ stan
+let eng = null, wk = null, mode = 'home', page = 0, speed = 1, auto = true, sound = false, audio = null;
+let power = 0, hr = 68, cad = 0, manual = 170;
+let M, lap, prevLap, banner = null, enzo = null, cueSeen = 0, log = [], hits = [], lastLapCount = 0, fast = false, slowRun = 0, timer = null;
+
+function reset(start) {
+  const def = WORKOUTS[$('workout').value];
+  wk = { version: 1, id: 'sim', name: def.name, ftp: FTP, lang: 'pl-PL', steps: def.steps.map(x => Object.assign({}, x)) };
+  eng = new VQ.FlexEngine(wk);
+  M = { n: 0, sum: 0, roll: [], acc4: 0, cnt4: 0, hrSum: 0, hrN: 0, hrMax: 0, wbal: 20000, zones: [0,0,0,0,0,0,0] };
+  lap = { no: 1, n: 0, sum: 0, hrSum: 0, max: 0, d0: 0 }; prevLap = null;
+  banner = null; enzo = null; cueSeen = 0; log = []; lastLapCount = eng.laps.length; fast = false; slowRun = 0;
+  power = 0; hr = 68; cad = 0; page = 0; mode = start ? 'ride' : 'home';
+  renderLog(); draw();
+}
+
+// ------------------------------------------------------------------ nogi
+function targetMid() {
+  const s = eng.step, nx = wk.steps[eng.stepIdx + 1];
+  if (eng.phase === 'free' || !s) return 185;
+  if ((eng.phase === 'armed' || eng.phase === 'waiting') && nx) return (nx.powerLow + nx.powerHigh) / 2;
+  return (s.powerLow + s.powerHigh) / 2;
+}
+function autoTarget() {
+  const s = eng.step, nx = wk.steps[eng.stepIdx + 1];
+  if (eng.phase === 'free' || !s) { const t = eng.s % 540; return t >= 240 && t < 430 ? 300 : 185; }   // co 9 min wysiłek ~3 min
+  const mid = (s.powerLow + s.powerHigh) / 2;
+  if ((eng.phase === 'armed' || eng.phase === 'waiting') && nx) return s.durationSec - eng.inStep <= -4 ? (nx.powerLow + nx.powerHigh) / 2 : Math.min(mid, s.powerHigh - 20);
+  return s.type === 'recovery' || s.type === 'cooldown' ? Math.min(mid, s.powerHigh - 25) : mid;
+}
+function legs() {
+  const want = auto ? autoTarget() : manual;
+  const base = power + clamp(want - power, -70, 70);                 // rozpędzanie i odpuszczanie trwa chwilę
+  power = want <= 0 && base < 40 ? 0 : Math.max(0, Math.round(base + (want > 0 ? ((eng.s * 7919) % 11) - 5 : 0)));
+  if (want <= 0 && power < 40) power = 0;
+  cad = power > 0 ? 88 + ((eng.s * 31) % 7) - 3 + (power > 280 ? 4 : 0) : 0;
+  hr += (clamp(62 + power * 0.345, 60, 189) - hr) * 0.03;
+  if (auto) { manual = Math.round(want / 5) * 5; $('slider').value = manual; }
+}
+
+// ------------------------------------------------------------------ jedna sekunda
+function tick() {
+  if (mode !== 'ride') return;
+  legs();
+  eng.tick({ p: power, hr: Math.round(hr), cad });
+  M.n++; M.sum += power; M.roll.push(power); if (M.roll.length > 30) M.roll.shift();
+  if (M.roll.length === 30) { const r = M.roll.reduce((a, b) => a + b, 0) / 30; M.acc4 += r ** 4; M.cnt4++; }
+  M.hrSum += hr; M.hrN++; M.hrMax = Math.max(M.hrMax, Math.round(hr));
+  M.wbal = power > FTP ? M.wbal - (power - FTP) : Math.min(20000, M.wbal + (FTP - power) * (20000 - M.wbal) / 20000);
+  M.zones[zoneOf(power)]++;
+  lap.n++; lap.sum += power; lap.hrSum += hr; lap.max = Math.max(lap.max, power);
+  // lapy: zmiana kroku w silniku (plan) albo auto-lap „wysiłki” (jazda swobodna)
+  if (eng.laps.length !== lastLapCount) { lastLapCount = eng.laps.length; closeLap(false); }
+  else if (eng.phase === 'free' && eng.s >= 30) {
+    const a10 = avg(10), a30 = avg(30);
+    if (!fast) { if (lap.n >= 30 && a10 >= FTP * .9) { fast = true; slowRun = 0; closeLap(true, 'Wysiłek - start'); } }
+    else { slowRun = a30 < FTP * .72 ? slowRun + 1 : 0; if (slowRun >= 20) { fast = false; closeLap(true, 'Wysiłek - koniec'); } }
+  }
+  for (; cueSeen < eng.cues.length; cueSeen++) onCue(eng.cues[cueSeen]);
+  if (banner && Date.now() > banner.until) banner = null;
+  if (enzo && Date.now() > enzo.until) enzo = null;
+  ui(); draw();
+}
+const avg = (n) => { const a = eng.P.slice(-n); return a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0; };
+const np = () => M.cnt4 ? Math.round((M.acc4 / M.cnt4) ** .25) : (M.n ? Math.round(M.sum / M.n) : 0);
+const tss = () => { const x = np(); return Math.round(M.n * x * x / (FTP * FTP * 3600) * 100); };
+const compliance = () => { let d = 0, w = 0; for (const x of eng.series) { d += x.durationSec; w += x.compliancePct * x.durationSec; } return d ? Math.floor(w / d) : 0; };
+const live = () => eng.live();
+
+function closeLap(show, label) {
+  prevLap = { no: lap.no, sec: lap.n, avgP: lap.n ? Math.round(lap.sum / lap.n) : 0, avgHr: lap.n ? Math.round(lap.hrSum / lap.n) : 0 };
+  lap = { no: lap.no + 1, n: 0, sum: 0, hrSum: 0, max: 0, d0: live().vKm };
+  if (show) { setBanner(`${label || 'Okrążenie ' + prevLap.no}\n${clock(prevLap.sec)}, ${prevLap.avgP} W`, 'lap', 5); beep(880, .12); }
+}
+
+function onCue(c) {
+  const v = Object.assign({}, c.vars || {});
+  for (const [k, s] of [['dur','durS'], ['rest','restS'], ['left','leftS'], ['done','doneS']]) { const x = plSec(v[k]); if (x != null) v[s] = durShort(x); }
+  if (c.key === 'seriesEnd' && v.verdict == null) v.verdict = VQ.verdictText(v.vrd);
+  const tpl = SCR[c.key];
+  const text = tpl ? tpl.replace(/\{(\w+)\}/g, (_, k) => v[k] != null ? v[k] : '') : c.text;
+  const secs = c.kind === 'countdown' ? 2 : c.kind === 'summary' ? 10 : c.kind === 'arm' ? 8 : c.kind === 'praise' ? 4 : 6;
+  setBanner(text, c.kind, secs);
+  if (c.key !== 'count') { log.unshift({ s: c.s, kind: c.kind, scr: text.replace(/\n/g, ' · '), voice: c.text }); if (log.length > 60) log.pop(); renderLog(); }
+  if (c.kind === 'countdown') beep(c.key === 'goNow' ? 1320 : 990, c.key === 'goNow' ? .35 : .09);
+  else if (c.kind === 'step') beep(1320, .3); else if (c.kind === 'correction') beep(c.key === 'tooLow' ? 440 : 1500, .2); else if (c.kind === 'praise') beep(1100, .15); else beep(760, .1);
+}
+function setBanner(text, kind, secs) { banner = { text, kind, until: Date.now() + secs * 1000 / Math.min(speed, 4) }; }
+function beep(f, d) {
+  if (!sound || !audio) return;
+  try { const o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = f; g.gain.value = .06; o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + d); } catch (e) { /* bez dźwięku */ }
+}
+
+// ------------------------------------------------------------------ rysowanie
+const cv = $('lcd'), g = cv.getContext('2d');
+const F = { xt: 13, t: 18, s: 21, m: 24, l: 38 }, FH = { xt: 16, t: 22, s: 26, m: 29, l: 48 };
+const NUM = [[52, 58], [42, 47], [31, 35], [27, 30], [24, 29], [21, 26], [18, 22], [13, 16]];
+const font = (px, bold) => `${bold ? 700 : 400} ${px}px "Roboto Condensed","Arial Narrow",sans-serif`;
+function text(x, y, key, s, align, col, bold) { g.font = font(F[key], bold !== false && key !== 'xt'); g.fillStyle = col; g.textAlign = align; g.textBaseline = 'top'; g.fillText(s, x, y + (FH[key] - F[key]) / 2); }
+function value(cx, cy, maxW, maxH, s, col) {
+  let px = NUM[NUM.length - 1][0];
+  for (const [p, h] of NUM) { g.font = font(p, true); if (h <= maxH && g.measureText(s).width <= maxW) { px = p; break; } }
+  g.font = font(px, true); g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(s, cx, cy + 1);
+}
+function rect(x, y, w, h, col) { g.fillStyle = col; g.fillRect(x, y, w, h); }
+function rrect(x, y, w, h, r, col) { g.fillStyle = col; g.beginPath(); g.roundRect(x, y, w, h, r); g.fill(); }
+function button(id, x, y, w, h, label, bg, fg) { rrect(x, y, w, h, 8, bg); let k = 'xt'; for (const c of ['m', 's', 't']) { g.font = font(F[c], true); if (g.measureText(label).width <= w - 18) { k = c; break; } } g.font = font(F[k], true); g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, x + w / 2, y + h / 2 + 1); hits.push({ id, x, y, w, h }); }
+function wrap(s, key, maxW, bold) { g.font = font(F[key], bold); const out = []; for (const para of s.split('\n')) { let line = ''; for (const w of para.split(' ')) { const c = line ? line + ' ' + w : w; if (line && g.measureText(c).width > maxW) { out.push(line); line = w; } else line = c; } out.push(line); } return out; }
+function lines(arr, cx, y, key, col, max, bold) { arr.slice(0, max).forEach((l, i) => text(cx, y + i * FH[key], key, l, 'center', col, bold)); return y + Math.min(arr.length, max) * FH[key]; }
+function powerColor(p) { const s = eng.step; if (eng.phase === 'free' || !s) return ZONE[zoneOf(p)]; const tol = Math.max(10, (s.powerLow + s.powerHigh) / 2 * .03) / 2; if (p > s.powerHigh + tol) return T.bad; if (p < s.powerLow - tol) return s.type === 'recovery' || s.type === 'cooldown' ? T.good : T.cold; return T.good; }
+function profile(x, y, w, h, idx, inStep) {
+  const total = wk.steps.reduce((a, s) => a + s.durationSec, 0); if (!total) return;
+  let maxP = FTP * 1.3; for (const s of wk.steps) if (s.type === 'interval') maxP = Math.max(maxP, (s.powerLow + s.powerHigh) / 2); maxP = Math.min(maxP, FTP * 2.2);
+  let t = 0, cur = -1;
+  wk.steps.forEach((s, j) => { const x0 = x + t * w / total, x1 = x + (t + s.durationSec) * w / total, bh = clamp(h * ((s.powerLow + s.powerHigh) / 2 / maxP), 3, h);
+    rect(x0, y + h - bh, Math.max(1, x1 - x0 - 1), bh, idx >= 0 && j < idx ? T.line : STEPCOL[s.type]); if (j === idx) cur = x0 + Math.min(inStep, s.durationSec) * (x1 - x0) / s.durationSec; t += s.durationSec; });
+  if (cur >= 0) rect(cur, y - 2, 2, h + 4, T.fg);
+}
+const nowClock = () => { const d = new Date(); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+
+function draw() {
+  g.setTransform(K, 0, 0, K, 0, 0); hits = [];
+  rect(0, 0, W, H, T.bg);
+  if (mode === 'home') return drawHome();
+  if (mode === 'summary') return drawSummary();
+  const top = drawBar();
+  if (page === 0) drawMain(top); else if (page === 1 || page === 2) drawGrid(top, page - 1); else if (page === 3) drawLaps(top); else drawEnzoPage(top);
+  if (mode === 'paused') drawPaused();
+  if (enzo) drawEnzoCard(); else if (banner && mode !== 'paused') drawBanner();
+}
+function drawHome() {
+  const pad = 10; let y = 6;
+  text(pad, y, 'l', 'VeloIQ', 'left', T.accent); text(W - pad, y + 6, 'xt', nowClock(), 'right', T.dim); y += FH.l;
+  text(pad, y, 'xt', `Adrian, FTP ${FTP} W`, 'left', T.dim); y += FH.xt + 5;
+  const btnH = 46, bottom = H - btnH - 3 * pad, sensH = FH.t + FH.xt + pad, cardH = bottom - y - sensH - pad;
+  rrect(pad, y, W - 2 * pad, cardH, 6, T.card); let cy = y + 5;
+  if (wk.steps.length) {
+    text(2 * pad, cy, 'xt', 'TRENING NA DZIŚ', 'left', T.accent); cy += FH.xt; text(2 * pad, cy, 's', wk.name, 'left', T.fg); cy += FH.s;
+    text(2 * pad, cy, 'xt', `${Math.round(wk.steps.reduce((a, s) => a + s.durationSec, 0) / 60)} min, kroków: ${wk.steps.length}`, 'left', T.dim); cy += FH.xt + 5;
+    profile(2 * pad, cy, W - 4 * pad, y + cardH - cy - pad, -1, 0);
+  } else { text(2 * pad, cy, 'xt', 'DZIŚ', 'left', T.accent); lines(wrap('Jazda swobodna: wysiłki i lapy zapiszę automatycznie.', 'xt', W - 4 * pad), W / 2, cy + FH.xt + 6, 'xt', T.fg, 4, false); }
+  y += cardH + 5; const cw = (W - 2 * pad) / 4;
+  ['MOC', 'TĘTNO', 'GPS', 'TELEFON'].forEach((l, i) => { text(pad + cw * i + cw / 2, y, 'xt', l, 'center', T.dim); text(pad + cw * i + cw / 2, y + FH.xt, 't', ['0 W', '68', 'OK', 'OK'][i], 'center', T.good); });
+  button('start', pad, H - btnH - pad, W - 2 * pad, btnH, wk.steps.length ? 'START TRENINGU' : 'START', T.accent, T.onAccent);
+}
+function drawBar() {
+  const bh = FH.xt + 2, pad = 10; text(pad, 1, 'xt', nowClock(), 'left', T.dim);
+  const gap = bh / 2 + 2, x0 = W / 2 - 4 * gap / 2;
+  for (let i = 0; i < 5; i++) { g.fillStyle = i === page ? T.accent : T.line; g.beginPath(); g.arc(x0 + i * gap, bh / 2, i === page ? 4 : 3, 0, 7); g.fill(); }
+  text(W - pad, 1, 'xt', mode === 'paused' ? 'PAUZA' : 'REC', 'right', mode === 'paused' ? T.warn : T.bad); rect(0, bh, W, 1, T.line); return bh + 2;
+}
+function drawMain(top) {
+  const pad = 10, HH = H - top, L = live(), s = eng.phase === 'free' ? null : eng.step, p3 = Math.round(avg(3)); let y = top;
+  const hh = Math.round(HH * .13);
+  if (s) {
+    rect(0, y, 5, hh, STEPCOL[s.type]);
+    const badge = eng.phase === 'armed' ? 'GOTOWY?' : eng.phase === 'waiting' ? 'CZEKAM' : eng.phase === 'autoPaused' ? 'PAUZA' : '';
+    text(pad + 5, y, hh - FH.xt >= FH.m ? 'm' : 's', s.name, 'left', T.fg);
+    if (badge) { g.font = font(F.xt, false); const bw = g.measureText(badge).width + 10; rrect(W - pad - bw, y + 2, bw, FH.xt + 2, 6, T.warn); text(W - pad - bw / 2, y + 2, 'xt', badge, 'center', T.bg); }
+    const nx = wk.steps[eng.stepIdx + 1]; let sub = 'ostatni krok';
+    if (nx) sub = `potem: ${nx.name} ${durShort(nx.durationSec)}` + (nx.type === 'interval' ? `, ${nx.powerLow}-${nx.powerHigh} W` : '');
+    text(pad + 5, y + hh - FH.xt - 1, 'xt', sub, 'left', T.dim);
+  } else {
+    const ef = eng.inEffort; rect(0, y, 5, hh, ef ? T.warn : T.line);
+    if (ef) { const d = eng.s - eng.effortStart + 1; text(pad + 5, y, 's', 'WYSIŁEK ' + clock(d), 'left', T.warn); text(W - pad, y, 's', Math.round(eng.P.slice(eng.effortStart).reduce((a, b) => a + b, 0) / d) + ' W', 'right', T.warn); }
+    else text(pad + 5, y, 's', wk.steps.length ? 'PO PLANIE' : 'JAZDA SWOBODNA', 'left', T.fg);
+    text(pad + 5, y + hh - FH.xt - 1, 'xt', `okrążenie ${lap.no}: ${clock(lap.n)}, ${lap.n ? Math.round(lap.sum / lap.n) : 0} W`, 'left', T.dim);
+  }
+  y += hh;
+  const ph = Math.round(HH * .25), subH = FH.t;
+  value(W / 2, y + (ph - subH) / 2, W - 6 * pad, ph - subH, String(p3), powerColor(p3));
+  text(W - pad, y + 2, 'xt', 'W', 'right', T.dim); text(pad, y + 2, 'xt', 'MOC 3s', 'left', T.dim);
+  text(W / 2, y + ph - subH, 't', s ? (s.type === 'recovery' || s.type === 'cooldown' ? `luźno, poniżej ${s.powerHigh} W` : `cel ${s.powerLow}-${s.powerHigh} W`) : `Z${zoneOf(p3) + 1}, ${Math.round(p3 * 100 / FTP)}% FTP`, 'center', T.fg);
+  y += ph;
+  const gh = Math.round(HH * .05), gx = pad, gw = W - 2 * pad, gy = y + 2, ghh = Math.max(4, gh - 4);
+  if (s) { const rest = s.type === 'recovery' || s.type === 'cooldown', lo = rest ? 0 : s.powerLow, hi = s.powerHigh, span = Math.max(hi - lo, 20) * 1.5, a = rest ? 0 : lo - span, b = hi + span;
+    rect(gx, gy, gw, ghh, T.line); rect(gx + (lo - a) * gw / (b - a), gy, (hi - lo) * gw / (b - a), ghh, T.good); rect(gx + (clamp(p3, a, b) - a) * gw / (b - a) - 2, gy - 3, 4, ghh + 6, T.fg);
+  } else { const e = [0, .56, .76, .91, 1.06, 1.21, 1.51, 1.6]; for (let z = 0; z < 7; z++) rect(gx + e[z] / 1.6 * gw, gy, (e[z + 1] - e[z]) / 1.6 * gw - 1, ghh, ZONE[z]); rect(gx + clamp(p3, 0, FTP * 1.6) * gw / (FTP * 1.6) - 2, gy - 3, 4, ghh + 6, T.fg); }
+  y += gh;
+  const th = Math.round(HH * .17); let tl = 'CZAS', tv = clock(eng.s + 1), tc = T.fg;
+  if (s) { if (eng.phase === 'waiting') { tl = 'PRZERWA DŁUŻSZA O'; tv = clock(L.overrunSec); tc = T.warn; } else if (eng.phase === 'armed') { tl = 'START ZA (albo ruszaj wcześniej)'; tv = clock(L.stepRemaining); tc = T.accent; } else if (eng.phase === 'autoPaused') { tl = 'PAUZA INTERWAŁU, ZOSTAŁO'; tv = clock(L.stepRemaining); tc = T.warn; } else { tl = 'DO KOŃCA KROKU'; tv = clock(L.stepRemaining); } }
+  let tw = W; if (L.falseStartLeft > 0 && mode === 'ride') { tw = W * .55; button('fs', tw, y + 4, W - tw - pad, th - 8, 'FALSTART ' + L.falseStartLeft, T.bad, '#fff'); }
+  text(tw / 2, y, 'xt', tl, 'center', T.dim); value(tw / 2, y + FH.xt + (th - FH.xt) / 2, tw - 2 * pad, th - FH.xt, tv, tc); y += th;
+  const mh = Math.round(HH * .13), cw = W / 3; rect(0, y, W, 1, T.line);
+  [['TĘTNO', String(Math.round(hr))], ['KADENCJA', String(cad)], s ? ['ŚR. KROKU', String(L.stepAvgPower || 0)] : ['KM/H', L.vKmh.toFixed(1)]].forEach(([l, v], i) => {
+    text(cw * i + cw / 2, y + 1, 'xt', l, 'center', T.dim);
+    let col = T.fg; if (i === 0 && s && s.hrHigh && s.type !== 'interval' && hr > s.hrHigh + 3) col = T.bad; if (i === 1 && s && ((s.cadenceLow && cad < s.cadenceLow) || (s.cadenceHigh && cad > s.cadenceHigh))) col = T.warn;
+    value(cw * i + cw / 2, y + FH.xt + (mh - FH.xt) / 2, cw - 6, mh - FH.xt, v, col); if (i) rect(cw * i, y + 4, 1, mh - 8, T.line); });
+  y += mh;
+  const btnH = Math.round(HH * .13), fh = H - y - btnH - pad;
+  if (s && fh > 14) profile(pad, y + 4, W - 2 * pad, fh - 8, eng.stepIdx, eng.inStep); else if (fh > FH.xt) text(W / 2, y + (fh - FH.xt) / 2, 'xt', `NP ${np()},  TSS ${tss()},  ${Math.floor(M.sum / 1000)} kJ`, 'center', T.dim);
+  const by = H - btnH - pad / 2, ew = (W - 3 * pad) * .62;
+  button('enzo', pad, by, ew, btnH, 'ENZO', T.accent, T.onAccent); button('lap', 2 * pad + ew, by, W - 3 * pad - ew, btnH, s ? 'KROK >' : 'LAP', T.card, T.fg);
+}
+function fieldVals() {
+  const L = live(), p3 = Math.round(avg(3)), left = eng.phase === 'free' ? '--' : clock(Math.max(0, eng.step.durationSec - eng.inStep) + wk.steps.slice(eng.stepIdx + 1).reduce((a, s) => a + s.durationSec, 0));
+  const wb = Math.round(M.wbal / 200);
+  return [[['MOC 3s', String(p3), powerColor(p3)], ['TĘTNO', String(Math.round(hr))], ['KADENCJA', String(cad)], ['KM/H', L.vKmh.toFixed(1)], ['MOC LAP', String(lap.n ? Math.round(lap.sum / lap.n) : 0)], ['NP', String(np())], ['CZAS', clock(eng.s + 1)], ['DYSTANS', L.vKm.toFixed(2)]],
+    [['TSS', String(tss())], ['IF', (np() / FTP).toFixed(2)], ['PRACA kJ', String(Math.floor(M.sum / 1000))], ["W'BAL %", String(wb), wb < 25 ? T.bad : wb < 50 ? T.warn : T.fg], ['ŚR. MOC', String(M.n ? Math.round(M.sum / M.n) : 0)], ['W/KG', (p3 / KG).toFixed(1)], ['DO KOŃCA PLANU', left], ['ZGODNOŚĆ %', eng.series.length ? String(compliance()) : '--']]];
+}
+function drawGrid(top, idx) {
+  const f = fieldVals()[idx], cw = W / 2, ch = (H - top) / 4;
+  f.forEach(([l, v, c], i) => { const cx = (i % 2) * cw, cy = top + Math.floor(i / 2) * ch; text(cx + 6, cy + 1, 'xt', l, 'left', T.dim); value(cx + cw / 2, cy + FH.xt + (ch - FH.xt) / 2, cw - 10, ch - FH.xt - 2, v, c || T.fg); rect(cx, cy + ch - 1, cw, 1, T.line); if (i % 2 === 0) rect(cw - 1, cy + 4, 1, ch - 8, T.line); });
+}
+function drawLaps(top) {
+  const pad = 10; let y = top + 2; text(pad, y, 'xt', 'OKRĄŻENIE ' + lap.no, 'left', T.accent); y += FH.xt; const bh = (H - top) / 5, la = lap.n ? Math.round(lap.sum / lap.n) : 0;
+  value(W / 4, y + bh / 2, W / 2 - pad, bh, clock(lap.n), T.fg); value(W * .75, y + bh / 2, W / 2 - pad, bh, String(la), powerColor(la)); y += bh;
+  text(W / 4, y, 'xt', 'CZAS', 'center', T.dim); text(W * .75, y, 'xt', 'ŚR. MOC W', 'center', T.dim); y += FH.xt + 2;
+  text(W / 2, y, 'xt', `HR ${lap.n ? Math.round(lap.hrSum / lap.n) : '--'},  max ${lap.max} W,  ${Math.max(0, live().vKm - lap.d0).toFixed(2)} km`, 'center', T.fg); y += FH.xt + 4; rect(pad, y, W - 2 * pad, 1, T.line); y += 4;
+  if (prevLap) { text(pad, y, 'xt', `POPRZEDNIE (${prevLap.no})`, 'left', T.dim); text(W - pad, y, 'xt', `${clock(prevLap.sec)},  ${prevLap.avgP} W,  HR ${prevLap.avgHr}`, 'right', T.fg); y += FH.xt + 4; }
+  if (eng.series.length) { text(pad, y, 'xt', 'SERIE', 'left', T.accent); text(W - pad, y, 'xt', `zgodność ${compliance()}%`, 'right', T.fg); y += FH.xt + 2;
+    const rows = Math.floor((H - y) / FH.t); eng.series.slice(-rows).forEach(x => { const c = x.verdict === 'ok' ? T.good : x.verdict === 'high' ? T.bad : T.cold; text(pad, y, 't', `${x.n}.  ${clock(x.durationSec)}`, 'left', T.fg); text(W - pad, y, 't', `${x.avgPower} W  ${x.compliancePct}%`, 'right', c); y += FH.t; });
+  } else if (eng.efforts.length || eng.inEffort) { text(pad, y, 'xt', 'WYSIŁKI', 'left', T.accent); y += FH.xt + 2; eng.efforts.slice(-5).forEach((e, j) => { text(pad, y, 't', `${j + 1}.  ${clock(e.durationSec)}`, 'left', T.fg); text(W - pad, y, 't', e.avgPower + ' W', 'right', T.warn); y += FH.t; }); if (eng.inEffort) text(pad, y, 't', 'trwa  ' + clock(eng.s - eng.effortStart + 1), 'left', T.fg);
+  } else text(W / 2, y + FH.xt, 'xt', 'Tu pojawią się serie i wysiłki', 'center', T.dim);
+}
+function drawEnzoPage(top) {
+  const pad = 10, btnH = (H - top) / 8; let y = top + 2; text(pad, y, 's', 'ENZO', 'left', T.accent); text(W - pad, y + 4, 'xt', 'odpowiedzi na ekranie', 'right', T.dim); y += FH.s + 2;
+  const by = H - btnH - pad / 2; button('ask', pad, by, W - 2 * pad, btnH, 'ZAPYTAJ ENZO', T.accent, T.onAccent);
+  const limit = by - pad; if (!log.length) { lines(wrap('Komunikaty trenera pojawią się tutaj.', 'xt', W - 2 * pad), W / 2, y + FH.xt, 'xt', T.dim, 4, false); return; }
+  for (const c of log) { if (y + FH.xt > limit) break; text(pad, y, 'xt', clock(c.s), 'left', T.dim); const tx = pad + 50; for (const l of wrap(c.scr.replace(/ · /g, ', '), 'xt', W - tx - pad, false)) { if (y + FH.xt > limit) break; text(tx, y, 'xt', l, 'left', c.kind === 'enzo' ? T.accent : c.kind === 'correction' ? T.warn : T.fg); y += FH.xt; } y += 3; }
+}
+function drawBanner() {
+  const pad = 10, b = banner;
+  if (b.kind === 'countdown' && /^\d$/.test(b.text)) { const r = W / 5; g.fillStyle = T.accent; g.beginPath(); g.arc(W / 2, H / 2, r, 0, 7); g.fill(); value(W / 2, H / 2, r * 2, r * 2, b.text, T.onAccent); return; }
+  const col = b.kind === 'correction' ? T.bad : b.kind === 'praise' ? T.good : b.kind === 'pause' || b.kind === 'cadence' ? T.warn : T.accent, bw = W - 2 * pad, maxH = H * .42;
+  let key = 't', ls = []; for (const k of ['m', 's', 't']) { ls = wrap(b.text, k, bw - 2 * pad, true); key = k; if (ls.length * FH[k] <= maxH - 2 * pad) break; }
+  const bh = Math.min(maxH, ls.length * FH[key] + 2 * pad), by = H - bh - H / 6;
+  rrect(pad - 3, by - 3, bw + 6, bh + 6, 10, col); rrect(pad, by, bw, bh, 8, T.bg); lines(ls, W / 2, by + pad, key, T.fg, Math.floor((bh - 2 * pad) / FH[key]));
+}
+function drawEnzoCard() {
+  const pad = 10, y = H / 8, cw = W - 2 * pad, ch = H * .75; rrect(pad - 3, y - 3, cw + 6, ch + 6, 12, T.accent); rrect(pad, y, cw, ch, 10, T.bg); text(W / 2, y + 4, 's', 'ENZO', 'center', T.accent);
+  const ty = y + FH.s + 8, room = y + ch - ty - FH.xt - 6; let key = 'xt', ls = []; for (const k of ['m', 's', 't', 'xt']) { ls = wrap(enzo.text, k, cw - 2 * pad, k !== 'xt'); key = k; if (ls.length * FH[k] <= room) break; }
+  lines(ls, W / 2, ty, key, T.fg, Math.floor(room / FH[key]), key !== 'xt'); text(W / 2, y + ch - FH.xt - 3, 'xt', 'dotknij, aby zamknąć', 'center', T.dim);
+}
+function drawPaused() {
+  const pad = 10, ch = H * .4, y = (H - ch) / 2; rrect(pad - 3, y - 3, W - 2 * pad + 6, ch + 6, 12, T.warn); rrect(pad, y, W - 2 * pad, ch, 10, T.bg);
+  text(W / 2, y + 4, 'l', 'PAUZA', 'center', T.warn); text(W / 2, y + FH.l + 8, 'xt', 'czas jazdy ' + clock(eng.s + 1), 'center', T.fg);
+  const btnH = ch / 3, by = y + ch - btnH - pad, half = (W - 5 * pad) / 2; button('resume', 2 * pad, by, half, btnH, 'WZNÓW', T.good, '#000'); button('finish', 3 * pad + half, by, half, btnH, 'ZAPISZ', T.card, T.fg);
+}
+function drawSummary() {
+  const pad = 10; let y = 2; text(W / 2, y, 's', 'JAZDA ZAPISANA', 'center', T.good); y += FH.s; text(W / 2, y, 'xt', wk.name, 'center', T.dim); y += FH.xt + 4;
+  const btnH = 46, serH = eng.series.length ? Math.min(eng.series.length, 4) * FH.xt + FH.xt + 6 : 0, gridH = H - y - btnH - pad - FH.xt - 6 - serH, ch = gridH / 4, cw = W / 2;
+  [['CZAS', clock(M.n)], ['DYSTANS KM', live().vKm.toFixed(1)], ['ŚR. MOC', String(M.n ? Math.round(M.sum / M.n) : 0)], ['NP', String(np())], ['TSS', String(tss())], ['IF', (np() / FTP).toFixed(2)], ['PRACA kJ', String(Math.floor(M.sum / 1000))], ['ŚR. HR', String(M.hrN ? Math.round(M.hrSum / M.hrN) : 0)]]
+    .forEach(([l, v], i) => { const cx = (i % 2) * cw, cy = y + Math.floor(i / 2) * ch; text(cx + 6, cy, 'xt', l, 'left', T.dim); value(cx + cw / 2, cy + FH.xt + (ch - FH.xt) / 2, cw - 10, ch - FH.xt, v, T.fg); });
+  y += gridH;
+  if (serH) { const c = compliance(); text(pad, y, 'xt', 'SERIE', 'left', T.accent); text(W - pad, y, 'xt', `zgodność z planem ${c}%`, 'right', c >= 85 ? T.good : c >= 60 ? T.warn : T.bad); y += FH.xt + 2;
+    eng.series.slice(-4).forEach(x => { text(pad, y, 'xt', `${x.n}.  ${clock(x.durationSec)}  ${x.avgPower} W`, 'left', T.fg); text(W - pad, y, 'xt', VQ.verdictText(x.verdict), 'right', x.verdict === 'ok' ? T.good : x.verdict === 'high' ? T.bad : T.cold); y += FH.xt; }); }
+  text(W / 2, H - btnH - pad - FH.xt - 2, 'xt', 'W aplikacji: wysyłka do VeloIQ', 'center', T.accent); button('done', pad, H - btnH - pad / 2, W - 2 * pad, btnH, 'GOTOWE', T.accent, T.onAccent);
+}
+
+// ------------------------------------------------------------------ sterowanie
+function act(id) {
+  if (id === 'start') startRide();
+  else if (id === 'enzo' || id === 'ask') $('menu').classList.add('open');
+  else if (id === 'lap') lapKey();
+  else if (id === 'fs') eng.cancelStart();
+  else if (id === 'resume') mode = 'ride';
+  else if (id === 'finish') mode = 'summary';
+  else if (id === 'done') reset(false);
+  draw();
+}
+function startRide() { if (sound && !audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; } } reset(true); }
+function lapKey() { if (mode !== 'ride') return; if (eng.phase !== 'free') eng.skipStep(); else closeLap(true); }
+function startKey() { if (mode === 'home') startRide(); else if (mode === 'ride') mode = 'paused'; else if (mode === 'paused') mode = 'ride'; else if (mode === 'summary') reset(false); draw(); }
+function turn(d) { if (mode === 'ride' || mode === 'paused') { page = (page + d + 5) % 5; draw(); } }
+cv.addEventListener('click', (e) => {
+  const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
+  if (enzo) { enzo = null; draw(); return; }
+  for (let i = hits.length - 1; i >= 0; i--) { const h = hits[i]; if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) { if (mode === 'paused' && h.id !== 'resume' && h.id !== 'finish') continue; act(h.id); return; } }
+});
+let sx = null; cv.addEventListener('pointerdown', (e) => { sx = e.clientX; }); cv.addEventListener('pointerup', (e) => { if (sx != null && Math.abs(e.clientX - sx) > 40) turn(e.clientX < sx ? 1 : -1); sx = null; });
+$('k-back').onclick = () => turn(-1); $('k-next').onclick = () => turn(1); $('k-lap').onclick = lapKey; $('k-start').onclick = startKey;
+document.addEventListener('keydown', (e) => { if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return; if (e.key === 'ArrowRight') turn(1); else if (e.key === 'ArrowLeft') turn(-1); });
+$('restart').onclick = () => reset(false); $('workout').onchange = () => reset(false);
+$('speed').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; speed = +b.dataset.x; for (const x of $('speed').children) x.classList.toggle('on', x === b); schedule(); };
+$('sound').onclick = () => { sound = !sound; $('sound').textContent = 'Dźwięk: ' + (sound ? 'wł.' : 'wył.'); $('sound').setAttribute('aria-pressed', sound); if (sound && !audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; } } };
+function setAuto(on) { auto = on; $('auto').classList.toggle('on', on); $('auto').setAttribute('aria-pressed', on); $('autohint').textContent = on ? 'Autopilot jedzie plan: trzyma środek celu, a interwały zaczyna kilka sekund po sygnale. Ruszenie suwaka albo przycisku przejmuje stery.' : 'Sterujesz ręcznie. Moc dochodzi do ustawionej wartości w 2–3 sekundy, jak przy prawdziwym przyspieszeniu.'; }
+$('auto').onclick = () => setAuto(!auto);
+$('slider').oninput = () => { manual = +$('slider').value; setAuto(false); ui(); };
+document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { const m = Math.round(targetMid() / 5) * 5, q = b.dataset.q; manual = q === 'target' ? m : q === 'hard' ? m + 45 : q === 'soft' ? Math.max(60, m - 45) : q === 'easy' ? 140 : 0; $('slider').value = manual; setAuto(false); ui(); });
+document.querySelectorAll('[data-enzo]').forEach(b => b.onclick = () => { $('menu').classList.remove('open'); const q = b.dataset.enzo; if (q === 'close' || !eng || mode === 'home') return; const text = enzoAnswer(q); enzo = { text, until: Date.now() + 20000 }; log.unshift({ s: Math.max(0, eng.s), kind: 'enzo', scr: 'Enzo: ' + text, voice: 'odpowiedź przykładowa – w aplikacji odpowiada serwer VeloIQ' }); renderLog(); draw(); });
+$('menu').onclick = (e) => { if (e.target === $('menu')) $('menu').classList.remove('open'); };
+
+// Przykładowe odpowiedzi – w aplikacji odpowiada Enzo z serwera, na podstawie tych samych danych jazdy.
+function enzoAnswer(q) {
+  const L = live(), s = eng.phase === 'free' ? null : eng.step, p30 = Math.round(avg(30)), h = Math.round(hr);
+  if (q === 'left') return s ? `Do końca kroku ${clock(L.stepRemaining)}, do końca planu ${fieldVals()[1][6][1]}. Forza!` : `Jedziesz ${clock(eng.s + 1)}, plan zrobiony albo jazda swobodna. Ty decydujesz, ile jeszcze.`;
+  if (q === 'fuel') return eng.s > 2400 ? 'Tak, zjedz teraz żel albo pół batona i popij. Potem łyk co 10 minut.' : 'Na razie tylko pij: kilka łyków co 10-15 minut. Jedzenie po 40 minutach jazdy.';
+  if (q === 'next') { const nx = wk.steps[eng.stepIdx + 1]; return s ? `Teraz ${s.name}: ${s.powerLow}-${s.powerHigh} W, zostało ${clock(L.stepRemaining)}.` + (nx ? ` Potem ${nx.name}, ${durShort(nx.durationSec)}.` : ' To ostatni krok.') : 'Bez planu: jedź swoje, mocniejsze odcinki zapiszę sam.'; }
+  if (!s) return `Ostatnie 30 s: ${p30} W, tętno ${h}. NP ${np()} W. Równo i spokojnie, bravissimo!`;
+  const d = p30 - (s.powerLow + s.powerHigh) / 2;
+  return s.type === 'interval' ? (Math.abs(d) <= 12 ? `Trzymasz ${p30} W, idealnie w celu. Tętno ${h}. Jeszcze ${clock(L.stepRemaining)}, forza!` : d > 0 ? `Masz ${p30} W, to ${Math.round(d)} W ponad cel. Odpuść odrobinę, żeby dowieźć serię.` : `Masz ${p30} W, brakuje ${Math.round(-d)} W do celu. Dołóż, zostało ${clock(L.stepRemaining)}.`) : `${s.name}: ${p30} W, tętno ${h}. Wszystko zgodnie z planem.`;
+}
+
+function renderLog() {
+  const el = $('log');
+  if (!log.length) { el.innerHTML = '<p class="empty">Naciśnij START na liczniku.</p>'; return; }
+  el.innerHTML = '';
+  for (const c of log.slice(0, 40)) { const d = document.createElement('div'); d.className = 'e ' + c.kind; const t = document.createElement('time'); t.textContent = clock(c.s); const b = document.createElement('div'); const a = document.createElement('div'); a.className = 'scr'; a.textContent = c.scr; const v = document.createElement('div'); v.className = 'voice'; v.textContent = (c.kind === 'enzo' ? '' : 'głos: ') + c.voice; b.append(a, v); d.append(t, b); el.append(d); }
+}
+function ui() { $('pwr').textContent = mode === 'ride' ? power : manual; $('r-hr').textContent = mode === 'home' ? '--' : Math.round(hr); $('r-cad').textContent = mode === 'home' ? '--' : cad; $('r-ph').textContent = mode === 'home' ? 'przed startem' : mode === 'paused' ? 'pauza' : mode === 'summary' ? 'zapisane' : PHASE_PL[eng.phase]; }
+function schedule() { clearInterval(timer); timer = setInterval(() => { tick(); if (mode !== 'ride') { if (banner && Date.now() > banner.until) banner = null; draw(); } }, 1000 / speed); }
+
+reset(false); ui(); schedule();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+</script>
+</body>
+</html>

@@ -103,6 +103,13 @@ over-under, tętno ponad strefą, sprinty, jazda swobodna, brak czujników) prze
 ocena), wysiłki, lapy i podsumowanie (NP, kJ, tętno). Zmiana logiki w telefonie → przegenerować `ParityData.mc`, a test
 pokaże, co trzeba przenieść na licznik.
 
+## Symulator w przeglądarce
+
+`garmin/sim/build.sh` składa jedną stronę HTML: ekran Edge 1030 odwzorowany na płótnie, napędzany silnikiem referencyjnym
+(`lib/ride/flex-engine.ts`), z suwakiem mocy, autopilotem i przyspieszaniem czasu. Służy do sprawdzania zachowania treningu
+(start po mocy, falstart, auto-pauza, korekty, serie, lapy) bez licznika. To odwzorowanie ekranów, nie aplikacja Garmina –
+prawdziwą aplikację uruchamia symulator Connect IQ (`ci/screens.sh`).
+
 ## Znane ograniczenia
 
 - Nie testowane na fizycznym liczniku – tylko w symulatorze Connect IQ (patrz opis PR: co zweryfikowano i jak).
