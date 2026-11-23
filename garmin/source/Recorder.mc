@@ -20,6 +20,13 @@ class Recorder {
     function initialize() {}
 
     function active() as Boolean { return _session != null; }
+    //! Ile pól VeloIQ udało się założyć w pliku FIT (8 = komplet).
+    function fieldCount() as Number {
+        var f = [_fTarget, _fWbal, _fLapTarget, _fLapType, _fNp, _fTss, _fIf, _fCompl];
+        var n = 0;
+        for (var i = 0; i < f.size(); i++) { if (f[i] != null) { n++; } }
+        return n;
+    }
     function recording() as Boolean { return _session != null && _session.isRecording(); }
 
     function start(name as String, indoor as Boolean) as Boolean {

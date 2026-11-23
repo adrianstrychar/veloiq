@@ -81,13 +81,6 @@ module Demo {
         }
         else if (s == 17) { ff(r, 150, 318, 165, 94); r.uiPage = 0; shot("15-swobodna-jasny"); }
         else if (s == 18) { r.uiPage = 3; shot("16-swobodna-okrazenia"); }
-        else if (s == 19) {
-            // most do telefonu w symulatorze: czy transmit kończy się wywołaniem zwrotnym (a nie blokadą)
-            r.finish(false); r.reset(); Th.apply(0);
-            Cfg.put("phoneLink", true); Cfg.load();
-            r.link.event({ "t" => "state", "s" => "demo" });
-            System.println("LINK sent");
-        }
-        else if (s == 20) { System.println("LINK active=" + r.link.active); System.println("SHOT END"); }
+        else if (s == 19) { r.finish(false); r.reset(); Th.apply(0); System.println("SHOT END"); }
     }
 }

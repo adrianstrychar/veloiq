@@ -316,6 +316,10 @@ class RideScreen {
                 Ui.text(dc, w - pad, y, tf2, "" + eff[j]["avgPower"] + " W", Ui.R, Th.warn);
                 y += rowH2;
             }
+            if (e.inEffort() && y + rowH2 <= h) {
+                Ui.text(dc, pad, y, tf2, "trwa  " + Util.clock(e.effortSec()), Ui.L, Th.fg);
+                Ui.text(dc, w - pad, y, tf2, "" + e.effortAvg() + " W", Ui.R, Th.warn);
+            }
         } else {
             Ui.text(dc, w / 2, y + lh, xt, "Tu pojawią się serie i wysiłki", Ui.C, Th.dim);
         }

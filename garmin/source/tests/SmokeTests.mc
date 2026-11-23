@@ -137,9 +137,10 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
         if (i == 200) { r.showEnzo("Bravissimo! Trzymasz 302 waty, dokładnie w celu. Jeszcze dwie minuty, forca!"); Smoke.drawAll(scr, g); r.dismissEnzo(); }
         if (i == 300) { r.pause(); Smoke.drawAll(scr, g); scr.tap(100, 300); r.resume(); }
     }
+    logger.debug("fitFields=" + r.rec.fieldCount());
     logger.debug("series=" + e.series.size() + " laps=" + e.laps.size() + " fitLaps=" + r.rec.laps + " cues=" + r.cues.size() + " phase=" + e.phase + " fs=" + sawFs);
     var st = r.coachState();
-    var ok = e.series.size() == 2 && e.phase == Phase.FREE && st.hasKey("np") && sawFs && phases.hasKey(Phase.ARMED) && phases.hasKey(Phase.AUTOPAUSED);
+    var ok = r.rec.fieldCount() == 8 && e.series.size() == 2 && e.phase == Phase.FREE && st.hasKey("np") && sawFs && phases.hasKey(Phase.ARMED) && phases.hasKey(Phase.AUTOPAUSED);
     // dotyk i przyciski nie wywracają aplikacji
     scr.page = 0; scr.draw(g);
     for (var h = 0; h < scr.hits.size(); h++) {

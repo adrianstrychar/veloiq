@@ -48,7 +48,7 @@ module Menus {
         m.addItem(toggle("Dźwięki", "tones", Cfg.tones));
         m.addItem(toggle("Trenażer (bez GPS)", "indoor", Cfg.indoor));
         m.addItem(toggle("Jasny motyw", "theme", Cfg.theme == 1));
-        m.addItem(toggle("Dane na telefon", "phone", Cfg.phoneLink));
+        m.addItem(toggle("Most do telefonu (beta)", "phone", Cfg.phoneLink));
         m.addItem(item("Pola danych: strona 1", null, "fields0"));
         m.addItem(item("Pola danych: strona 2", null, "fields1"));
         return m;
