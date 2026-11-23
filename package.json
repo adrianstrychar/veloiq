@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "check:plan-modify": "ANTHROPIC_API_KEY=offline npx -y tsx --tsconfig tsconfig.json scripts/check-plan-modify.ts",
-    "check:morning": "npx -y tsx --tsconfig tsconfig.json scripts/check-morning.ts && npx -y tsx --tsconfig tsconfig.json scripts/check-morning-run.ts"
+    "check:morning": "npx -y tsx --tsconfig tsconfig.json scripts/check-morning.ts && npx -y tsx --tsconfig tsconfig.json scripts/check-morning-run.ts",
+    "check:garmin": "npx -y tsx --tsconfig tsconfig.json scripts/check-garmin.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
