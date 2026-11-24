@@ -40,6 +40,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "garminChoose", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "garminForget", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "garminOpenApp", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "garminSync", returnType: CAPPluginReturnPromise),
     ]
 
     private let engineQueue = DispatchQueue(label: "veloiq.engine")
@@ -230,8 +231,10 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         }
         engineQueue.async { self.pendingNav = nav }   // begin() podłączy po stopInternal
         engineQueue.async { self.autoPauseOn = autoPause; self.stillRun = 0; self.moveRun = 0; self.lastSpeed = nil }
-        notifier.enabled = notify
-        if notify { notifier.requestPermission() }
+        // licznik Garmin z aplikacją VeloIQ: bez powiadomień systemowych – licznik pokazuje komunikaty sam,
+        // a powiadomienia przykrywały ekran aplikacji na liczniku i trzeba było je zamykać ręcznie
+        notifier.enabled = notify && !GarminLink.hasDevice
+        if notifier.enabled { notifier.requestPermission() }
         engineQueue.async { self.voiceLevel = level; self.announceArm = arm }
         do {
             let json = try JSONSerialization.data(withJSONObject: scriptObj)
@@ -326,6 +329,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func pause(_ call: CAPPluginCall) {
+        if mirrorCommand("pause", call) { return }
         engineQueue.async {
             self.engine?.pause()
             self.saveRecoveryState()
@@ -334,6 +338,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func resume(_ call: CAPPluginCall) {
+        if mirrorCommand("resume", call) { return }
         engineQueue.async {
             self.engine?.resume()
             self.saveRecoveryState()
@@ -343,6 +348,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
 
     /// Przycisk "Następny krok" – np. gdy zawodnik chce pominąć przerwę albo interwał.
     @objc func skipStep(_ call: CAPPluginCall) {
+        if mirrorCommand("next", call) { return }
         engineQueue.async {
             guard let eng = self.engine else { return call.resolve() }
             eng.advance()
@@ -354,6 +360,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
 
     /// Przycisk „Falstart” – odwołuje świeżo wykryty start interwału (wraca czekanie na start).
     @objc func cancelStart(_ call: CAPPluginCall) {
+        if mirrorCommand("cancel", call) { return }
         engineQueue.async {
             guard let eng = self.engine else { return call.resolve() }
             self.cancelStartInternal(eng)
@@ -631,7 +638,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     /// telefon jest zablokowany (aplikacja w tle). Wołane przy starcie jazdy (setCoach, pierwszy plan).
     /// Uprawnienia mogą jeszcze czekać na zgodę – wtedy próbujemy ponownie po odpowiedzi.
     private func armMicForFlic(retry: Int = 0) {
-        guard FlicRemote.shared.isPaired, engineQueue.sync(execute: { self.engine != nil }) else { return }
+        guard FlicRemote.shared.isPaired, mirror != nil || engineQueue.sync(execute: { self.engine != nil }) else { return }
         if coach.arm() { return }
         guard retry < 10 else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
@@ -643,10 +650,30 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - Licznik Garmin Edge (most Connect IQ)
     //
     // Czujniki są sparowane tylko z licznikiem (ANT+), a telefon dostaje z niego dane i zdarzenia.
-    //  • Trening uruchomiony na liczniku (w telefonie nie ma aktywnego treningu): licznik prowadzi, telefon
-    //    mówi głosem Enzo i obsługuje rozmowę przez mikrofon słuchawek (przycisk ENZO na liczniku).
+    //  • Jazda uruchomiona na liczniku (tryb lustra): START na liczniku = ta sama sesja w telefonie. Telefon
+    //    pokazuje dane na żywo (zdarzenia "live", "paused", "resumed", "cue" jak przy własnym treningu, plus
+    //    "garminRide" z planem i godziną startu), mówi głosem Enzo, obsługuje „Zapytaj Enzo” (ekran, Flic,
+    //    przycisk ENZO na liczniku), a pauza / dalej / falstart z telefonu idą do licznika. Telefon NIE nagrywa –
+    //    jazdę zapisuje i wysyła do VeloIQ licznik (bez dubli).
     //  • Trening uruchomiony w telefonie: licznik jest źródłem mocy / tętna / kadencji tam, gdzie telefon
     //    nie ma własnego czujnika Bluetooth; komunikaty licznika są pomijane (jeden głos naraz).
+
+    /// Jazda prowadzona przez licznik (główny wątek).
+    private struct Mirror {
+        var key: Int
+        var name: String
+        var ftp: Int
+        var steps: [[String: Any]]   // kroki jak WorkoutStep w JS
+        var startedAt: Date
+        var indoor: Bool
+        var free: Bool
+        var pause: Int               // 0 jazda, 1 pauza ręczna, 2 postój
+        var elapsed: Int
+        var known: Bool              // plan przyszedł z licznika (false = stara wersja aplikacji na liczniku)
+    }
+    private var mirror: Mirror?
+    private var mirrorProbeSince: Date?
+    private var mirrorIdleRuns = 0
 
     private func setupGarmin() {
         let g = GarminLink.shared
@@ -658,10 +685,17 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         g.onCue = { [weak self] key, kind, text, vars in self?.garminCue(key, kind, text, vars) }
         g.onTalk = { [weak self] msg in self?.garminTalk(msg) }
         g.onState = { [weak self] st, info in self?.garminRideState(st, info) }
+        g.onCoachState = { [weak self] st in
+            guard let self = self else { return }
+            self.engineQueue.async { self.garminState = st; self.garminStateAt = Date() }
+        }
         g.configure()
-        // powrót aplikacji na pierwszy plan przy nadającym liczniku = moment na włączenie mikrofonu
+        // stare powiadomienia „na licznik” (sprzed wyboru licznika) nie mogą dalej wisieć na ekranie Edge
+        if GarminLink.hasDevice { EnzoNotifier.clearDelivered() }
+        // powrót aplikacji na pierwszy plan przy nadającym liczniku = moment na włączenie mikrofonu i pełny stan jazdy
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             self?.garminMic(streaming: GarminLink.shared.isStreaming)
+            GarminLink.shared.hello()
         }
     }
 
@@ -675,12 +709,12 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         if streaming {
             garminDisarm?.cancel(); garminDisarm = nil
             if !phoneLeads && !coach.armed && UIApplication.shared.applicationState == .active { _ = coach.arm() }
-        } else if coach.armed && !phoneLeads && garminDisarm == nil {
+        } else if coach.armed && !phoneLeads && mirror == nil && garminDisarm == nil {
             let w = DispatchWorkItem { [weak self] in
                 guard let self = self else { return }
                 self.garminDisarm = nil
                 let leads: Bool = self.engineQueue.sync { self.engine != nil }
-                if !GarminLink.shared.isStreaming && !leads { self.coach.disarm() }
+                if !GarminLink.shared.isStreaming && !leads && self.mirror == nil { self.coach.disarm() }
             }
             garminDisarm = w
             DispatchQueue.main.asyncAfter(deadline: .now() + 600, execute: w)
@@ -704,10 +738,115 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func garminOpenApp(_ call: CAPPluginCall) {
         DispatchQueue.main.async { GarminLink.shared.openApp(); call.resolve() }
     }
+    /// Ekran aplikacji wraca (otwarcie, powrót z tła): bieżąca jazda z licznika, jeśli trwa, i prośba do licznika
+    /// o pełny stan (gdyby start jazdy przyszedł, gdy aplikacja była uśpiona).
+    @objc func garminSync(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            GarminLink.shared.requestSync()
+            var d = GarminLink.shared.status()
+            if let m = self.mirror { d["mirror"] = self.mirrorInfo(m, state: "start", sync: true) }
+            call.resolve(d)
+        }
+    }
+
+    /// Pauza / dalej / falstart z ekranu telefonu przy jeździe z licznika – polecenie idzie do licznika.
+    private func mirrorCommand(_ cmd: String, _ call: CAPPluginCall) -> Bool {
+        let phoneLeads: Bool = engineQueue.sync { self.engine != nil }
+        guard !phoneLeads else { return false }
+        DispatchQueue.main.async {
+            guard self.mirror != nil || GarminLink.shared.isStreaming else { return call.resolve() }
+            GarminLink.shared.sendCommand(cmd)
+            call.resolve()
+        }
+        return true
+    }
+
+    private static let stepTypes = ["warmup", "interval", "recovery", "steady", "cooldown", "free"]
+    private static func num(_ x: Any?) -> Int? { (x as? NSNumber)?.intValue }
+
+    /// Plan z licznika ([typ, czas, moc↓, moc↑, kadencja↓, kadencja↑, nazwa]) → kroki WorkoutStep dla ekranu.
+    private static func mirrorSteps(_ raw: Any?) -> [[String: Any]] {
+        guard let arr = raw as? [Any] else { return [] }
+        return arr.compactMap { item -> [String: Any]? in
+            guard let a = item as? [Any], a.count >= 4 else { return nil }
+            let t = num(a[0]) ?? 3
+            let type = t >= 0 && t < stepTypes.count ? stepTypes[t] : "steady"
+            var st: [String: Any] = ["type": type, "durationSec": num(a[1]) ?? 0, "powerLow": num(a[2]) ?? 0, "powerHigh": num(a[3]) ?? 0,
+                                     "name": (a.count > 6 ? a[6] as? String : nil) ?? type]
+            if a.count > 5, let lo = num(a[4]), let hi = num(a[5]), lo > 0, hi > 0 { st["cadenceLow"] = lo; st["cadenceHigh"] = hi }
+            return st
+        }
+    }
+
+    private func mirrorInfo(_ m: Mirror, state: String, sync: Bool) -> [String: Any] {
+        let script: [String: Any] = ["version": 1, "id": "garmin-\(m.key)", "name": m.name, "ftp": m.ftp, "lang": "pl-PL", "steps": m.steps]
+        return ["state": state, "key": m.key, "name": m.name, "script": script, "startedAt": m.startedAt.timeIntervalSince1970 * 1000,
+                "indoor": m.indoor, "free": m.free, "paused": m.pause, "elapsed": m.elapsed, "known": m.known, "sync": sync]
+    }
+
+    /// Licznik zaczął jazdę (albo odpowiedział na „sync”). Główny wątek.
+    private func startMirror(_ info: [String: Any], sync: Bool) {
+        let key = Self.num(info["k"]) ?? Int(Date().timeIntervalSince1970)
+        let same = mirror?.key == key
+        let steps = Self.mirrorSteps(info["st"])
+        let m = Mirror(key: key, name: (info["w"] as? String) ?? "Jazda z licznika", ftp: Self.num(info["ftp"]) ?? 250,
+                       steps: steps, startedAt: Date(timeIntervalSince1970: TimeInterval(key)),
+                       indoor: Self.num(info["in"]) == 1, free: Self.num(info["free"]) == 1 || steps.isEmpty,
+                       pause: Self.num(info["p"]) ?? 0, elapsed: Self.num(info["el"]) ?? 0, known: info["st"] != nil)
+        mirror = m
+        mirrorProbeSince = nil; mirrorIdleRuns = 0
+        notifyListeners("garminRide", data: mirrorInfo(m, state: "start", sync: same || sync))
+        if m.pause > 0 { notifyListeners("paused", data: ["elapsed": m.elapsed, "auto": m.pause == 2]) }
+        GarminLink.shared.note(same ? "sesja z licznika odświeżona" : "sesja z licznika: \(m.name)")
+        // mikrofon na pytania do Enzo (aplikacja na pierwszym planie) i świeży stan jazdy do rozmowy
+        if UIApplication.shared.applicationState == .active && !coach.armed { _ = coach.arm() }
+        armMicForFlic()
+        if !same { GarminLink.shared.sendCommand("state") }
+    }
+
+    /// Koniec jazdy na liczniku (albo licznik już nie nagrywa, a koniec nie dotarł). Główny wątek.
+    private func endMirror(_ info: [String: Any]) {
+        guard let m = mirror else { return }
+        mirror = nil; mirrorIdleRuns = 0
+        var d = mirrorInfo(m, state: "end", sync: false)
+        d["saved"] = Self.num(info["saved"]) ?? -1          // -1 = nie wiadomo (koniec nie dotarł)
+        d["durationSec"] = Self.num(info["dur"]) ?? m.elapsed
+        if let np = Self.num(info["np"]) { d["np"] = np }
+        if let avg = Self.num(info["avg"]) { d["avgPower"] = avg }
+        d["upload"] = Self.num(info["up"]) ?? 1
+        notifyListeners("garminRide", data: d)
+        GarminLink.shared.note("koniec jazdy na liczniku (zapis: \(d["saved"] ?? -1))")
+        if coach.armed && !engineQueue.sync(execute: { self.engine != nil }) { coach.disarm() }
+    }
+
+    /// Sekunda z licznika → próbka dla ekranu (te same pola co LiveSample z silnika telefonu).
+    private func mirrorSample(_ l: GarminLive, _ m: Mirror) -> [String: Any] {
+        let phases = ["running", "armed", "waiting", "autoPaused", "free"]
+        let phase = l.phase >= 0 && l.phase < phases.count ? phases[l.phase] : "running"
+        let step: [String: Any]? = l.stepIndex >= 0 && l.stepIndex < m.steps.count ? m.steps[l.stepIndex] : nil
+        let dur = (step?["durationSec"] as? Int) ?? 0
+        var d: [String: Any] = [
+            "elapsed": l.second + 1, "phase": phase, "stepIndex": l.stepIndex,
+            "stepName": phase == "free" ? "Jazda swobodna" : ((step?["name"] as? String) ?? "Trening"),
+            "stepType": phase == "free" ? "free" : ((step?["type"] as? String) ?? "steady"),
+            "stepElapsed": l.stepElapsed ?? max(0, dur - l.stepRemaining), "stepRemaining": l.stepRemaining,
+            "overrunSec": l.overrunSec, "falseStartLeft": l.falseStartLeft,
+            "targetLow": l.targetLow, "targetHigh": l.targetHigh, "source": "garmin",
+        ]
+        if let p = l.power { d["power"] = p; d["power3s"] = l.power3s ?? p }
+        if let h = l.hr { d["hr"] = h }
+        if let c = l.cadence { d["cadence"] = c }
+        if let a = l.stepAvgPower, a > 0 { d["stepAvgPower"] = a }
+        // prędkość i dystans z licznika (czujnik prędkości / GPS) – ekran pokazuje je jak dystans na trenażerze
+        if let v = l.speedKmh { d["vKmh"] = v }
+        if let dm = l.distanceM, dm > 0 { d["vKm"] = Double(dm) / 1000.0 }
+        if let p3 = d["power3s"] as? Int, l.targetHigh > 0 { d["inRange"] = p3 >= l.targetLow && p3 <= l.targetHigh }
+        return d
+    }
 
     /// Sekunda z licznika (główny wątek).
     private func garminLive(_ l: GarminLive) {
-        engineQueue.async {
+        let phoneLeads: Bool = engineQueue.sync {
             if let e = self.engine {
                 var fed = false
                 if !self.bleUp.contains("power") && !self.bleUp.contains("power2") {
@@ -716,13 +855,41 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 if !self.bleUp.contains("hr"), let h = l.hr { e.ingestHr(h); fed = true }
                 if fed { e.advance() }
-            } else {
-                // podgląd na ekranie Czujniki
-                if let p = l.power { self.previewPower = p }
-                if let c = l.cadence { self.previewCadence = c }
-                if let h = l.hr { self.previewHr = h }
-                self.emitPreview()
+                return true
             }
+            // podgląd na ekranie Czujniki
+            if let p = l.power { self.previewPower = p }
+            if let c = l.cadence { self.previewCadence = c }
+            if let h = l.hr { self.previewHr = h }
+            self.emitPreview()
+            return false
+        }
+        guard !phoneLeads else { return }
+        if l.second >= 0 {
+            mirrorIdleRuns = 0
+            guard var m = mirror else {
+                // licznik nagrywa, a telefon nie zna jazdy (aplikacja otwarta w trakcie albo start nie dotarł):
+                // prośba o pełny stan; stara wersja aplikacji na liczniku nie odpowie – wtedy sesja bez planu
+                if mirrorProbeSince == nil { mirrorProbeSince = Date() }
+                GarminLink.shared.requestSync()
+                if let since = mirrorProbeSince, Date().timeIntervalSince(since) > 10 {
+                    startMirror(["k": Int(Date().timeIntervalSince1970) - l.second - 1, "w": "Jazda z licznika", "el": l.second + 1,
+                                 "free": l.phase == 4 ? 1 : 0, "p": l.pause], sync: false)
+                }
+                return
+            }
+            if l.pause != m.pause {
+                // zgubiony komunikat o pauzie / wznowieniu – stan z próbki
+                m.pause = l.pause
+                notifyListeners(l.pause > 0 ? "paused" : "resumed", data: ["elapsed": l.second + 1, "auto": l.pause == 2])
+            }
+            m.elapsed = l.second + 1
+            mirror = m
+            notifyListeners("live", data: mirrorSample(l, m))
+        } else if mirror != nil {
+            // licznik pokazuje ekran startowy – jazda się skończyła, a komunikat o końcu nie dotarł
+            mirrorIdleRuns += 1
+            if mirrorIdleRuns >= 3 { endMirror([:]) }
         }
     }
 
@@ -731,6 +898,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         let k = WorkoutEngine.CueKind(rawValue: kind) ?? .info
         let (phoneLeads, speak): (Bool, Bool) = engineQueue.sync { (self.engine != nil, self.shouldSpeak(k)) }
         guard !phoneLeads else { return }
+        if mirror == nil { GarminLink.shared.requestSync() }
         let spoken = text.replacingOccurrences(of: "\n", with: ". ")
         notifyListeners("cue", data: ["text": spoken, "kind": kind, "source": "garmin"])
         guard speak else { return }
@@ -759,12 +927,18 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             _ = localAnswer(q)
             return
         }
+        startCoach(fromEdge: true)
+    }
+
+    /// Rozmowa z Enzo przy zablokowanym telefonie: mikrofon musiał zostać włączony wcześniej (iOS nie pozwala
+    /// go włączyć w tle) – wtedy mówimy, co zrobić, zamiast milczeć. Główny wątek.
+    private func startCoach(fromEdge: Bool) {
         if !coach.armed && UIApplication.shared.applicationState == .background {
-            // mikrofonu nie da się włączyć przy zablokowanym telefonie – powiedz to (także na liczniku), zamiast milczeć
-            let t = "Mikrofon w telefonie jest wyłączony. Przed jazdą otwórz VeloIQ w telefonie przy włączonym liczniku."
+            let t = "Mikrofon w telefonie jest wyłączony. Odblokuj telefon i otwórz VeloIQ – przy otwartej aplikacji Enzo słucha także przy zgaszonym ekranie."
             notifyListeners("coach", data: ["state": "error", "text": t])
-            GarminLink.shared.sendEnzoAnswer(t)
+            if fromEdge || mirror != nil { GarminLink.shared.sendEnzoAnswer(t) }
             if voiceMode == "enzo", let d = director, let seg = d.compose("repeat", [:]) { d.play(seg) }
+            else { speaker.speak("Odblokuj telefon, żeby zapytać Enzo.") }
             return
         }
         coach.start()
@@ -785,9 +959,26 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         let phoneLeads: Bool = engineQueue.sync { self.engine != nil }
         guard !phoneLeads else { return }
         useGarminToken(info)
+        let auto = Self.num(info["auto"]) == 1
+        switch s {
+        case "start":
+            startMirror(info, sync: Self.num(info["sync"]) == 1)
+        case "pause", "resume":
+            if var m = mirror {
+                m.pause = s == "pause" ? (auto ? 2 : 1) : 0
+                mirror = m
+                notifyListeners(s == "pause" ? "paused" : "resumed", data: ["elapsed": m.elapsed, "auto": auto])
+            } else {
+                GarminLink.shared.requestSync()
+            }
+        case "end":
+            endMirror(info)
+        case "idle":
+            if mirror != nil { endMirror([:]) }
+        default: break
+        }
         // koniec jazdy na liczniku: mikrofon nie jest już potrzebny (włączy się znów, gdy aplikacja będzie otwarta)
         if s == "end" && coach.armed { coach.disarm() }
-        let auto = (info["auto"] as? NSNumber)?.intValue == 1
         let quiet: Bool = engineQueue.sync { self.voiceLevel == "off" }
         guard !auto, !quiet else { return }   // auto-pauza na światłach: licznik pokazuje baner, Enzo milczy
         switch s {
@@ -803,25 +994,25 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         notifyListeners("flic", data: ["press": kind])
         let phase: WorkoutEngine.Phase? = engineQueue.sync { self.engine?.phase }
         guard let ph = phase else {
-            // trening prowadzi licznik Garmin: przycisk steruje licznikiem (ten odsyła stan jazdy do rozmowy)
-            guard GarminLink.shared.isStreaming else { return }
+            // jazdę prowadzi licznik Garmin: rozmowa w telefonie (od razu, bez okrężnej drogi przez licznik),
+            // okrążenie / następny krok i raport ze świeżym stanem z licznika
+            guard mirror != nil || GarminLink.shared.isStreaming else { return }
             switch kind {
-            case "click": GarminLink.shared.sendCommand("talk")
-            case "double": GarminLink.shared.sendCommand("lap")
-            case "hold": GarminLink.shared.sendCommand("report")
+            case "click":
+                GarminLink.shared.sendCommand("state")
+                startCoach(fromEdge: false)
+            case "double":
+                GarminLink.shared.sendCommand("lap")
+            case "hold":
+                GarminLink.shared.sendCommand("state")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { _ = self.localAnswer("raport") }
             default: break
             }
             return
         }
         switch kind {
         case "click":
-            if !coach.armed && UIApplication.shared.applicationState == .background {
-                // mikrofonu nie da się włączyć przy zablokowanym telefonie – powiedz to, zamiast milczeć
-                notifyListeners("coach", data: ["state": "error", "text": "Mikrofon nie był włączony od startu jazdy – odblokuj telefon, żeby zapytać Enzo."])
-                if voiceMode == "enzo", let d = director, let seg = d.compose("repeat", [:]) { d.play(seg) }
-                return
-            }
-            coach.start()
+            startCoach(fromEdge: false)
         case "double":
             if ph == .free { flicLap() } else { coachAction("next") }
         case "hold":
@@ -853,7 +1044,12 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func talk(_ call: CAPPluginCall) {
-        DispatchQueue.main.async { self.coach.start(); call.resolve() }
+        DispatchQueue.main.async {
+            // jazda z licznika: świeży stan jazdy dojdzie, zanim pytanie zostanie rozpoznane
+            if self.mirror != nil || GarminLink.shared.isStreaming { GarminLink.shared.sendCommand("state") }
+            self.coach.start()
+            call.resolve()
+        }
     }
 
     private func makeCoach() -> CoachTalk {
