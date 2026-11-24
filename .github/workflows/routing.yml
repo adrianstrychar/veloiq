@@ -1,0 +1,40 @@
+name: Trasy (żywy test)
+
+# Planer tras VeloIQ na prawdziwych serwisach: BRouter (profile szosa / gravel / MTB / spokojna, warianty, pętle),
+# Overpass („Przed tobą”) i Photon (wyszukiwanie miejsc). Plus testy bez sieci i testy licznika Garmin po stronie serwera.
+
+on:
+  push:
+    paths:
+      - 'lib/route/**'
+      - 'lib/garmin/**'
+      - 'lib/ride/gpx.ts'
+      - 'scripts/check-routing.ts'
+      - 'scripts/check-garmin.ts'
+      - '.github/workflows/routing.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: routing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Testy serwera licznika
+        run: npx -y tsx --tsconfig tsconfig.json scripts/check-garmin.ts
+      - name: Planer tras – bez sieci i na żywo
+        env:
+          LIVE: '1'
+        run: npx -y tsx --tsconfig tsconfig.json scripts/check-routing.ts
