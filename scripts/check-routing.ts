@@ -10,7 +10,8 @@ import { estimateSeconds, speedFor } from '../lib/route/estimate';
 import { surfaceOf, parseTags } from '../lib/route/surface';
 import { fetchPois, kindOf, overpassQuery, poisFromOverpass, samplePath } from '../lib/route/pois';
 import { photonUrl, placesFromPhoton } from '../lib/route/geocode';
-import { buildCourse, courseMeta } from '../lib/garmin/course';
+import { buildCourse, courseMeta, decodeParts } from '../lib/garmin/course';
+import { rejoinIndex, spliceCourse } from '../lib/route/reroute';
 import { dist } from '../lib/ride/gpx';
 
 let n = 0;
@@ -62,16 +63,17 @@ async function offline() {
 
   await ok('profile: szosa/gravel/MTB/spokojna → profil BRouter i parametry', () => {
     const road = brouterProfile('road', { quiet: true, flow: true });
-    assert.equal(road.name, 'fastbike-verylowtraffic'); assert.equal(road.params.consider_town, 'true');
+    assert.equal(road.name, 'fastbike-verylowtraffic'); assert.equal(road.params.consider_town, 1);
     assert.equal(brouterProfile('road', { quiet: false }).name, 'fastbike');
     const gr = brouterProfile('gravel', { flat: true });
-    assert.equal(gr.name, 'gravel'); assert.equal(gr.params.prefer_unpaved_paths, 'true'); assert.equal(gr.params.avoid_steep_inclines, 'true');
-    assert.equal(brouterProfile('gravel', { moreUnpaved: false }).params.prefer_unpaved_paths, 'false');
+    assert.equal(gr.name, 'gravel'); assert.equal(gr.params.prefer_unpaved_paths, 1); assert.equal(gr.params.avoid_steep_inclines, 1);
+    assert.equal(brouterProfile('gravel', { moreUnpaved: false }).params.prefer_unpaved_paths, 0);
+    assert.ok(Object.values(brouterProfile('calm', { green: true }).params).every((v) => typeof v === 'number'), 'tylko liczby');
     assert.equal(brouterProfile('mtb', { moreUnpaved: true }).params.MTB_factor, 1.5);
     assert.equal(brouterProfile('calm', {}).name, 'trekking');
-    const url = brouterUrl([KARPACZ, JELENIA], 'gravel', { prefer_unpaved_paths: 'true' }, 1);
+    const url = brouterUrl([KARPACZ, JELENIA], 'gravel', { prefer_unpaved_paths: 1 }, 1);
     assert.ok(url.includes('lonlats=15.755000,50.775300|15.719400,50.904400'));
-    assert.ok(url.includes('profile=gravel') && url.includes('alternativeidx=1') && url.includes('profile:prefer_unpaved_paths=true'));
+    assert.ok(url.includes('profile=gravel') && url.includes('alternativeidx=1') && url.includes('profile:prefer_unpaved_paths=1'));
   });
 
   await ok('błędy serwera tras → zrozumiały komunikat', () => {
@@ -181,6 +183,29 @@ async function offline() {
     assert.equal(pois[1].name, 'Woda pitna');
     const c = courseMeta(buildCourse({ ...p.route, pois }));
     assert.equal(c.pois?.length, 2);
+  });
+
+  await ok('powrót na trasę: punkt powrotu przed nami, dojazd + reszta trasy (skręty, podjazdy, nawierzchnia przesunięte)', () => {
+    const main = toPlanned(parseBrouter(fake), 'Pętla testowa', 'gravel', rider);
+    const stored = buildCourse({ ...main.route, pois: [{ d: 6000, kind: 'water', name: 'Źródło' }] });
+    const pts = decodeParts(stored.parts);
+    // zjechaliśmy ~200 m w bok po 2,2 km – powrót co najmniej 300 m dalej po trasie
+    const at = pts.find((p) => p.d >= 2200)!;
+    const pos = { lat: at.lat + 0.0018, lon: at.lon };
+    const idx = rejoinIndex(pts, pos, 2200);
+    assert.ok(pts[idx].d >= 2500 && pts[idx].d <= 8000, `punkt powrotu ${pts[idx].d}`);
+    const approach = toPlanned(parseBrouter(fakeBrouter(pos, [[180, 400, 0, 'highway=track tracktype=grade2'], [90, 300, 5, 'highway=track tracktype=grade2']])), 'Pętla testowa', 'gravel', rider);
+    const sp = spliceCourse(approach.route, stored, idx);
+    const restLen = stored.total - pts[idx].d;
+    assert.ok(Math.abs(sp.total - (approach.route.total + restLen)) < 30, `długość ${sp.total}`);
+    assert.ok(sp.cues.every((c, i) => i === 0 || c.d >= sp.cues[i - 1].d), 'skręty po kolei');
+    assert.ok(sp.cues.some((c) => c.d > approach.route.total + 100), 'skręty z dalszej części trasy');
+    assert.equal(sp.pois?.length, 1);
+    assert.ok(sp.pois![0].d > approach.route.total);
+    assert.ok((sp.surface ?? []).length >= 2);
+    const c2 = buildCourse(sp);
+    assert.equal(c2.name, 'Pętla testowa');
+    assert.ok(c2.n > 10);
   });
 
   await ok('geokoder: adres zapytania i etykiety miejsc', () => {

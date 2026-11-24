@@ -27,7 +27,8 @@ export const BROUTER_URL = () => (process.env.BROUTER_URL || 'https://brouter.de
 
 /** Profil BRouter i parametry dla wyboru zawodnika. `fallback` – gdy serwer nie zna profilu. */
 export function brouterProfile(p: RouteProfile, o: RouteOptions): { name: string; params: Record<string, string | number>; fallback?: string } {
-  const b = (x: boolean | undefined) => (x ? 'true' : 'false');
+  // BRouter wstrzykuje parametry jako liczby (Float.parseFloat) – „true” kończy się błędem 500, więc 1 / 0
+  const b = (x: boolean | undefined) => (x ? 1 : 0);
   switch (p) {
     case 'road': {
       const params: Record<string, string | number> = { consider_town: b(o.flow), consider_forest: b(o.green) };
@@ -52,7 +53,7 @@ export function brouterProfile(p: RouteProfile, o: RouteOptions): { name: string
         fallback: 'trekking',
       };
     default:
-      return { name: 'trekking', params: { avoid_unsafe: 'true', consider_traffic: 'true', consider_forest: b(o.green), consider_town: b(o.flow) } };
+      return { name: 'trekking', params: { avoid_unsafe: 1, consider_traffic: 1, consider_forest: b(o.green), consider_town: b(o.flow) } };
   }
 }
 
