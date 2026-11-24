@@ -30,12 +30,12 @@ const seen = (iso?: string | null) => {
 
 /** Most licznik → telefon: stan w jednym zdaniu + co zrobić dalej. */
 function linkLine(g: Ride['garminLink']): { ok: boolean; text: string } {
-  if (!g.paired) return { ok: false, text: 'Czujniki zostają przy liczniku, a telefon dostaje z niego moc i tętno i mówi głosem Enzo.' };
+  if (!g.paired) return { ok: false, text: 'Wybierz licznik raz – potem START na liczniku sam otwiera tę samą jazdę w telefonie: dane na żywo, głos Enzo i „Zapytaj Enzo”. Czujniki zostają przy liczniku.' };
   if (!g.connected) return { ok: false, text: `${g.name ?? 'Licznik'} poza zasięgiem – włącz go i sprawdź, czy jest połączony z Garmin Connect.` };
   if (g.appInstalled === false) return { ok: false, text: 'Na liczniku nie widzę aplikacji VeloIQ. Jeśli jest wgrana kablem, otwórz ją na liczniku – dane mogą popłynąć mimo to.' };
-  if (!g.streaming) return { ok: false, text: 'Połączony. Otwórz aplikację VeloIQ na liczniku i włącz w niej MENU → Ustawienia → „Most do telefonu”.' };
+  if (!g.streaming) return { ok: false, text: 'Połączony. Otwórz aplikację VeloIQ na liczniku – telefon sam ją znajdzie (most jest włączony domyślnie od wersji 0.2.2).' };
   const vals = [g.power != null ? `${g.power} W` : null, g.hr != null ? `${g.hr} bpm` : null, g.cadence != null ? `${g.cadence} rpm` : null].filter(Boolean).join(' · ');
-  return { ok: true, text: `${g.recording ? 'Licznik nagrywa jazdę' : 'Licznik nadaje'}${vals ? `: ${vals}` : ' – czekam na czujniki'}.` };
+  return { ok: true, text: `${g.recording ? 'Licznik nagrywa jazdę – telefon ją pokazuje' : 'Licznik nadaje – START na liczniku otworzy jazdę tutaj'}${vals ? `: ${vals}` : ' – czekam na czujniki'}.` };
 }
 
 export function GarminCard({ ride }: { ride: Ride }) {
@@ -46,6 +46,7 @@ export function GarminCard({ ride }: { ride: Ride }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [diag, setDiag] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -121,6 +122,7 @@ export function GarminCard({ ride }: { ride: Ride }) {
               {link.connected && !link.streaming && (
                 <button type="button" className={s.btnGhost} style={{ height: 40, flex: 1, fontSize: 13 }} onClick={() => void ride.garminOpenApp()}>Otwórz VeloIQ na liczniku</button>
               )}
+              <button type="button" className={s.btnText} style={{ height: 40, fontSize: 13, padding: '0 8px' }} onClick={() => setDiag((x) => !x)}>{diag ? 'Ukryj diagnostykę' : 'Diagnostyka'}</button>
               <button type="button" className={s.btnText} style={{ height: 40, fontSize: 13, padding: '0 8px' }} onClick={() => void ride.garminForget()}>Zapomnij licznik</button>
             </div>
           ) : (
@@ -128,6 +130,18 @@ export function GarminCard({ ride }: { ride: Ride }) {
               <button type="button" className={s.btnGhost} style={{ height: 44 }} onClick={() => void ride.garminChoose()}>Wybierz licznik w Garmin Connect</button>
               <span className={s.small} style={{ fontSize: 12 }}>Otworzy się aplikacja Garmin Connect – zaznacz swój Edge i wróć do VeloIQ.</span>
             </>
+          )}
+          {link.paired && diag && (
+            <div className={s.stack} style={{ gap: 4 }} aria-label="Diagnostyka mostu">
+              <span className={s.small} style={{ fontSize: 12 }}>
+                Licznik: {link.connected ? 'połączony' : 'niepołączony'} · aplikacja: {link.appInstalled == null ? '?' : link.appInstalled ? 'jest' : 'brak'}
+                {link.edgeVersion ? ` · VeloIQ ${link.edgeVersion}` : ''}
+                {link.lastMessageAgo != null ? ` · ostatnia wiadomość ${link.lastMessageAgo} s temu` : ' · nic jeszcze nie przyszło'}
+              </span>
+              <pre style={{ margin: 0, fontSize: 11, lineHeight: 1.4, color: 'var(--muted)', whiteSpace: 'pre-wrap', maxHeight: 180, overflow: 'auto' }}>
+                {(link.log ?? []).slice().reverse().join('\n') || '(pusto)'}
+              </pre>
+            </div>
           )}
         </div>
       )}

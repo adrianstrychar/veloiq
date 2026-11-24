@@ -35,9 +35,10 @@ export function TreningClient({ plan, planLabel, ftp, firstName, briefing, raceP
         void fetch('/api/rides/import', { method: 'POST' }).then(() => router.refresh()).catch(() => {});
       }}
       onAskCoach={() => router.push('/chat')}
-      onExportStrava={async () => {
+      onExportStrava={async (rideId?: string) => {
+        // rideId – jazda z licznika Garmin (tryb lustra); bez niego ostatnio zapisana w tym ekranie
         const r = await fetch('/api/rides/strava', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rideId: lastRideId.current }) });
+          body: JSON.stringify({ rideId: rideId ?? lastRideId.current }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.message ?? 'Nie udało się wysłać na Stravę.');
         router.refresh();

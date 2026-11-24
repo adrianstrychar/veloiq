@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { getRideEngine, isNativeRide, setWebSimSpeed } from '@/lib/ride/ride-client';
-import type { CoachEvent, FlicPress, FlicStatus, GarminLinkStatus, LiveSample, SensorData, SensorFound, SensorStatus, WorkoutSummary, VoiceLevel, VoiceInfo, VoiceMode } from '@/lib/ride/ride-engine';
+import type { CoachEvent, FlicPress, FlicStatus, GarminLinkStatus, GarminRide, LiveSample, SensorData, SensorFound, SensorStatus, WorkoutSummary, VoiceLevel, VoiceInfo, VoiceMode } from '@/lib/ride/ride-engine';
 import type { WorkoutScript } from '@/lib/ride/workout-script';
 import type { RideRoute } from '@/lib/ride/gpx';
 import type { NavState } from './RouteCard';
@@ -17,11 +17,11 @@ export interface RideSettings {
   announceArm: boolean;  // „Za minutę interwał…”
   autoPause: boolean;    // auto-pauza na postojach
   voiceLevel: VoiceLevel;
-  notifyDevice: boolean; // krótkie powiadomienia Enzo na licznik (Garmin Edge przez iPhone)
+  notifyDevice: boolean; // krótkie powiadomienia Enzo na licznik (Smart Notifications) – nie przy aplikacji VeloIQ na Garminie
 }
 
 export const DEFAULT_SETTINGS: RideSettings = {
-  outdoor: false, autoStart: true, announceArm: true, autoPause: true, voiceLevel: 'full', notifyDevice: true,
+  outdoor: false, autoStart: true, announceArm: true, autoPause: true, voiceLevel: 'full', notifyDevice: false,
 };
 
 /** Ustawienia użytkownika → skrypt dla silnika. */
@@ -63,12 +63,43 @@ export function useRide() {
   const [flicPress, setFlicPress] = useState<{ press: FlicPress; at: number } | null>(null);
   // most do licznika Garmin Edge (czujniki sparowane z licznikiem, głos Enzo w telefonie)
   const [garminLink, setGarminLink] = useState<GarminLinkStatus>({ available: false });
+  // jazda prowadzona przez licznik Garmin (START na liczniku → ta sama sesja tutaj); po końcu – karta wysyłki
+  const [mirror, setMirror] = useState<GarminRide | null>(null);
+  const [mirrorDone, setMirrorDone] = useState<GarminRide | null>(null);
+  const [liveAt, setLiveAt] = useState(0);
+  const mirrorKey = useRef<number | null>(null);
   const cueId = useRef(0);
   const lastElapsed = useRef(0);
 
+  // jazda z licznika: wejście w sesję (nowa jazda albo odświeżenie po powrocie aplikacji) i koniec
+  const onGarminRide = useCallback((d: GarminRide) => {
+    if (d.state === 'start') {
+      const fresh = mirrorKey.current !== d.key;
+      mirrorKey.current = d.key;
+      setMirror(d);
+      setActive(true);
+      setPaused(d.paused === 1);
+      setAutoPaused(d.paused === 2);
+      if (fresh) {
+        setCues([]); setPlanDone(null); setSummary(null); setMirrorDone(null); setRoute(null); setNav(null);
+        if (!d.sync) setLive(null);
+        // rozmowa z Enzo: token z sesji aplikacji (licznik ma też własny z synchronizacji)
+        fetch('/api/ride/token').then((r) => (r.ok ? r.json() : null)).then((j) => {
+          if (j?.token) return engine.setCoach({ token: j.token, baseUrl: window.location.origin, tapMode: false });
+        }).catch(() => {});
+      }
+    } else {
+      if (mirrorKey.current != null && mirrorKey.current !== d.key) return;
+      mirrorKey.current = null;
+      setMirror(null);
+      setActive(false); setPaused(false); setAutoPaused(false);
+      setMirrorDone(d);
+    }
+  }, [engine]);
+
   useEffect(() => {
     const handles: Promise<PluginListenerHandle>[] = [
-      engine.addListener('live', (d) => { lastElapsed.current = d.elapsed; setLive(d); }),
+      engine.addListener('live', (d) => { lastElapsed.current = d.elapsed; setLive(d); setLiveAt(Date.now()); }),
       engine.addListener('cue', (d) => {
         setCues((c) => [{ id: ++cueId.current, at: lastElapsed.current, text: d.text, kind: d.kind }, ...c].slice(0, 30));
       }),
@@ -93,13 +124,27 @@ export function useRide() {
       else setFlic((f) => ({ ...f, ...d, available: true }));
     }));
     handles.push(engine.addListener('garmin', (d) => setGarminLink((g) => ({ ...g, ...d, available: d.available !== false }))));
+    handles.push(engine.addListener('garminRide', onGarminRide));
     engine.garminStatus().then(setGarminLink).catch(() => setGarminLink({ available: false }));
+    // jazda z licznika, która trwała, zanim otworzyła się ta strona (albo gdy aplikacja była w tle)
+    const syncMirror = () => {
+      engine.garminSync().then((r) => {
+        if (r.mirror) onGarminRide(r.mirror);
+        else if (mirrorKey.current != null && r.available && !r.recording && r.streaming) {
+          // licznik nadaje, ale już nie nagrywa – koniec jazdy przyszedł, gdy aplikacja spała
+          onGarminRide({ state: 'end', key: mirrorKey.current, name: '', script: { version: 1, id: '', name: '', ftp: 0, steps: [] }, startedAt: 0, saved: -1 });
+        }
+      }).catch(() => {});
+    };
+    syncMirror();
+    const onVisible = () => { if (document.visibilityState === 'visible') syncMirror(); };
+    document.addEventListener('visibilitychange', onVisible);
     // stara wersja aplikacji (bez metody) → available: false, sekcja Flic prosi o aktualizację
     engine.flicStatus().then(setFlic).catch(() => setFlic({ available: false }));
     engine.getRecoverable().then((r) => { if (r.available) setRecoverable({ name: r.name, elapsed: r.elapsed }); }).catch(() => {});
     engine.getSavedSensors().then((s) => { if (s.hrId || s.powerId) engine.connect(s); }).catch(() => {});
-    return () => { handles.forEach((h) => h.then((x) => x.remove())); };
-  }, [engine]);
+    return () => { handles.forEach((h) => h.then((x) => x.remove())); document.removeEventListener('visibilitychange', onVisible); };
+  }, [engine, onGarminRide]);
 
   const run = useCallback(async (fn: () => Promise<unknown>) => {
     try { setError(null); await fn(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -121,7 +166,8 @@ export function useRide() {
     }),
     route, nav,
     start: (script: WorkoutScript, s: RideSettings, simulate = !native, rt: RideRoute | null = null) => run(async () => {
-      setCues([]); setPlanDone(null); setSummary(null); setLive(null); setNav(null);
+      if (mirrorKey.current != null) throw new Error('Jazdę nagrywa teraz licznik Garmin – ten ekran pokazuje ją na żywo.');
+      setCues([]); setMirrorDone(null); setPlanDone(null); setSummary(null); setLive(null); setNav(null);
       const useRoute = s.outdoor ? rt : null;
       setRoute(useRoute);
       await engine.startWorkout({ script: applySettings(script, s), outdoor: s.outdoor, simulate, route: useRoute ?? undefined,
@@ -152,6 +198,9 @@ export function useRide() {
     garminChoose: () => run(() => engine.garminChoose()),
     garminForget: () => run(async () => setGarminLink(await engine.garminForget())),
     garminOpenApp: () => run(() => engine.garminOpenApp()),
+    /** Jazda z licznika (tryb lustra) – null, gdy jazdę prowadzi telefon albo nic nie trwa. */
+    mirror, mirrorDone, liveAt,
+    clearMirrorDone: () => setMirrorDone(null),
     pause: () => run(async () => { await engine.pause(); setPaused(true); }),
     resume: () => run(async () => { await engine.resume(); setPaused(false); setAutoPaused(false); }),
     skip: () => run(() => engine.skipStep()),

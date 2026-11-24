@@ -3,7 +3,8 @@
 // + mini-pasek trwającego treningu nad nawigacją na każdej zakładce poza „Jedź”.
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useEffect, useRef } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import s from './ride.module.css';
 import { useRideContext } from './RideProvider';
 import { mmss, hmmss } from './parts';
@@ -34,6 +35,16 @@ export function BottomNav() {
     </Link>
   );
   const onRide = on(NAV_ROUTES.ride);
+  // START na liczniku Garmin → ta sama sesja tutaj: raz na jazdę przełączamy na ekran „Jedź” (z każdej zakładki)
+  const router = useRouter();
+  const shown = useRef<number | null>(null);
+  const mirrorKey = ride.mirror?.key ?? null;
+  useEffect(() => {
+    if (mirrorKey == null) { shown.current = null; return; }
+    if (shown.current === mirrorKey) return;
+    shown.current = mirrorKey;
+    if (!onRide) router.push(NAV_ROUTES.ride);
+  }, [mirrorKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>

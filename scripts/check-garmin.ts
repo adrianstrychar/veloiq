@@ -9,6 +9,7 @@ import { deviceName, newCode, newToken, sha256 } from '../lib/garmin/auth';
 import { planDayToScript } from '../lib/ride/plan-to-script';
 import type { PlanDayRow } from '../lib/planned-day';
 import { buildCourse, courseMeta, CourseError, decodeParts, MAX_POINTS, PART_POINTS } from '../lib/garmin/course';
+import { pickLocalDuplicates } from '../lib/ride/dedupe';
 
 let n = 0;
 const ok = (name: string, fn: () => void) => { fn(); n++; console.log(`ok  ${name}`); };
@@ -162,6 +163,20 @@ ok('trasa GPX dla licznika: uproszczenie, pakowanie binarne, skręty i podjazdy'
   const short = buildCourse({ name: 'L', pts: Array.from({ length: 201 }, (_, i) => (i <= 100
     ? [50 + (i * 10) / 110_540, 15, 500, i * 10] : [50 + 1000 / 110_540, 15 + ((i - 100) * 10) * kLon, 500, i * 10])) });
   assert.ok(short.n >= 3 && short.n <= 14, `krótka trasa: ${short.n} punktów`);
+});
+
+ok('ta sama jazda z telefonu i z licznika: jedna zostaje', () => {
+  const r = (id: string, at: string, dur: number, source: string) => ({ id, started_at: at, duration_sec: dur, source });
+  const phone = r('p', '2026-11-24T19:49:04Z', 4874, 'veloiq-ios');
+  const edge = r('g', '2026-11-24T19:49:20Z', 4860, 'veloiq-garmin');
+  const other = r('o', '2026-11-23T10:00:00Z', 3600, 'veloiq-garmin');
+  // podobna długość → zostaje zapis z telefonu (1 Hz)
+  assert.deepEqual(pickLocalDuplicates([edge, phone, other]).map((x) => [x.drop.id, x.keep.id]), [['g', 'p']]);
+  // telefon włączony później (krótszy o > 5 %) → zostaje pełniejsza jazda z licznika
+  const late = r('p2', '2026-11-24T19:59:00Z', 4200, 'veloiq-ios');
+  assert.deepEqual(pickLocalDuplicates([late, edge]).map((x) => [x.drop.id, x.keep.id]), [['p2', 'g']]);
+  // różne dni / brak nakładania – nic
+  assert.equal(pickLocalDuplicates([phone, other]).length, 0);
 });
 
 console.log(`\n${n} testów OK`);

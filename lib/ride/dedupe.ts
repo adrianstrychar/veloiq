@@ -22,6 +22,54 @@ export function sameRide(a: { start: number; dur: number }, b: { start: number; 
   return ov > 0 && ov >= 0.5 * Math.min(a.dur, b.dur) * 1000;
 }
 
+export interface LocalRide { id: string; started_at: string; duration_sec: number; source: string | null }
+
+/** Ta sama jazda nagrana dwa razy w VeloIQ (telefon i licznik Garmin jednocześnie): które kopie odrzucić.
+ *  Zostaje dłuższa (pełniejsza); przy podobnej długości (±5 %) – zapis z telefonu (1 Hz, licznik wysyła co 5 s). */
+export function pickLocalDuplicates(rows: LocalRide[]): { drop: LocalRide; keep: LocalRide }[] {
+  const live = rows.filter((r) => r.duration_sec > 0 && Number.isFinite(Date.parse(r.started_at)));
+  const span = (r: LocalRide) => ({ start: Date.parse(r.started_at), dur: r.duration_sec });
+  const garmin = (r: LocalRide) => /^veloiq-garmin/.test(r.source ?? '');
+  const better = (a: LocalRide, b: LocalRide) => {
+    const longer = Math.max(a.duration_sec, b.duration_sec);
+    if (Math.abs(a.duration_sec - b.duration_sec) > 0.05 * longer) return a.duration_sec > b.duration_sec ? a : b;
+    if (garmin(a) !== garmin(b)) return garmin(a) ? b : a;
+    return a.started_at <= b.started_at ? a : b;
+  };
+  const out: { drop: LocalRide; keep: LocalRide }[] = [];
+  const gone = new Set<string>();
+  for (let i = 0; i < live.length; i++) {
+    for (let j = i + 1; j < live.length; j++) {
+      const a = live[i], b = live[j];
+      if (gone.has(a.id) || gone.has(b.id) || !sameRide(span(a), span(b))) continue;
+      const keep = better(a, b), drop = keep === a ? b : a;
+      gone.add(drop.id);
+      out.push({ drop, keep });
+    }
+  }
+  return out;
+}
+
+/** Kopie tej samej jazdy z telefonu i z licznika: odrzucona dostaje w `source` znacznik `:dup:<id zachowanej>`
+ *  (import jej nie przywróci) i znika z listy aktywności. Zwraca liczbę odrzuconych. */
+export async function dedupeLocalRides(supabase: SupabaseClient, userId: string, athleteId: string): Promise<number> {
+  const since = new Date(Date.now() - 120 * 86400_000).toISOString();
+  const { data } = await supabase.from('rides').select('id, started_at, duration_sec, source')
+    .eq('user_id', userId).gte('started_at', since)
+    .neq('source', 'veloiq-web-sim').not('source', 'like', '%:strava:%').not('source', 'like', '%:dup:%')
+    .order('started_at', { ascending: false }).limit(60);
+  const pairs = pickLocalDuplicates((data ?? []) as LocalRide[]);
+  let n = 0;
+  for (const { drop, keep } of pairs) {
+    const { error } = await supabase.from('rides').update({ source: `${drop.source ?? 'veloiq'}:dup:${keep.id}` }).eq('id', drop.id);
+    if (error) continue;
+    n++;
+    const dropAct = -Math.floor(Date.parse(drop.started_at) / 1000), keepAct = -Math.floor(Date.parse(keep.started_at) / 1000);
+    if (dropAct !== keepAct) await supabase.from('strava_activities').delete().eq('athlete_id', athleteId).eq('strava_activity_id', dropAct);
+  }
+  return n;
+}
+
 /** Usuwa kopie VeloIQ zdublowane przez aktywność ze Stravy. Zwraca liczbę usuniętych kopii. */
 export async function dedupeVeloiqRides(supabase: SupabaseClient, athleteId: string): Promise<number> {
   const since = new Date(Date.now() - 120 * 86400_000).toISOString().slice(0, 10);
