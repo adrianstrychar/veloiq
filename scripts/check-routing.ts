@@ -244,4 +244,4 @@ async function live() {
   await offline();
   if (process.env.LIVE === '1') await live();
   console.log(`\n${n} testów OK`);
-})().catch((e) => { console.error('FAIL', e); process.exit(1); });
+})().catch((e) => { console.error('FAIL', e, (e as { detail?: string })?.detail ?? ''); process.exit(1); });

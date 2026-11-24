@@ -65,7 +65,7 @@ export function brouterUrl(points: LatLon[], profile: string, params: Record<str
 }
 
 export class RoutingError extends Error {
-  constructor(message: string, public code: 'unreachable' | 'no_route' | 'timeout' | 'profile' | 'server' = 'server') { super(message); }
+  constructor(message: string, public code: 'unreachable' | 'no_route' | 'timeout' | 'profile' | 'server' = 'server', public detail = '') { super(message); }
 }
 
 /** Tekst błędu z BRouter → komunikat dla zawodnika. */
@@ -76,7 +76,7 @@ export function routingError(status: number, text: string): RoutingError {
     return new RoutingError('Nie da się tam dojechać tym profilem – przesuń punkt bliżej drogi albo zmień profil.', 'no_route');
   }
   if (t.includes('timeout') || t.includes('watchdog') || t.includes('killed')) return new RoutingError('Trasa za długa dla serwera tras – podziel ją punktem pośrednim.', 'timeout');
-  return new RoutingError(`Serwer tras odpowiedział błędem (${status}).`, 'server');
+  return new RoutingError(`Serwer tras odpowiedział błędem (${status}).`, 'server', text.slice(0, 200));
 }
 
 export interface BrouterTrack {

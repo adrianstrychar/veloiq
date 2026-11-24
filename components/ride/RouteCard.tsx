@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import s from './ride.module.css';
 import { routeFromGpx, type RideRoute } from '@/lib/ride/gpx';
+import { RoutePlanner } from './RoutePlanner';
 
 const KEY = 'veloiq.route.v1';
 
@@ -39,6 +40,30 @@ export function RouteMap({ route, pos, done, height = 140 }: { route: RideRoute;
       <circle cx={ex} cy={ey} r={4} fill="#D98A57" />
       {me && <circle cx={me[0]} cy={me[1]} r={6} fill="#EDEFF2" stroke="#4A8FC7" strokeWidth={3} />}
     </svg>
+  );
+}
+
+const SURF_COLOR = ['#4A8FC7', '#D9A557', '#5B9B7E', '#8A8F98'];
+const SURF_NAME = ['asfalt', 'szuter', 'teren', 'nieznana'];
+/** Nawierzchnia trasy z planera: pasek odcinków i udział procentowy. */
+function SurfaceLine({ route }: { route: RideRoute }) {
+  const runs = route.surface ?? [];
+  const m = [0, 0, 0, 0];
+  runs.forEach((r, i) => { m[r[1]] += (i + 1 < runs.length ? runs[i + 1][0] : route.total) - r[0]; });
+  const all = m.reduce((a, b) => a + b, 0) || 1;
+  const prof = route.profile === 'gravel' ? 'Gravel' : route.profile === 'mtb' ? 'MTB' : route.profile === 'calm' ? 'Spokojna' : 'Szosa';
+  return (
+    <div className={s.stack} style={{ gap: 4 }}>
+      <div style={{ display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', background: 'var(--surface-3)' }} aria-hidden="true">
+        {runs.map((r, i) => {
+          const len = (i + 1 < runs.length ? runs[i + 1][0] : route.total) - r[0];
+          return <div key={i} style={{ width: `${(len / route.total) * 100}%`, background: SURF_COLOR[r[1]] }} />;
+        })}
+      </div>
+      <span className={s.small} style={{ fontSize: 12 }}>
+        {prof}{route.estSec ? ` · ok. ${Math.floor(route.estSec / 3600)}:${String(Math.round(route.estSec / 60) % 60).padStart(2, '0')} h jazdy` : ''} · {m.map((x, i) => (x / all >= 0.03 ? `${SURF_NAME[i]} ${Math.round((x / all) * 100)}%` : null)).filter(Boolean).join(', ')}
+      </span>
+    </div>
   );
 }
 
@@ -132,6 +157,7 @@ export function RouteCard({ route, onRoute, garminRoute }: {
   const input = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [planner, setPlanner] = useState(false);
 
   async function pick(f: File | undefined) {
     if (!f) return;
@@ -162,10 +188,22 @@ export function RouteCard({ route, onRoute, garminRoute }: {
             <div className={s.stack}><span className={s.metricLabel}>Skręty</span><span className={s.statValue}>{route.cues.length}</span></div>
             <div className={s.stack}><span className={s.metricLabel}>Podjazdy</span><span className={s.statValue}>{route.climbs.length}</span></div>
           </div>
+          {route.surface && route.surface.length > 0 && <SurfaceLine route={route} />}
+          {route.pois && route.pois.length > 0 && (
+            <span className={s.small} style={{ color: 'var(--text-2)' }}>
+              Przed tobą: {route.pois.slice(0, 5).map((p) => `${p.name} (${(p.d / 1000).toFixed(0)} km)`).join(' · ')}{route.pois.length > 5 ? ` · +${route.pois.length - 5}` : ''}
+            </span>
+          )}
           <span className={s.small}>Enzo zapowie skręty, podjazdy i kilometry do mety. Działa offline, z GPS telefonu.</span>
         </>
       ) : (
-        <span className={s.small}>Wgraj plik GPX (Komoot, Strava, RideWithGPS, Garmin) – Enzo poprowadzi Cię po trasie głosem.</span>
+        <span className={s.small}>Zaplanuj trasę pod swój rower (szosa, gravel, MTB) albo wgraj plik GPX (Komoot, Strava, RideWithGPS, Garmin) – Enzo poprowadzi Cię głosem.</span>
+      )}
+      <button type="button" className={s.btnPrimary} style={{ height: 52, fontSize: 16 }} onClick={() => setPlanner(true)}>
+        {route ? 'Zaplanuj inną trasę' : 'Zaplanuj trasę'}
+      </button>
+      {planner && (
+        <RoutePlanner onClose={() => setPlanner(false)} onPick={(r) => { saveRoute(r); onRoute(r); setPlanner(false); }} />
       )}
       <input ref={input} type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" hidden onChange={(e) => pick(e.target.files?.[0])} />
       <button type="button" className={s.btnGhost} onClick={() => input.current?.click()} disabled={busy}>

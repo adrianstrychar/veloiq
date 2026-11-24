@@ -183,3 +183,20 @@ export function routeFromGpx(xml: string): RideRoute {
   const { name, raw } = parseGpx(xml);
   return buildRoute(name, raw);
 }
+
+/** RideRoute → plik GPX (eksport trasy z planera: Garmin Connect, Komoot, Wahoo, inne liczniki). */
+export function routeToGpx(r: RideRoute): string {
+  const esc = (s: string) => s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c] as string));
+  const pts = r.pts.map((p) => `<trkpt lat="${p[0].toFixed(6)}" lon="${p[1].toFixed(6)}">${p[2] != null ? `<ele>${p[2]}</ele>` : ''}</trkpt>`).join('\n      ');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="VeloIQ" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>${esc(r.name)}</name></metadata>
+  <trk>
+    <name>${esc(r.name)}</name>
+    <trkseg>
+      ${pts}
+    </trkseg>
+  </trk>
+</gpx>
+`;
+}

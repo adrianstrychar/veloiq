@@ -31,6 +31,13 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      - name: BRouter – które profile odpowiadają (diagnostyka)
+        run: |
+          for p in fastbike fastbike-verylowtraffic fastbike-lowtraffic gravel mtb trekking safety; do
+            code=$(curl -s -o /tmp/r.txt -w "%{http_code}" "https://brouter.de/brouter?lonlats=15.755,50.7753|15.7194,50.9044&profile=$p&alternativeidx=0&format=geojson")
+            echo "$p → HTTP $code $(head -c 160 /tmp/r.txt | tr '\n' ' ')"
+          done
+          curl -s -o /tmp/r.txt -w "param test HTTP %{http_code}\n" "https://brouter.de/brouter?lonlats=15.755,50.7753|15.7194,50.9044&profile=gravel&alternativeidx=0&format=geojson&timode=3&profile:prefer_unpaved_paths=true"; head -c 200 /tmp/r.txt; echo
       - run: npm ci --no-audit --no-fund
       - name: Testy serwera licznika
         run: npx -y tsx --tsconfig tsconfig.json scripts/check-garmin.ts
