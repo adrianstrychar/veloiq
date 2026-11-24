@@ -77,6 +77,9 @@ class Uploader {
     hidden var _running as Boolean = false;
     hidden var _key = null;
     hidden var _meta = null;
+    hidden var _fails as Number = 0;
+    hidden var _retryAt as Number = 0;
+    hidden var _count as Number = -1;    // ile jazd w kolejce (pamięć podręczna – bez czytania Storage co sekundę)
     var status as String = "";
     var lastError as String = "";
 
@@ -86,7 +89,18 @@ class Uploader {
 
     function pending() as Number {
         var q = Application.Storage.getValue("upq");
-        return q == null ? 0 : q.size();
+        _count = q == null ? 0 : q.size();
+        return _count;
+    }
+
+    //! Co sekundę (ekran startowy i podsumowanie jazdy): nieudana wysyłka wraca po 5, 10, 20, 40 s, potem co minutę –
+    //! jazda trafia do VeloIQ, gdy tylko telefon jest znów w zasięgu, bez czekania na wyjście z podsumowania.
+    function tick() as Void {
+        if (_running || System.getTimer() < _retryAt) { return; }
+        if (_count < 0) { pending(); }
+        if (_count == 0) { return; }
+        _retryAt = System.getTimer() + 60000;   // bez połączenia / bez parowania: kolejna próba za minutę
+        kick();
     }
 
     function running() as Boolean { return _running; }
@@ -102,6 +116,9 @@ class Uploader {
         if (q == null) { q = []; }
         q.add(key);
         Application.Storage.setValue("upq", q);
+        _count = q.size();
+        _fails = 0;
+        _retryAt = 0;
     }
 
     //! Rusza wysyłkę, jeśli jest co wysłać, urządzenie jest sparowane i nic już nie leci.
@@ -155,9 +172,14 @@ class Uploader {
             _running = false;
             lastError = Api.errorText(code);
             status = "Jazda czeka na wysyłkę";
+            _fails++;
+            var wait = 5000;
+            for (var i = 1; i < _fails && wait < 60000; i++) { wait *= 2; }
+            _retryAt = System.getTimer() + (wait > 60000 ? 60000 : wait);
             notify();
             return;
         }
+        _fails = 0;
         var k = _key.format("%d");
         var st = _meta["st"];
         if (st == 0) {
@@ -200,5 +222,7 @@ class Uploader {
         Application.Storage.deleteValue("up_" + k + "_x");
         Application.Storage.deleteValue("up_" + k);
         Application.Storage.setValue("upq", q.slice(1, null));
+        _count = q.size() - 1;
+        _retryAt = 0;
     }
 }

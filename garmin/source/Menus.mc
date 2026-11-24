@@ -207,7 +207,7 @@ class SettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
             hub.start(!Cfg.indoor);
         }
         else if (id.equals("theme")) { Cfg.save("theme", (item as WatchUi.ToggleMenuItem).isEnabled() ? 1 : 0); Th.apply(Cfg.theme); }
-        else if (id.equals("phone")) { Cfg.save("phoneLink", (item as WatchUi.ToggleMenuItem).isEnabled()); }
+        else if (id.equals("phone")) { Cfg.save("link", (item as WatchUi.ToggleMenuItem).isEnabled()); }
         else if (id.equals("nav")) { Cfg.save("navOn", (item as WatchUi.ToggleMenuItem).isEnabled()); }
         else if (id.equals("fields0")) { WatchUi.pushView(Menus.fields(0), new FieldsMenuDelegate(0), WatchUi.SLIDE_LEFT); }
         else if (id.equals("fields1")) { WatchUi.pushView(Menus.fields(1), new FieldsMenuDelegate(1), WatchUi.SLIDE_LEFT); }

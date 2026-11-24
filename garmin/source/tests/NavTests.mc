@@ -172,7 +172,7 @@ function testNavRide(logger as Test.Logger) as Boolean {
     var g = Smoke.dc();
     var scr = new RideScreen();
     var home = new HomeScreen();
-    Cfg.put("autoPause", false); Cfg.put("indoor", false); Cfg.put("autoLapMode", 0); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
+    Cfg.put("autoPause", false); Cfg.put("indoor", false); Cfg.put("autoLapMode", 0); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("link", false); Cfg.load();
     r.course = Course.load();
     r.plan = null;
     home.draw(g);                       // linia „Trasa: …” na ekranie startowym

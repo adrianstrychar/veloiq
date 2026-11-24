@@ -331,7 +331,7 @@ class Ride {
         }
         state = RideState.RECORDING;
         tone("start");
-        link.event(withAuth({ "t" => "state", "s" => "start", "w" => wk.name, "ftp" => wk.ftp, "free" => (wk.isFree() ? 1 : 0) }));
+        link.event(startMsg(false));
         return true;
     }
 
@@ -359,7 +359,7 @@ class Ride {
         rec.pause();
         state = RideState.PAUSED;
         tone("stop");
-        link.event({ "t" => "state", "s" => "pause" });
+        link.event({ "t" => "state", "s" => "pause", "k" => startEpoch });
     }
 
     function resume() as Void {
@@ -368,7 +368,7 @@ class Ride {
         state = RideState.RECORDING;
         _stillRun = 0; _moveRun = 0;
         tone("start");
-        link.event({ "t" => "state", "s" => "resume" });
+        link.event({ "t" => "state", "s" => "resume", "k" => startEpoch });
     }
 
     function togglePause() as Void {
@@ -389,7 +389,7 @@ class Ride {
             rec.discard();
             state = RideState.IDLE;
             eng = null;
-            link.event({ "t" => "state", "s" => "end", "saved" => 0 });
+            link.event({ "t" => "state", "s" => "end", "saved" => 0, "k" => startEpoch });
             return;
         }
         flushSample(true);
@@ -409,7 +409,8 @@ class Ride {
         _sStore = null; _gStore = null;
         state = RideState.DONE;
         tone("save");
-        link.event({ "t" => "state", "s" => "end", "saved" => 1 });
+        link.event({ "t" => "state", "s" => "end", "saved" => 1, "k" => startEpoch, "dur" => m.n,
+            "np" => m.np(), "avg" => m.avgPower(), "up" => (m.n >= 60 ? 1 : 0) });
     }
 
     //! Po ekranie podsumowania – powrót na ekran startowy.
@@ -442,9 +443,21 @@ class Ride {
             if (!hub.simulated) { autoPauseTick(); }
         }
         if (state == RideState.RECORDING && !hub.simulated) { rideTick(); }
-        if (state == RideState.IDLE && _tickNo % 60 == 0) { up.kick(); }   // ponawiaj zaległą wysyłkę
-        // telefon: podgląd czujników przed startem (ekran Czujniki w aplikacji pokazuje, że most działa)
-        if (state == RideState.IDLE && Cfg.phoneLink && _tickNo % 2 == 0 && !hub.simulated) {
+        link.tick();
+        // pauza (ręczna albo postój): telefon dalej widzi jazdę – inaczej po 5 s uznałby, że most zerwany
+        if ((state == RideState.PAUSED || state == RideState.AUTOPAUSED) && eng != null && !hub.simulated && Cfg.phoneLink) {
+            link.live(liveVec(state == RideState.PAUSED ? 1 : 2));
+        }
+        // co 30 s pełny stan jazdy dla telefonu (pytania do Enzo z telefonu albo przycisku Flic)
+        if (active() && eng != null && link.active && _tickNo % 30 == 15) {
+            link.event({ "t" => "st", "st" => coachState() });
+        }
+        // wysyłka zakończonej jazdy: także na ekranie podsumowania, z szybkim ponawianiem (5 s → 60 s)
+        if ((state == RideState.IDLE || state == RideState.DONE) && !hub.simulated) { up.tick(); }
+        // telefon: podgląd czujników przed startem (ekran Czujniki w aplikacji pokazuje, że most działa);
+        // bez telefonu co 10 s (wystarczy, żeby aplikacja w telefonie się odezwała), nie w trakcie wysyłki jazdy
+        if (state == RideState.IDLE && Cfg.phoneLink && !hub.simulated && !up.running()
+            && _tickNo % (link.active ? 2 : 10) == 0) {
             link.live([-1, hub.power == null ? -1 : hub.power, hub.hr == null ? 0 : hub.hr, hub.cad == null ? -1 : hub.cad,
                 hub.speed == null ? -1 : Util.round(hub.speed * 36), Phase.FREE, 0, 0, 0, 0, 0]);
         }
@@ -472,7 +485,7 @@ class Ride {
                 rec.resume();
                 state = RideState.RECORDING;
                 _moveRun = 0; _stillRun = 0;
-                link.event({ "t" => "state", "s" => "resume", "auto" => 1 });
+                link.event({ "t" => "state", "s" => "resume", "auto" => 1, "k" => startEpoch });
             }
         } else {
             _stillRun = still ? _stillRun + 1 : 0;
@@ -480,7 +493,7 @@ class Ride {
                 rec.pause();
                 state = RideState.AUTOPAUSED;
                 _stillRun = 0; _moveRun = 0;
-                link.event({ "t" => "state", "s" => "pause", "auto" => 1 });
+                link.event({ "t" => "state", "s" => "pause", "auto" => 1, "k" => startEpoch });
             }
         }
     }
@@ -534,10 +547,9 @@ class Ride {
         navTick();
         if (eng.s % 60 == 59) { checkpoint(); }
 
-        // telefon: dane na żywo
-        if (link != null && Cfg.phoneLink) {
-            link.live([eng.s, p == null ? -1 : pw, h == null ? 0 : h, c == null ? -1 : c, speed == null ? -1 : Util.round(speed * 36),
-                eng.phase, eng.stepIdx, eng.stepRemaining(), st == null ? 0 : st.lo, st == null ? 0 : st.hi, 0]);
+        // telefon: dane na żywo – co sekundę, gdy aplikacja w telefonie odpowiada; bez niej co 5 s (żeby ją „obudzić”)
+        if (link != null && Cfg.phoneLink && (link.active || eng.s % 5 == 0)) {
+            link.live(liveVec(0));
         }
     }
 
@@ -813,7 +825,9 @@ class Ride {
         }
         state = RideState.PAUSED;
         showBanner("Jazda wznowiona\n" + Util.clock(eng.s + 1) + " odtworzone", "info", 6);
-        link.event(withAuth({ "t" => "state", "s" => "start", "w" => wk.name, "ftp" => wk.ftp, "free" => (wk.isFree() ? 1 : 0), "resumed" => 1 }));
+        var sm = startMsg(false);
+        sm.put("resumed", 1);
+        link.event(sm);
         WatchUi.requestUpdate();
     }
 
@@ -1055,8 +1069,40 @@ class Ride {
         return m;
     }
 
-    function onPhoneHello() as Void {
-        showBanner("Telefon połączony\nEnzo mówi w słuchawkach", "enzo", 6);
+    function onPhoneHello(first as Boolean) as Void {
+        if (first) { showBanner("Telefon połączony\nEnzo mówi w słuchawkach", "enzo", 6); }
+        link.event({ "t" => "hi", "v" => Cfg.VERSION, "rec" => (active() ? 1 : 0) });
+        if (active()) { link.event(startMsg(true)); }
+    }
+
+    //! Sekunda jazdy dla telefonu. pauseFlag: 0 jazda, 1 pauza ręczna, 2 postój (auto-pauza).
+    function liveVec(pauseFlag as Number) {
+        var p = hub.power;
+        var h = hub.hr;
+        var c = hub.cad;
+        var st = eng.step();
+        return [eng.s, p == null ? -1 : p, h == null ? 0 : h, c == null ? -1 : c, speed == null ? -1 : Util.round(speed * 36),
+            eng.phase, eng.stepIdx, eng.stepRemaining(), st == null ? 0 : st.lo, st == null ? 0 : st.hi, pauseFlag,
+            Util.round(eng.hist.avgP(3)), eng.stepAvgPower(), eng.falseStartLeft(), eng.overrunSec(), Util.round(dist), eng.inStep];
+    }
+
+    //! Start jazdy dla telefonu: tu jest cały plan (kroki), żeby telefon pokazał tę samą sesję co licznik.
+    //! sync = odpowiedź na prośbę telefonu (aplikacja otwarta w trakcie jazdy) – telefon nie zeruje komunikatów.
+    function startMsg(sync as Boolean) {
+        var steps = [];
+        if (wk != null) {
+            var n = wk.steps.size() > 40 ? 40 : wk.steps.size();
+            for (var i = 0; i < n; i++) {
+                var x = wk.steps[i];
+                steps.add([x.type, x.dur, x.lo, x.hi, x.cadLo, x.cadHi, x.name]);
+            }
+        }
+        var m = withAuth({ "t" => "state", "s" => "start", "k" => startEpoch, "w" => (wk == null ? "VeloIQ" : wk.name),
+            "id" => (wk == null ? "free" : wk.id), "ftp" => (wk == null ? Cfg.ftp : wk.ftp),
+            "free" => (wk == null || wk.isFree() ? 1 : 0), "in" => (Cfg.indoor ? 1 : 0), "st" => steps,
+            "el" => (eng == null ? 0 : eng.s + 1), "p" => (state == RideState.PAUSED ? 1 : (state == RideState.AUTOPAUSED ? 2 : 0)) });
+        if (sync) { m.put("sync", 1); }
+        return m;
     }
 
     // ------------------------------------------------------------------ telefon → licznik
@@ -1070,6 +1116,8 @@ class Ride {
         else if (cmd.equals("drink")) { if (eng != null) { eng.fueled(false); } }
         else if (cmd.equals("talk")) { if (eng != null) { talkToPhone(); } }
         else if (cmd.equals("report")) { if (eng != null) { askPhone("raport"); } }
+        else if (cmd.equals("sync")) { link.event(active() ? startMsg(true) : { "t" => "state", "s" => "idle" }); }
+        else if (cmd.equals("state")) { if (eng != null && active()) { link.event({ "t" => "st", "st" => coachState() }); } }
     }
 
     function onPhoneSay(text as String) as Void {

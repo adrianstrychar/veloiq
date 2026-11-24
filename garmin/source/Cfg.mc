@@ -6,7 +6,7 @@ import Toybox.UserProfile;
 //! Ustawienia i dane zawodnika trzymane na urządzeniu (Application.Storage), z kopią w pamięci.
 module Cfg {
     const DEFAULT_API = "https://veloiq-three.vercel.app";
-    const VERSION = "0.2.1";
+    const VERSION = "0.2.2";
 
     var apiBase as String = "https://veloiq-three.vercel.app";
     var token as String = "";          // token urządzenia po sparowaniu z kontem VeloIQ
@@ -23,7 +23,7 @@ module Cfg {
     var theme as Number = 0;           // 0 ciemny VeloIQ, 1 jasny (pełne słońce)
     var indoor as Boolean = false;     // trenażer: bez GPS, podtyp „indoor cycling”
     var navOn as Boolean = true;        // nawigacja po trasie GPX z VeloIQ (gdy trasa jest pobrana)
-    var phoneLink as Boolean = false;  // wysyłaj dane na telefon (aplikacja VeloIQ z mostem Garmin) – domyślnie wyłączone
+    var phoneLink as Boolean = true;   // most do telefonu (aplikacja VeloIQ z Connect IQ) – domyślnie włączony; klucz "link"
     var pages = null;                  // konfiguracja stron pól danych: [[id, id, …], [id, …]]
 
     function get(key as String, dflt) {
@@ -55,7 +55,7 @@ module Cfg {
         tones = get("tones", true);
         theme = get("theme", 0);
         indoor = get("indoor", false);
-        phoneLink = get("phoneLink", false);
+        phoneLink = get("link", true);       // stary klucz "phoneLink" (domyślnie wył.) celowo pominięty
         navOn = get("navOn", true);
         pages = get("pages", null);
     }

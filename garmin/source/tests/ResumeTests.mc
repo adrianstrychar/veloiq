@@ -14,7 +14,7 @@ function testResumeInterrupted(logger as Test.Logger) as Boolean {
     var r = getRide();
     var g = Smoke.dc();
     var home = new HomeScreen();
-    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
+    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("link", false); Cfg.load();
     r.plan = Smoke.plan();
     r.recordFit = false;
     r.replayAuto = false;
@@ -71,7 +71,7 @@ function testFinalizeInterrupted(logger as Test.Logger) as Boolean {
     Smoke.cleanup();
     var r = getRide();
     var g = Smoke.dc();
-    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.put("autoLapMode", 0); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
+    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.put("autoLapMode", 0); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("link", false); Cfg.load();
     r.plan = null;
     r.recordFit = false;
     r.replayAuto = false;
@@ -112,7 +112,7 @@ function testClimbAutoLap(logger as Test.Logger) as Boolean {
     var r = getRide();
     var g = Smoke.dc();
     var scr = new RideScreen();
-    Cfg.put("autoPause", false); Cfg.put("indoor", false); Cfg.put("autoLapMode", 3); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
+    Cfg.put("autoPause", false); Cfg.put("indoor", false); Cfg.put("autoLapMode", 3); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("link", false); Cfg.load();
     r.plan = null;
     r.course = null;
     r.recordFit = false;
