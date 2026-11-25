@@ -6,22 +6,38 @@ ten sam co Garmin Connect) – na telefonie musi być zainstalowany Garmin Conne
 
 ## Kto prowadzi trening
 
-- **Trening uruchomiony na liczniku** (w telefonie nie ma aktywnej jazdy): licznik prowadzi, telefon mówi.
-  Komunikaty silnika licznika mają te same klucze i zmienne co silnik telefonu, więc `DirectorVoice.compose`
-  składa z nich te same nagrania Enzo – także skręty i podjazdy z nawigacji. Odliczanie 3-2-1 telefon robi sam
-  po otrzymaniu „3” (radio ma za duże opóźnienia na komunikaty co sekundę).
+- **Trening uruchomiony na liczniku (tryb lustra, od 0.2.2)**: START na liczniku = ta sama sesja w telefonie.
+  Telefon dostaje plan (kroki), godzinę startu i co sekundę próbkę – ekran „Jedź” sam się otwiera i pokazuje
+  jazdę na żywo, Enzo mówi z komunikatów silnika licznika (te same klucze co w telefonie), działa „Zapytaj Enzo”
+  (ekran, Flic, przycisk ENZO na liczniku). Pauza / Dalej / Falstart z telefonu idą do licznika. Telefon nie nagrywa –
+  jazdę zapisuje licznik i wysyła do VeloIQ. Powiadomienia „na licznik” są wyłączone, gdy wybrano licznik.
 - **Trening uruchomiony w telefonie**: licznik jest źródłem mocy / tętna / kadencji tam, gdzie telefon nie ma
   własnego czujnika Bluetooth; komunikaty licznika są pomijane (jeden głos naraz).
+
+## Komendy głosowe w jeździe (od 0.3.0)
+
+Rozpoznawane od razu w telefonie (bez serwera), resztę rozumie trener AI (`/api/ride/ask` → `action`):
+
+| Powiedz | Akcja |
+|---|---|
+| „dodaj minutę”, „przedłuż przerwę o 2 minuty”, „skróć o 30 sekund” | `extend:±SEK` |
+| „mocniej o 5 procent”, „lżej”, „cele jak w planie” | `bias:+N` / `bias:-N` / `bias:0` |
+| „jeszcze jeden interwał” | `repeat` |
+| „zjadłem żel / batona”, „wypiłem” | `eat:25` / `eat:40` / `drink` |
+| „prowadź do startu / do domu”, „wróć na trasę” | `route:start` / `route:rejoin` (licznik pyta serwer o nową trasę profilem roweru) |
+| „pokaż mapę / wykres / paliwo / podjazd / wysiłek” | `page:…` (strona licznika) |
 
 ## Protokół (słowniki z krótkimi kluczami)
 
 | Kierunek | Wiadomość |
 |---|---|
-| Edge → telefon | `{t:"live", v:[s, moc, tętno, kadencja, prędkość×10, faza, krok, zostało, cel↓, cel↑, 0]}` – co sekundę w trakcie jazdy, co 2 s przed startem (`s = -1`); `-1` = brak czujnika |
+| Edge → telefon | `{t:"live", v:[s, moc, tętno, kadencja, prędkość×10, faza, krok, zostało, cel↓, cel↑, pauza, moc 3 s, średnia kroku, falstart, przeciąganie, dystans m, sekundy kroku]}` – co sekundę w trakcie jazdy (co 5 s, gdy telefon milczy), przed startem co 2 s (`s = -1`); `-1` = brak czujnika |
+| | `{t:"state", s:"start", k, w, id, ftp, free, in, st:[[typ, czas, moc↓, moc↑, kad↓, kad↑, nazwa]…], el, p, sync?}` – plan dla trybu lustra |
+| | `{t:"st", st:{stan jazdy}}` – co 30 s i na `cmd:"state"`; `{t:"hi", v, rec}` – odpowiedź na `hello` |
 | | `{t:"cue", k, kind, x, v}` – komunikat silnika albo nawigacji (`kind:"nav"`) |
 | | `{t:"talk", st:{stan jazdy}, q?, tk?, b?}` – przycisk ENZO; `q` = gotowe pytanie (raport), `tk`/`b` = token rozmowy i adres serwera |
 | | `{t:"state", s:"start\|pause\|resume\|end", …}` |
-| telefon → Edge | `{cmd:"next\|pause\|resume\|cancel\|lap\|eat\|drink\|talk\|report"}`, `{say:"odpowiedź Enzo"}`, `{hello:1}` |
+| telefon → Edge | `{cmd:…}`: next, pause, resume, cancel, lap, eat, drink, talk, report, sync, state, resync, repeat, extend:N, bias:N, eat:G, route:start, route:rejoin, page:ID · `{say:"odpowiedź Enzo"}` · `{hello:1}` · `{hb:1}` (co 10 s – telefon słucha) |
 
 `hello` włącza nadawanie na liczniku bez wchodzenia w ustawienia. Token rozmowy (`tk`) licznik dostaje z
 `/api/garmin/sync` (ważny 36 h) – dzięki niemu pytania do trenera działają także wtedy, gdy jazda nie była

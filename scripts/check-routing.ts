@@ -8,7 +8,7 @@ import { brouterProfile, brouterUrl, hintsToCues, parseBrouter, routingError, su
 import { destination, loopRadius, loopWaypoints, planRoutes, similarity, surfacePct, toPlanned, type PlannedRoute } from '../lib/route/plan';
 import { estimateSeconds, speedFor } from '../lib/route/estimate';
 import { surfaceOf, parseTags } from '../lib/route/surface';
-import { fetchPois, kindOf, overpassQuery, poisFromOverpass, samplePath } from '../lib/route/pois';
+import { fetchPois, nearestPoi, kindOf, overpassQuery, poisFromOverpass, samplePath } from '../lib/route/pois';
 import { photonUrl, placesFromPhoton } from '../lib/route/geocode';
 import { buildCourse, courseMeta, decodeParts } from '../lib/garmin/course';
 import { rejoinIndex, spliceCourse } from '../lib/route/reroute';
@@ -256,6 +256,11 @@ async function live() {
     const pois = await fetchPois(road[0].route);
     console.log(`    punkty: ${pois.length} → ${pois.slice(0, 8).map((p) => `${p.name} @${km(p.d)}`).join(', ')}`);
     assert.ok(Array.isArray(pois));
+  });
+  await ok('LIVE „prowadź do najbliższej kawiarni” (Overpass, 8 km)', async () => {
+    const p = await nearestPoi(KARPACZ, 'cafe');
+    console.log(`    najbliższa kawiarnia: ${p ? `${p.name} (${p.lat.toFixed(4)}, ${p.lon.toFixed(4)})` : 'brak'}`);
+    assert.ok(p != null && Math.abs(p.lat - KARPACZ.lat) < 0.08 && Math.abs(p.lon - KARPACZ.lon) < 0.12);
   });
   await ok('LIVE geokoder „Szklarska Poręba”', async () => {
     const r = await fetch(photonUrl('Szklarska Poręba', KARPACZ));

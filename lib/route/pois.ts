@@ -5,8 +5,18 @@ import { dist, type PoiKind, type RideRoute, type RoutePoi } from '@/lib/ride/gp
 /** Serwery Overpass po kolei (pierwszy z OVERPASS_URL); kolejny, gdy poprzedni odmówi albo nie odpowie. */
 export const OVERPASS_URLS = () => [
   ...(process.env.OVERPASS_URL ? [process.env.OVERPASS_URL] : []),
-  'https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter',
+  'https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
 ];
+/** overpass-api.de odrzuca (406) zapytania, które nie wyglądają na zwykłego klienta OSM: potrzebny opisowy
+ *  User-Agent, Referer i szerokie Accept (samo „application/json” kończy się 406). Ponawianie po 406 grozi banem,
+ *  więc po odmowie od razu kolejny serwer. */
+export const OVERPASS_HEADERS: Record<string, string> = {
+  'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+  Accept: '*/*',
+  'User-Agent': 'VeloIQ/1.0 (planer tras rowerowych; +https://veloiq-three.vercel.app)',
+  Referer: 'https://veloiq-three.vercel.app/',
+};
 export const POI_LABEL: Record<PoiKind, string> = {
   cafe: 'Kawiarnia', water: 'Woda pitna', toilets: 'Toaleta', bike: 'Serwis rowerowy', shop: 'Sklep', fuel: 'Stacja paliw', food: 'Jedzenie',
 };
@@ -95,7 +105,7 @@ export async function fetchPois(r: RideRoute, fetcher: typeof fetch = fetch, tim
     try {
       const res = await fetcher(url, {
         method: 'POST', signal: ctl.signal, body,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'User-Agent': 'VeloIQ/1.0 (+https://veloiq-three.vercel.app)' },
+        headers: OVERPASS_HEADERS,
       });
       if (!res.ok) throw new Error(`overpass ${res.status} (${new URL(url).host})`);
       const j = (await res.json()) as { elements?: unknown[] };
@@ -105,4 +115,33 @@ export async function fetchPois(r: RideRoute, fetcher: typeof fetch = fetch, tim
     } finally { clearTimeout(timer); }
   }
   throw lastErr instanceof Error ? lastErr : new Error('overpass');
+}
+
+const KIND_QUERY: Record<string, string> = {
+  cafe: '["amenity"~"^(cafe|ice_cream)$"]', water: '["amenity"~"^(drinking_water|water_point)$"]', toilets: '["amenity"="toilets"]',
+  bike: '["shop"="bicycle"]', shop: '["shop"~"^(convenience|supermarket|bakery)$"]', fuel: '["amenity"="fuel"]',
+};
+
+/** Najbliższy punkt danego rodzaju (w linii prostej, do 8 km) – „prowadź do najbliższej kawiarni”. */
+export async function nearestPoi(pos: { lat: number; lon: number }, kind: string, fetcher: typeof fetch = fetch): Promise<{ lat: number; lon: number; name: string } | null> {
+  const sel = KIND_QUERY[kind] ?? KIND_QUERY.cafe;
+  const q = `[out:json][timeout:20];node(around:8000,${pos.lat.toFixed(5)},${pos.lon.toFixed(5)})${sel};out body 60;`;
+  for (const url of OVERPASS_URLS()) {
+    try {
+      const res = await fetcher(url, {
+        method: 'POST', body: `data=${encodeURIComponent(q)}`, signal: AbortSignal.timeout(20000),
+        headers: OVERPASS_HEADERS,
+      });
+      if (!res.ok) continue;
+      const els = ((await res.json()) as { elements?: { lat?: number; lon?: number; tags?: Record<string, string> }[] }).elements ?? [];
+      let best: { lat: number; lon: number; name: string } | null = null, bd = Infinity;
+      for (const e of els) {
+        if (typeof e.lat !== 'number' || typeof e.lon !== 'number') continue;
+        const d = dist({ lat: pos.lat, lon: pos.lon, ele: null }, { lat: e.lat, lon: e.lon, ele: null });
+        if (d < bd) { bd = d; best = { lat: e.lat, lon: e.lon, name: (e.tags?.name ?? POI_LABEL[(kind in POI_LABEL ? kind : 'cafe') as PoiKind]).slice(0, 40) }; }
+      }
+      return best;
+    } catch { /* kolejny serwer */ }
+  }
+  return null;
 }

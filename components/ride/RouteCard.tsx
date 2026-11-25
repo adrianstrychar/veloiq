@@ -285,6 +285,13 @@ export function NavCard({ nav, route, pos, onToggle }: {
           {nav.nextClimb.onIt ? 'Na podjeździe' : `Podjazd za ${m(nav.nextClimb.in)}`}: {(nav.nextClimb.len / 1000).toFixed(1)} km · {nav.nextClimb.grade}% · +{nav.nextClimb.gain} m
         </span>
       )}
+      {(() => {
+        // „Przed tobą” (trasa z planera): najbliższy punkt – woda, kawiarnia, serwis – w ciągu 15 km
+        const p = nav?.acquired ? route.pois?.find((x) => x.d >= nav.progress - 50) : undefined;
+        if (!p || p.d - (nav?.progress ?? 0) > 15000) return null;
+        const label: Record<string, string> = { water: 'Woda', cafe: 'Kawiarnia', bike: 'Serwis', toilets: 'Toaleta', shop: 'Sklep', fuel: 'Stacja', food: 'Jedzenie' };
+        return <span className={s.small} style={{ color: 'var(--cyan)' }}>{label[p.kind] ?? 'Punkt'} za {m(Math.max(0, p.d - (nav?.progress ?? 0)))}: {p.name}</span>;
+      })()}
       {/* tryb startowy: cel mocy na podjazd ze strategii */}
       {nav?.nextClimb?.low && nav.nextClimb.high && nav.nextClimb.in < 5000 && (
         <div className={s.row} style={{ alignItems: 'baseline' }}>

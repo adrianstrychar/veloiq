@@ -31,7 +31,7 @@ module Smoke {
     }
 
     function drawAll(scr as RideScreen, g as Graphics.Dc) as Void {
-        for (var p = 0; p < 5; p++) {
+        for (var p = 0; p < scr.pageCount(); p++) {
             scr.page = p;
             scr.draw(g);
         }
@@ -100,7 +100,7 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
         if (e.falseStartLeft() > 0) { sawFs = true; }
         // wszystkie strony co kilka sekund; z banerem częściej, ale tylko stronę główną (symulator rysuje wolno)
         if (i % 10 == 0) { Smoke.drawAll(scr, g); }
-        else if (r.banner != null && i % 3 == 0) { scr.page = (i / 3) % 5; scr.draw(g); }
+        else if (r.banner != null && i % 3 == 0) { scr.page = (i / 3) % scr.pageCount(); scr.draw(g); }
         if (i == 140) { Menus.ride(scr); }
         if (i == 200) { r.showEnzo("Bravissimo! Trzymasz 302 waty, dokładnie w celu. Jeszcze dwie minuty, forca!"); Smoke.drawAll(scr, g); r.dismissEnzo(); }
         if (i == 300) { r.pause(); Smoke.drawAll(scr, g); scr.tap(100, 300); r.resume(); }

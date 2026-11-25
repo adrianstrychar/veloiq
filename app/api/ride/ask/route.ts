@@ -25,6 +25,7 @@ ZASADY ODPOWIEDZI:
   „jeszcze jeden interwał / dodaj serię” → "repeat";
   „zjadłem żel” → "eat:25", „zjadłem batona” → "eat:40", „wypiłem” → "drink";
   „prowadź do startu / do domu / wracam” → "route:start"; „wróć na trasę / zgubiłem się” → "route:rejoin";
+  „prowadź do <miejsce>” → "route:place:<miejsce>"; „najbliższa kawiarnia / woda / serwis / toaleta / sklep / stacja” → "route:poi:<cafe|water|bike|toilets|shop|fuel>";
   „pokaż mapę/trasę/wykres/paliwo/podjazd/wysiłek/trening” → "page:<mapa|wykres|paliwo|podjazd|wysilek|trening>".
   Zmiany planu proponuj tylko, gdy zawodnik o nie prosi; przy oznakach przemęczenia możesz zasugerować "bias:-5" słowami, bez akcji.
 Zwróć WYŁĄCZNIE JSON: {"say": "…", "action": null}`;

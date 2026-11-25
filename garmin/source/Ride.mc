@@ -916,16 +916,21 @@ class Ride {
     // ------------------------------------------------------------------ powrót na trasę / do startu (serwer VeloIQ)
     //! to = "start" (miejsce startu jazdy) albo "rejoin" (najbliższy sensowny punkt trasy przed nami + reszta trasy).
     //! Serwer wyznacza dojazd profilem trasy (szosa / gravel / MTB) i podmienia trasę; licznik pobiera ją jak zwykle.
+    hidden var _rq as String = "";     // „place”: nazwa miejsca, „poi”: rodzaj punktu
+
     function reroute(to as String) as Void {
         if (!active()) { return; }
         if (!Cfg.paired()) { showBanner("Sparuj licznik z VeloIQ,\nżeby wyznaczać trasy", "error", 5); return; }
         if (hub.lat == null || hub.lon == null || (!hub.simulated && !hub.hasGps())) { showBanner("Czekam na GPS", "error", 4); return; }
         if (to.equals("rejoin") && nav == null) { to = "start"; }
+        var label = to.equals("start") ? "do startu" : (to.equals("rejoin") ? "powrót na trasę" : (to.equals("poi") ? "do najbliższego punktu" : "do celu"));
         if (to.equals("start") && startLat == null) { showBanner("Nie znam miejsca startu", "error", 4); return; }
         var body = { "to" => to, "lat" => hub.lat, "lon" => hub.lon } as Dictionary;
+        if (to.equals("place")) { body.put("q", _rq); }
+        if (to.equals("poi")) { body.put("kind", _rq); }
         if (startLat != null) { body.put("sLat", startLat); body.put("sLon", startLon); }
         if (nav != null) { body.put("prog", nav.progress.toNumber()); body.put("prof", nav.course.prof); }
-        showBanner(to.equals("start") ? "Wyznaczam trasę\ndo startu..." : "Wyznaczam powrót\nna trasę...", "nav", 8);
+        showBanner("Wyznaczam trasę\n" + label + "...", "nav", 8);
         api.post("/api/garmin/route", body, method(:onReroute));
     }
 
@@ -1231,6 +1236,8 @@ class Ride {
         else if (cmd.equals("resync")) { courseNow(); }
         else if (cmd.equals("route:start")) { reroute("start"); }
         else if (cmd.equals("route:rejoin")) { reroute("rejoin"); }
+        else if (cmd.find("route:place:") == 0) { _rq = cmd.substring(12, cmd.length()); reroute("place"); }
+        else if (cmd.find("route:poi:") == 0) { _rq = cmd.substring(10, cmd.length()); reroute("poi"); }
         else if (cmd.equals("state")) { if (eng != null && active()) { link.event({ "t" => "st", "st" => coachState() }); } }
         else if (cmd.find(":") != null) { planEdit(cmd); }
         else if (cmd.equals("repeat")) { planEdit(cmd); }

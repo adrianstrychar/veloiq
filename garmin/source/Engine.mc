@@ -592,26 +592,29 @@ class Engine {
         var ivc = copyStep(wk.steps[iv]);
         ivc.name = "Dodatkowy interwał";
         ivc.start = 1;                       // start po mocy – zawodnik rusza, kiedy jest gotów
-        var rec = null;
+        var rec = new WStep();
         if (iv + 1 < n && wk.steps[iv + 1].type == StepType.RECOVERY) { rec = copyStep(wk.steps[iv + 1]); }
         else {
-            rec = new WStep();
             rec.name = "Przerwa"; rec.type = StepType.RECOVERY; rec.dur = Util.max(120, ivc.dur / 2);
             rec.lo = Util.round(wk.ftp * 0.40); rec.hi = Util.round(wk.ftp * 0.55);
         }
         var cur = wk.steps[stepIdx];
-        var ins = [];
+        var ins = [] as Array<WStep>;
         if (cur.type == StepType.INTERVAL) { ins.add(rec); ins.add(ivc); }
         else if (cur.type == StepType.COOLDOWN) { ins.add(ivc); ins.add(rec); ins.add(copyStep(cur)); }
         else { ins.add(ivc); ins.add(rec); }
-        var steps = wk.steps.slice(0, stepIdx + 1);
-        steps.addAll(ins);
-        steps.addAll(wk.steps.slice(stepIdx + 1, null));
+        var steps = [] as Array<WStep>;
+        for (var a = 0; a < n; a++) {
+            steps.add(wk.steps[a]);
+            if (a == stepIdx) { for (var b = 0; b < ins.size(); b++) { steps.add(ins[b]); } }
+        }
         wk.steps = steps;
         if (_base != null) {
-            var nb = _base.slice(0, stepIdx + 1);
-            for (var q = 0; q < ins.size(); q++) { nb.add([ins[q].lo, ins[q].hi]); }
-            nb.addAll(_base.slice(stepIdx + 1, null));
+            var nb = [];
+            for (var q = 0; q < _base.size(); q++) {
+                nb.add(_base[q]);
+                if (q == stepIdx) { for (var z = 0; z < ins.size(); z++) { nb.add([ins[z].lo, ins[z].hi]); } }
+            }
             _base = nb;
             if (bias != 0) { setBias(bias); }
         }

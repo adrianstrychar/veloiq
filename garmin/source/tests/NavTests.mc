@@ -181,7 +181,8 @@ function testNavRide(logger as Test.Logger) as Boolean {
     home.draw(g);                       // linia „Trasa: …” na ekranie startowym
     r.recordFit = false;
     if (!r.startRide(true)) { logger.debug("startRide failed"); r.recordFit = true; return false; }
-    var ok = r.nav != null && scr.pageCount() == 6;
+    var ok = r.nav != null && scr.indexOf(Pg.NAV) == scr.pageCount() - 1 && scr.indexOf(Pg.CLIMB) >= 0;
+    logger.debug("strony=" + scr.pages().toString());
     var d = NavData.drive();
     var n = d.size() / 2;
     var sawClimb = false;
@@ -193,9 +194,7 @@ function testNavRide(logger as Test.Logger) as Boolean {
         if (cn != null && !sawClimb) { sawClimb = true; climbLeft = cn[2]; ok = ok && cn[0] == 280 && cn[1] == 300 && cn[3] == 1 && cn[4] == 1 && cn[5] == 2; }
         if (i % 12 == 0) {
             scr.zoom = (i / 12) % 5;
-            scr.page = scr.NAV_PAGE; scr.draw(g);
-            scr.page = 0; scr.draw(g);
-            scr.page = 1; scr.draw(g);
+            for (var p = 0; p < scr.pageCount(); p++) { scr.page = p; scr.draw(g); }
         }
     }
     logger.debug("progress=" + r.nav.progress + " sawClimb=" + sawClimb + " climbLeft=" + climbLeft + " cues=" + r.cues.size() + " banner=" + r.banner);
@@ -207,7 +206,8 @@ function testNavRide(logger as Test.Logger) as Boolean {
     ok = ok && Fields.value(34, r).equals("0.0") && Fields.value(35, r).equals("--");
     // wyłączenie w trakcie jazdy
     r.setNav(false);
-    scr.page = scr.NAV_PAGE; scr.draw(g);
+    scr.page = scr.indexOf(Pg.NAV); scr.draw(g);
+    ok = ok && scr.indexOf(Pg.NAV) == -1 && scr.indexOf(Pg.CLIMB) == -1;
     ok = ok && r.climbNow() == null && r.coachState().get("route") == null;
     r.finish(false);
     r.reset();

@@ -193,6 +193,10 @@ ok('akcje Enzo: tylko znane polecenia, bezpieczne zakresy', () => {
   assert.equal(cleanAction('route:start'), 'route:start');
   assert.equal(cleanAction('page:mapa'), 'page:mapa');
   assert.equal(cleanAction('rm -rf'), null);
+  assert.equal(cleanAction('route:poi:cafe'), 'route:poi:cafe');
+  assert.equal(cleanAction('route:place:Szklarska Poręba'), 'route:place:Szklarska Poręba');
+  assert.equal(cleanAction('route:place:<b>Jelenia</b>'), 'route:place:bJeleniab');
+  assert.equal(cleanAction('route:place:x'), null);
   assert.equal(cleanAction(null), null);
 });
 

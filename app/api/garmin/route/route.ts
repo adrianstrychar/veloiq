@@ -5,6 +5,8 @@ import { buildCourse, courseMeta, CourseError, decodeParts, loadCourse, saveCour
 import { planRoutes } from '@/lib/route/plan';
 import { PROFILES, RoutingError, type RouteProfile } from '@/lib/route/brouter';
 import { rejoinIndex, spliceCourse } from '@/lib/route/reroute';
+import { photonUrl, placesFromPhoton } from '@/lib/route/geocode';
+import { nearestPoi } from '@/lib/route/pois';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -13,6 +15,8 @@ export const maxDuration = 60;
 //   POST { to:'start'|'rejoin', lat, lon, sLat?, sLon?, prog? }
 //   start  – z bieżącej pozycji do miejsca startu jazdy (sLat/sLon), profilem ostatniej trasy
 //   rejoin – dojazd do trasy ~300 m – 6 km przed ostatnim postępem (prog, m) + reszta trasy
+//   place  – do miejsca z polecenia głosowego (q: „Szklarska Poręba”, „dworzec w Jeleniej Górze”) – geokoder blisko nas
+//   poi    – do najbliższego punktu (kind: cafe | water | bike | toilets | shop | fuel) w promieniu 8 km
 // → nagłówek trasy jak /api/garmin/course/part?i=meta (licznik pobiera części zwykłą drogą) + "say" dla Enzo.
 export async function POST(req: NextRequest) {
   const admin = createAdminSupabaseClient();
@@ -39,6 +43,27 @@ export async function POST(req: NextRequest) {
       await saveCourse(admin, dev.userId, course);
       const back = Math.round(approach.stats.total / 100) / 10;
       return NextResponse.json({ ...courseMeta(course), say: `Nowa trasa: ${back} kilometra do powrotu na trasę.` });
+    }
+    if (b.to === 'place' || b.to === 'poi') {
+      let dest: { lat: number; lon: number; name: string } | null = null;
+      if (b.to === 'place') {
+        const q = String(b.q ?? '').trim().slice(0, 80);
+        if (q.length < 2) return NextResponse.json({ error: 'no_place', message: 'Nie usłyszałem nazwy miejsca.' }, { status: 400 });
+        const r = await fetch(photonUrl(q, { lat, lon }, 3), { headers: { 'User-Agent': 'VeloIQ/1.0 (+https://veloiq-three.vercel.app)' }, signal: AbortSignal.timeout(8000) });
+        const p = r.ok ? placesFromPhoton(await r.json())[0] : undefined;
+        if (p) dest = { lat: p.lat, lon: p.lon, name: p.name };
+        if (!dest) return NextResponse.json({ error: 'not_found', message: `Nie znalazłem: ${q}.` }, { status: 404 });
+      } else {
+        const kind = String(b.kind ?? 'cafe');
+        const p = await nearestPoi({ lat, lon }, kind);
+        if (!p) return NextResponse.json({ error: 'not_found', message: 'W pobliżu nic takiego nie znalazłem.' }, { status: 404 });
+        dest = p;
+      }
+      const [r2] = await planRoutes({ mode: 'ab', start: { lat, lon }, end: { lat: dest.lat, lon: dest.lon }, profile, name: dest.name.slice(0, 40) }, rider);
+      const course = buildCourse(r2.route);
+      await saveCourse(admin, dev.userId, course);
+      const km2 = Math.round(r2.stats.total / 100) / 10;
+      return NextResponse.json({ ...courseMeta(course), say: `Prowadzę do: ${dest.name}. ${km2} kilometra, około ${Math.round(r2.stats.estSec / 60)} minut.` });
     }
     const sLat = Number(b.sLat), sLon = Number(b.sLon);
     if (!Number.isFinite(sLat) || !Number.isFinite(sLon) || (sLat === 0 && sLon === 0)) {

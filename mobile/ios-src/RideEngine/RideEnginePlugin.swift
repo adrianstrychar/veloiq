@@ -1194,6 +1194,23 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         // --- nawigacja (licznik Garmin liczy nową trasę profilem roweru)
         if has("do startu", "do domu", "wracam do domu", "zabierz mnie do", "powrot do startu", "droge do domu") { return ("route:start", "Wyznaczam trasę do startu.") }
         if has("wroc na trase", "powrot na trase", "zgubilem sie", "zgubilam sie", "prowadz na trase", "z powrotem na trase") { return ("route:rejoin", "Wyznaczam powrót na trasę.") }
+        // najbliższy punkt (jak „OK Garmin, najbliższa kawiarnia”) – licznik pyta serwer o trasę profilem roweru
+        if has("najblizsz", "gdzie jest", "znajdz", "prowadz do", "jedz do", "nawiguj do", "zabierz mnie do", "szukam") {
+            let kinds: [(String, String, String)] = [("kawiarn", "cafe", "kawiarni"), ("kawe", "cafe", "kawiarni"), ("kawa", "cafe", "kawiarni"),
+                ("wod", "water", "wody"), ("zrodl", "water", "wody"), ("bidon", "water", "wody"), ("serwis", "bike", "serwisu rowerowego"),
+                ("sklep rowerow", "bike", "serwisu rowerowego"), ("toalet", "toilets", "toalety"), (" wc", "toilets", "toalety"),
+                ("stacj", "fuel", "stacji"), ("sklep", "shop", "sklepu")]
+            if let k = kinds.first(where: { t.contains($0.0) }) { return ("route:poi:\(k.1)", "Szukam najbliższej \(k.2).") }
+        }
+        // „prowadź do Szklarskiej Poręby” – cel z nazwy (geokoder na serwerze, blisko nas)
+        for lead in ["prowadz do ", "jedz do ", "nawiguj do ", "zabierz mnie do ", "trasa do ", "trase do "] {
+            if let r = t.range(of: lead) {
+                let place = t[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+                if place.count >= 3, !["startu", "domu", "trasy", "mety"].contains(place) {
+                    return ("route:place:\(place)", "Szukam trasy do: \(place).")
+                }
+            }
+        }
         // --- ekrany licznika
         if has("pokaz", "przelacz na", "ekran") {
             let pages: [(String, String, String)] = [("map", "mapa", "mapę"), ("tras", "trasa", "trasę"), ("wykres", "wykres", "wykres"), ("paliw", "paliwo", "paliwo"),

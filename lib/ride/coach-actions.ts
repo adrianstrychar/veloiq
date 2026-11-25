@@ -14,6 +14,13 @@ export function cleanAction(a: unknown): string | null {
   if (m) return `eat:${Math.max(5, Math.min(120, Number(m[1])))}`;
   m = /^page:(mapa|trasa|wykres|paliwo|podjazd|wysilek|trening|okrazenia|enzo)$/.exec(x);
   if (m) return `page:${m[1]}`;
+  m = /^route:poi:(cafe|water|bike|toilets|shop|fuel)$/.exec(x);
+  if (m) return `route:poi:${m[1]}`;
+  // cel z nazwy (geokoder na serwerze) – tylko litery, cyfry, spacje i kilka znaków; do 60 znaków
+  if (/^route:place:/.test(a.trim())) {
+    const q = a.trim().slice(12).replace(/[<>{}[\]\\|;:"/@#$%^&*=+~`!?]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    return q.length >= 2 ? `route:place:${q}` : null;
+  }
   return null;
 }
 
