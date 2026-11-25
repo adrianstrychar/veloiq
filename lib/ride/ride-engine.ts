@@ -88,6 +88,7 @@ export interface GarminLinkStatus {
   paired?: boolean;          // wybrano licznik w Garmin Connect
   name?: string;
   connected?: boolean;       // licznik w zasięgu telefonu
+  greeted?: boolean;         // licznik potwierdził „hello” (wie, że telefon słucha)
   appInstalled?: boolean;    // aplikacja VeloIQ jest na liczniku (brak pola = jeszcze nie wiadomo)
   streaming?: boolean;       // licznik nadaje dane (aplikacja VeloIQ na liczniku jest otwarta)
   recording?: boolean;       // licznik nagrywa jazdę

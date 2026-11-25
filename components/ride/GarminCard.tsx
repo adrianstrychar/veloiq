@@ -136,7 +136,7 @@ export function GarminCard({ ride }: { ride: Ride }) {
           {link.paired && diag && (
             <div className={s.stack} style={{ gap: 4 }} aria-label="Diagnostyka mostu">
               <span className={s.small} style={{ fontSize: 12 }}>
-                Licznik: {link.connected ? 'połączony' : 'niepołączony'} · aplikacja: {link.appInstalled == null ? '?' : link.appInstalled ? 'jest' : 'brak'}
+                Licznik: {link.connected ? 'połączony' : 'niepołączony'}{link.connected && link.greeted != null ? ` · powitanie: ${link.greeted ? 'OK' : 'ponawiam'}` : ''} · aplikacja: {link.appInstalled == null ? '?' : link.appInstalled ? 'jest' : 'brak'}
                 {link.edgeVersion ? ` · VeloIQ ${link.edgeVersion}` : ''}
                 {link.lastMessageAgo != null ? ` · ostatnia wiadomość ${link.lastMessageAgo} s temu` : ' · nic jeszcze nie przyszło'}
               </span>

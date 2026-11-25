@@ -172,9 +172,15 @@ final class GarminLink: NSObject {
     /// potrafią przepaść. Czekamy na deviceCharacteristicsDiscovered (z zapasem: po 3 s i tak próbujemy).
     private var ready = false
     private var helloRetries = 0
+    /// Licznik potwierdził „hello” od czasu połączenia. Dopóki nie, ponawiamy bez limitu (co 4 s, potem co 10 s):
+    /// pierwsza próba tuż po połączeniu zwykle kończy się Failure_DeviceNotAvailable, a bez udanego powitania
+    /// licznik uważa, że telefon nie słucha.
+    private var helloOK = false
+    private var helloInFlight = false
+    private var helloRetryScheduled = false
 
     private func baseStatus() -> [String: Any] {
-        var d: [String: Any] = ["available": true, "paired": device != nil, "connected": connected]
+        var d: [String: Any] = ["available": true, "paired": device != nil, "connected": connected, "greeted": helloOK]
         if let n = device?.friendlyName ?? device?.modelName { d["name"] = n }
         if let i = appInstalled { d["appInstalled"] = i }
         return d
@@ -225,7 +231,7 @@ final class GarminLink: NSObject {
     func forget() {
         if let a = app { ConnectIQ.sharedInstance().unregister(forAppMessages: a, delegate: self) }
         if let d = device { ConnectIQ.sharedInstance().unregister(forDeviceEvents: d, delegate: self) }
-        device = nil; app = nil; connected = false; appInstalled = nil; edgeVersion = nil
+        device = nil; app = nil; connected = false; appInstalled = nil; edgeVersion = nil; helloOK = false
         lastLive = nil; lastMessageAt = .distantPast
         UserDefaults.standard.removeObject(forKey: Self.deviceKey)
         note("licznik usunięty")
@@ -244,6 +250,7 @@ final class GarminLink: NSObject {
         ConnectIQ.sharedInstance().register(forAppMessages: a, delegate: self)
         connected = ConnectIQ.sharedInstance().getDeviceStatus(dev) == .connected
         ready = false
+        helloOK = false
         helloRetries = 0
         note(connected ? "licznik połączony" : "licznik poza zasięgiem / wyłączony")
         if connected { greetWhenReady() } else { refreshAppStatus() }
@@ -254,28 +261,47 @@ final class GarminLink: NSObject {
     /// (licznik dostanie ją po otwarciu VeloIQ), dlatego najwyżej raz na minutę; w międzyczasie wystarczy „hb”.
     func hello(force: Bool = false) {
         guard let a = app, connected else { return }
-        if !force && Date().timeIntervalSince(lastHello) < 60 {
+        if !force && helloOK && Date().timeIntervalSince(lastHello) < 60 {
             requestSync()
             return
         }
+        guard !helloInFlight else { return }
+        helloInFlight = true
         lastHello = Date()
         ConnectIQ.sharedInstance().sendMessage(["hello": 1], to: a, progress: nil, completion: { [weak self] r in
             DispatchQueue.main.async {
                 guard let self = self else { return }
+                self.helloInFlight = false
                 if r == .success {
+                    if !self.helloOK || self.helloRetries > 0 { self.note("hello → licznik OK") }
+                    self.helloOK = true
                     self.helloRetries = 0
-                    self.note("hello → licznik OK")
                 } else {
-                    self.note("hello → licznik: \(NSStringFromSendMessageResult(r) ?? "błąd")")
-                    // nieudane powitanie ponawiamy kilka razy co 5 s – bez niego licznik nie wie, że telefon słucha
-                    if self.helloRetries < 5 {
-                        self.helloRetries += 1
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.hello(force: true) }
-                    }
+                    self.helloOK = false
+                    self.note("hello → licznik: \(NSStringFromSendMessageResult(r) ?? "błąd")", every: 20)
+                    self.scheduleHelloRetry()
                 }
                 self.emitStatus()
             }
         }, isTransient: false)
+    }
+
+    private func scheduleHelloRetry() {
+        guard !helloRetryScheduled, connected else { return }
+        helloRetryScheduled = true
+        helloRetries += 1
+        let delay: TimeInterval = helloRetries <= 5 ? 4 : 10
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self = self else { return }
+            self.helloRetryScheduled = false
+            if self.connected && !self.helloOK { self.hello(force: true) }
+        }
+    }
+
+    /// Wiadomość z licznika, a powitanie jeszcze nie doszło – to dobry moment (łącze właśnie działa).
+    fileprivate func helloIfNeeded() {
+        guard !helloOK, Date().timeIntervalSince(lastHello) > 4 else { return }
+        hello(force: true)
     }
 
     /// Wiadomość z licznika = licznik połączony. Status z SDK potrafi nie przyjść (licznik był połączony już przy
@@ -350,6 +376,7 @@ final class GarminLink: NSObject {
     func send(_ message: [String: Any]) {}
     func hello(force: Bool = false) {}
     fileprivate func markConnected() {}
+    fileprivate func helloIfNeeded() {}
     func openApp() {}
     #endif
 
@@ -364,6 +391,7 @@ final class GarminLink: NSObject {
         }
         lastMessageAt = Date()
         markConnected()
+        helloIfNeeded()
         if !wasStreaming { wasStreaming = true; emitStatus() }
         startWatch()
         switch type {
@@ -419,7 +447,7 @@ extension GarminLink: IQDeviceEventDelegate, IQAppMessageDelegate {
                 let i = Int(status.rawValue)
                 self.note("licznik: \(i >= 0 && i < names.count ? names[i] : "status \(i)")")
             }
-            if !self.connected { self.ready = false }
+            if !self.connected { self.ready = false; self.helloOK = false }
             if self.connected && !was { self.helloRetries = 0; self.greetWhenReady() }
             self.emitStatus()
         }
