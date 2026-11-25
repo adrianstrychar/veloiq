@@ -9,7 +9,7 @@ import { destination, loopRadius, loopWaypoints, planRoutes, similarity, surface
 import { estimateSeconds, speedFor } from '../lib/route/estimate';
 import { surfaceOf, parseTags } from '../lib/route/surface';
 import { fetchPois, nearestPoi, overpassFetch, OVERPASS_URLS, kindOf, overpassQuery, poisFromOverpass, samplePath } from '../lib/route/pois';
-import { PHOTON_HEADERS, photonUrl, placesFromPhoton } from '../lib/route/geocode';
+import { findPlace, PHOTON_HEADERS, photonUrl, pickPlace, placesFromPhoton } from '../lib/route/geocode';
 import { buildCourse, courseMeta, decodeParts } from '../lib/garmin/course';
 import { rejoinIndex, spliceCourse } from '../lib/route/reroute';
 import { dist } from '../lib/ride/gpx';
@@ -249,6 +249,14 @@ async function offline() {
     assert.ok(photonUrl('Szklarska', KARPACZ).includes('lat=50.7753') && photonUrl('x').includes('lang=default'));
     const pl = placesFromPhoton({ features: [{ geometry: { coordinates: [15.52, 50.83] }, properties: { name: 'Szklarska Poręba', state: 'województwo dolnośląskie', country: 'Polska' } }] });
     assert.equal(pl[0].label, 'Szklarska Poręba · województwo dolnośląskie');
+    assert.ok(photonUrl('x', null, 5, true).includes('osm_tag=place'));
+    // głos: miejscowość przed obiektem z tą nazwą; nic dalej niż 80 km
+    const town = { name: 'Szklarska Poręba', label: 'Szklarska Poręba', lat: 50.827, lon: 15.523, place: true };
+    const obelisk = { name: 'Obelisk … Szklarskiej Poręby', label: 'Obelisk', lat: 50.839, lon: 15.530 };
+    const far = { name: 'Szklarska', label: 'Szklarska (daleko)', lat: 52.4, lon: 16.9, place: true };
+    assert.equal(pickPlace([far, town], [obelisk], KARPACZ)?.name, 'Szklarska Poręba');
+    assert.equal(pickPlace([far], [obelisk], KARPACZ)?.name, obelisk.name);
+    assert.equal(pickPlace([far], [], KARPACZ), null);
   });
 }
 
@@ -313,15 +321,12 @@ async function live() {
     console.log(`    ${pl.slice(0, 3).map((p) => p.label).join(' | ')}`);
     assert.ok(pl.length > 0 && Math.abs(pl[0].lat - 50.83) < 0.1);
   });
-  // głos: „prowadź do Szklarskiej Poręby” – nazwa w dopełniaczu, tak jak ją słyszy rozpoznawanie mowy
-  await soft('LIVE geokoder w dopełniaczu „Szklarskiej Poręby” / „Jeleniej Góry”', async () => {
-    for (const [q, lat, lon] of [['Szklarskiej Poręby', 50.83, 15.52], ['Jeleniej Góry', 50.90, 15.73]] as const) {
-      const r = await fetch(photonUrl(q, KARPACZ, 3), { headers: PHOTON_HEADERS, signal: AbortSignal.timeout(15000) }).catch((e) => { throw new Error(`photon: ${e}`); });
-      assert.ok(r.status < 400 || r.status >= 500, `Photon odrzucił zapytanie: ${r.status}`);
-      if (!r.ok) throw new Error(`photon ${r.status}`);
-      const pl = placesFromPhoton(await r.json());
-      console.log(`    ${q} → ${pl.slice(0, 2).map((p) => `${p.label} (${p.lat.toFixed(3)}, ${p.lon.toFixed(3)})`).join(' | ') || 'brak'}`);
-      assert.ok(pl.length > 0 && Math.abs(pl[0].lat - lat) < 0.15 && Math.abs(pl[0].lon - lon) < 0.2, `${q} → ${pl[0]?.label}`);
+  // głos: „prowadź do Szklarskiej Poręby” – nazwa w dopełniaczu, tak jak ją słyszy rozpoznawanie mowy (findPlace jak na serwerze)
+  await soft('LIVE cel głosowy w dopełniaczu: „Szklarskiej Poręby”, „Jeleniej Góry”, „Karpacza”, „Przełęczy Okraj”', async () => {
+    for (const [q, lat, lon] of [['Szklarskiej Poręby', 50.83, 15.52], ['Jeleniej Góry', 50.90, 15.73], ['Karpacza', 50.78, 15.75], ['Przełęczy Okraj', 50.74, 15.83]] as const) {
+      const p = await findPlace(q, KARPACZ).catch((e) => { throw new Error(`photon: ${e instanceof Error ? e.message : e}`); });
+      console.log(`    ${q} → ${p ? `${p.label}${p.place ? ' [miejscowość]' : ''} (${p.lat.toFixed(3)}, ${p.lon.toFixed(3)})` : 'brak'}`);
+      assert.ok(p != null && Math.abs(p.lat - lat) < 0.12 && Math.abs(p.lon - lon) < 0.15, `${q} → ${p?.label}`);
     }
   });
 }
