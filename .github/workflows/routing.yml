@@ -10,6 +10,7 @@ on:
       - 'lib/garmin/**'
       - 'lib/ride/gpx.ts'
       - 'scripts/check-routing.ts'
+      - 'components/map/**'
       - 'scripts/check-garmin.ts'
       - '.github/workflows/routing.yml'
   workflow_dispatch:
@@ -39,6 +40,16 @@ jobs:
             echo "$p → HTTP $code $(head -c 160 /tmp/r.txt | tr '\n' ' ')"
           done
           curl -s -o /tmp/r.txt -w "param test HTTP %{http_code}\n" "https://brouter.de/brouter?lonlats=15.755,50.7753|15.7194,50.9044&profile=gravel&alternativeidx=0&format=geojson&timode=3&profile:prefer_unpaved_paths=1"; head -c 200 /tmp/r.txt; echo
+      - name: Podkłady mapy – kafelek Karpacza z każdego źródła (bez klucza)
+        run: |
+          fail=0
+          for url in https://tile.openstreetmap.org/12/2227/1375.png https://a.tile-cyclosm.openstreetmap.fr/cyclosm/12/2227/1375.png https://a.tile.opentopomap.org/12/2227/1375.png; do
+            out=$(curl -s --max-time 20 -o /tmp/t.png -w "%{http_code} %{content_type} %{size_download}" -A "VeloIQ/1.0 (+https://veloiq-three.vercel.app)" -e "https://veloiq-three.vercel.app/" "$url" || echo "000")
+            echo "$url → $out"
+            case "$out" in 200\ image/png*) ;; *) fail=1 ;; esac
+          done
+          exit $fail
+
       - name: Overpass – diagnostyka
         continue-on-error: true
         run: |
