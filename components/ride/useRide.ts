@@ -67,6 +67,9 @@ export function useRide() {
   const [mirror, setMirror] = useState<GarminRide | null>(null);
   const [mirrorDone, setMirrorDone] = useState<GarminRide | null>(null);
   const [liveAt, setLiveAt] = useState(0);
+  // licznik dał znać, że jazda jest w VeloIQ (karta ostatniej jazdy odświeża się od razu)
+  const [uploadBump, setUploadBump] = useState(0);
+  const [mirrorAt, setMirrorAt] = useState(0);   // kiedy telefon dołączył do jazdy z licznika
   // plan zmieniony głosem w trakcie jazdy z telefonu – ekran pokazuje aktualne kroki
   const [planEdit, setPlanEdit] = useState<{ steps: WorkoutScript['steps']; bias: number } | null>(null);
   const mirrorKey = useRef<number | null>(null);
@@ -83,6 +86,7 @@ export function useRide() {
       setPaused(d.paused === 1);
       setAutoPaused(d.paused === 2);
       if (fresh) {
+        setMirrorAt(Date.now());
         setCues([]); setPlanDone(null); setSummary(null); setMirrorDone(null); setRoute(null); setNav(null);
         if (!d.sync) setLive(null);
         // rozmowa z Enzo: token z sesji aplikacji (licznik ma też własny z synchronizacji)
@@ -128,6 +132,7 @@ export function useRide() {
     handles.push(engine.addListener('garmin', (d) => setGarminLink((g) => ({ ...g, ...d, available: d.available !== false }))));
     handles.push(engine.addListener('garminRide', onGarminRide));
     handles.push(engine.addListener('planChanged', (d) => setPlanEdit(d)));
+    handles.push(engine.addListener('garminUpload', () => setUploadBump((n) => n + 1)));
     engine.garminStatus().then(setGarminLink).catch(() => setGarminLink({ available: false }));
     // jazda z licznika, która trwała, zanim otworzyła się ta strona (albo gdy aplikacja była w tle)
     const syncMirror = () => {
@@ -204,7 +209,7 @@ export function useRide() {
     /** Licznik pobiera trasę z VeloIQ od razu (gdy most działa) – bez czekania na synchronizację. */
     garminResync: () => engine.garminCommand({ cmd: 'resync' }).catch(() => undefined),
     /** Jazda z licznika (tryb lustra) – null, gdy jazdę prowadzi telefon albo nic nie trwa. */
-    mirror, mirrorDone, liveAt, planEdit,
+    mirror, mirrorDone, liveAt, mirrorAt, planEdit, uploadBump,
     clearMirrorDone: () => setMirrorDone(null),
     pause: () => run(async () => { await engine.pause(); setPaused(true); }),
     resume: () => run(async () => { await engine.resume(); setPaused(false); setAutoPaused(false); }),

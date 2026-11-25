@@ -32,15 +32,22 @@ class LinkListener extends Communications.ConnectionListener {
 class PhoneLink {
     var active as Boolean = false;     // aplikacja VeloIQ w telefonie odezwała się w ostatnich 35 s
     var owner = null;                  // onPhoneCommand(cmd), onPhoneSay(text), onPhoneHello(first)
+    // diagnostyka (Ustawienia → Most do telefonu): ile wiadomości poszło, ile się nie udało, kiedy ostatnia
+    var okN as Number = 0;
+    var failN as Number = 0;
+    var liveN as Number = 0;
+    var lastOkAt as Number = 0;
+    var lastPhoneAt as Number = 0;
     hidden var _busy as Boolean = false;
     hidden var _busyAt as Number = 0;
-    hidden var _queue;                 // zdarzenia (ważniejsze niż próbki live)
-    hidden var _live = null;           // ostatnia próbka czekająca na wysłanie
+    hidden var _queue;                 // zdarzenia [wiadomość, liczba prób] – ważniejsze niż pojedyncza próbka live
+    hidden var _live = null;           // ostatnia próbka czekająca na wysłanie (starsze się nadpisują)
+    hidden var _inflight = null;       // zdarzenie w drodze (do ponowienia, gdy się nie uda)
+    hidden var _lastWasLive as Boolean = false;
     hidden var _fails as Number = 0;
     hidden var _retryAt as Number = 0;
     hidden var _listener;
     hidden var _on as Boolean = false;
-    hidden var _lastPhone as Number = 0;
     hidden var _greeted as Boolean = false;
 
     function initialize() {
@@ -60,22 +67,27 @@ class PhoneLink {
         Communications.registerForPhoneAppMessages(null);
         _queue = [];
         _live = null;
+        _inflight = null;
     }
 
     //! Co sekundę z zegara jazdy: telefon, który zamilkł (zamknięta aplikacja), przestaje być „aktywny” –
     //! przycisk ENZO wraca wtedy do odpowiedzi na ekranie licznika.
     function tick() as Void {
         var now = System.getTimer();
-        if (active && now - _lastPhone > 35000) { active = false; }
-        // zgubione potwierdzenie wysyłki nie może zablokować mostu na zawsze
-        if (_busy && now - _busyAt > 20000) { _busy = false; }
+        if (active && now - lastPhoneAt > 35000) { active = false; }
+        // zgubione potwierdzenie wysyłki nie może zablokować mostu: po 10 s uznajemy wiadomość za straconą
+        // (bez ponawiania – mogła jednak dojść, a podwójny komunikat Enzo jest gorszy niż brak jednego)
+        if (_busy && now - _busyAt > 10000) { _inflight = null; sent(false); }
+        // po przerwie (błędy, brak telefonu) zaległe zdarzenia idą bez czekania na kolejną próbkę
+        if (!_busy && _queue.size() > 0) { pump(); }
     }
 
     function onPhone(msg as Communications.PhoneAppMessage) as Void {
         var d = msg.data;
         active = true;
-        _lastPhone = System.getTimer();
+        lastPhoneAt = System.getTimer();
         _fails = 0;
+        _retryAt = 0;
         if (d == null || !(d instanceof Dictionary) || owner == null) { return; }
         if (d.get("hello") != null) {
             if (!Cfg.phoneLink) { Cfg.save("link", true); }
@@ -91,8 +103,8 @@ class PhoneLink {
 
     function event(msg) as Void {
         if (!_on || !Cfg.phoneLink) { return; }
-        if (_queue.size() >= 8) { _queue = _queue.slice(1, null); }
-        _queue.add(msg);
+        if (_queue.size() >= 10) { _queue = _queue.slice(1, null); }   // przy długiej przerwie odpada najstarsze
+        _queue.add([msg, 0]);
         pump();
     }
 
@@ -102,34 +114,79 @@ class PhoneLink {
         pump();
     }
 
+    //! Telefon w zasięgu (Bluetooth z Garmin Connect). Testy podmieniają.
+    function phoneUp() as Boolean {
+        return System.getDeviceSettings().phoneConnected;
+    }
+
+    //! Wysyłka jednej wiadomości. Testy podmieniają (bez telefonu w symulatorze).
+    function xmit(msg) as Void {
+        Communications.transmit(msg, null, _listener);
+    }
+
+    //! Jedna wiadomość naraz (Connect IQ nie lubi kilku w drodze). Zdarzenia (start, komunikaty, odpowiedzi) mają
+    //! pierwszeństwo, ale próbka live idzie co najmniej co drugą wiadomość – inaczej przy kolejce komunikatów
+    //! telefon nie widziałby mocy ani czasu jazdy.
     hidden function pump() as Void {
         if (_busy) { return; }
-        if (!System.getDeviceSettings().phoneConnected) { active = false; return; }
-        // po nieudanych próbach ponawiamy coraz rzadziej, najwyżej co 30 s
+        if (!phoneUp()) { active = false; return; }
         if (_fails > 0 && System.getTimer() < _retryAt) { return; }
         var msg = null;
-        if (_queue.size() > 0) {
-            msg = _queue[0];
-            _queue = _queue.slice(1, null);
-        } else if (_live != null) {
+        var hasEv = _queue.size() > 0;
+        if (_live != null && (!hasEv || !_lastWasLive)) {
             msg = _live;
             _live = null;
+            _inflight = null;
+            _lastWasLive = true;
+            liveN++;
+        } else if (hasEv) {
+            _inflight = _queue[0];
+            _queue = _queue.slice(1, null);
+            msg = _inflight[0];
+            _lastWasLive = false;
         }
         if (msg == null) { return; }
         _busy = true;
         _busyAt = System.getTimer();
-        Communications.transmit(msg, null, _listener);
+        xmit(msg);
     }
 
     function sent(ok as Boolean) as Void {
         _busy = false;
+        var now = System.getTimer();
         if (ok) {
+            okN++;
+            lastOkAt = now;
             _fails = 0;
+            _inflight = null;
             pump();
         } else {
+            failN++;
             _fails++;
-            var wait = _fails * 5000;
-            _retryAt = System.getTimer() + (wait > 30000 ? 30000 : wait);
+            // zdarzenie (start jazdy, komunikat, odpowiedź Enzo) wraca na początek kolejki – do 3 prób
+            if (_inflight != null && _inflight[1] < 2) {
+                _inflight[1] = _inflight[1] + 1;
+                var q = [_inflight];
+                q.addAll(_queue);
+                _queue = q;
+            }
+            _inflight = null;
+            // ponowienie szybko: 1, 2, 3… najwyżej 5 s (dane na żywo nie mogą stać po pół minuty)
+            var wait = _fails * 1000;
+            _retryAt = now + (wait > 5000 ? 5000 : wait);
         }
+    }
+
+    //! Tylko testy: ponowienie bez czekania.
+    function retryNow() as Void { _retryAt = 0; pump(); }
+
+    function queued() as Number { return _queue.size(); }
+
+    //! Krótki opis stanu mostu do menu i ekranu startowego.
+    function describe() as String {
+        var now = System.getTimer();
+        var s = "wysłane " + okN + ", błędy " + failN;
+        if (lastOkAt > 0) { s = s + ", ost. " + ((now - lastOkAt) / 1000) + " s temu"; }
+        return s;
     }
 }

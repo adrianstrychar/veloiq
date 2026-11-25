@@ -164,6 +164,16 @@ module Ui {
     }
 
     //! Odległość do pokazania: metry do 950 m (co 10), dalej kilometry z jednym miejscem po przecinku.
+    //! Znak „✓” rysowany (czcionki licznika nie mają tego znaku): s = szerokość i wysokość.
+    function check(dc as Graphics.Dc, x, y, s, color) as Void {
+        dc.setColor(color, Graphics.COLOR_TRANSPARENT);
+        var t = s / 5 < 2 ? 2 : s / 5;
+        if (dc has :setPenWidth) { dc.setPenWidth(t); }
+        dc.drawLine(x, y + s / 2, x + s * 2 / 5, y + s - 1);
+        dc.drawLine(x + s * 2 / 5, y + s - 1, x + s, y);
+        if (dc has :setPenWidth) { dc.setPenWidth(1); }
+    }
+
     function meters(m) as String {
         if (m < 950) { return (Util.round(m / 10.0) * 10).format("%d") + " m"; }
         return (m / 1000.0).format("%.1f") + " km";

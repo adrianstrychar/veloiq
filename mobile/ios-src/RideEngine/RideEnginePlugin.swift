@@ -689,6 +689,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         g.onCue = { [weak self] key, kind, text, vars in self?.garminCue(key, kind, text, vars) }
         g.onTalk = { [weak self] msg in self?.garminTalk(msg) }
         g.onState = { [weak self] st, info in self?.garminRideState(st, info) }
+        g.onUpload = { [weak self] key in self?.notifyListeners("garminUpload", data: ["key": key, "ok": true]) }
         g.onCoachState = { [weak self] st in
             guard let self = self else { return }
             self.engineQueue.async { self.garminState = st; self.garminStateAt = Date() }

@@ -82,6 +82,12 @@ class Uploader {
     hidden var _count as Number = -1;    // ile jazd w kolejce (pamięć podręczna – bez czytania Storage co sekundę)
     var status as String = "";
     var lastError as String = "";
+    // potwierdzenie dla zawodnika: która jazda jest już w VeloIQ i kiedy; postęp bieżącej wysyłki
+    var doneKey = null;
+    var doneAt as Number = 0;
+    var progI as Number = 0;
+    var progN as Number = 0;
+    var onDone = null;                 // wywołanie po udanej wysyłce (dźwięk, wibracja, baner)
 
     function initialize(api as Api) {
         _api = api;
@@ -145,6 +151,8 @@ class Uploader {
         var ng = _meta["ng"];
         if (st == 0) {
             status = "Wysyłam jazdę...";
+            progI = 0;
+            progN = ns + ng + 2;
             var x = Application.Storage.getValue("up_" + k + "_x");
             _api.post("/api/garmin/ride", { "op" => "begin", "key" => _key, "summary" => _meta["sum"], "extra" => x, "ns" => ns, "ng" => ng }, method(:onStep));
         } else if (st == 1) {
@@ -159,6 +167,8 @@ class Uploader {
             var seq = i < ns ? i : i - ns;
             var data = Application.Storage.getValue("up_" + k + "_" + kind + seq);
             status = "Wysyłam " + (i + 1) + "/" + (ns + ng);
+            progI = i + 1;
+            progN = ns + ng + 2;
             _api.post("/api/garmin/ride", { "op" => "chunk", "key" => _key, "kind" => kind, "seq" => seq, "data" => (data == null ? "" : data) }, method(:onStep));
         } else {
             status = "Kończę wysyłkę...";
@@ -185,11 +195,7 @@ class Uploader {
         if (st == 0) {
             // serwer ma już tę jazdę (odpowiedź na wcześniejsze „finish” nie dotarła) → nic więcej nie wysyłamy
             if (data.get("done") == true) {
-                drop();
-                _running = false;
-                status = "Jazda w VeloIQ";
-                notify();
-                kick();
+                succeeded();
                 return;
             }
             _meta["st"] = 1;
@@ -197,15 +203,32 @@ class Uploader {
         } else if (st == 1) {
             _meta["i"] = _meta["i"] + 1;
         } else {
-            drop();
-            _running = false;
-            status = "Jazda w VeloIQ";
-            notify();
-            kick();   // następna z kolejki
+            succeeded();
             return;
         }
         Application.Storage.setValue("up_" + k, _meta);
         step();
+    }
+
+    //! Jazda jest w VeloIQ: potwierdzenie na ekranie (z godziną), dźwięk i następna z kolejki.
+    hidden function succeeded() as Void {
+        doneKey = _key;
+        doneAt = System.getTimer();
+        drop();
+        _running = false;
+        lastError = "";
+        status = "Jazda w VeloIQ " + Ui.clockNow();
+        progI = progN;
+        notify();
+        if (onDone != null) { onDone.invoke(); }
+        kick();   // następna z kolejki
+    }
+
+    //! Ile sekund do następnej próby wysyłki (0 = teraz albo trwa).
+    function retryIn() as Number {
+        if (_running) { return 0; }
+        var d = (_retryAt - System.getTimer()) / 1000;
+        return d > 0 ? d : 0;
     }
 
     //! Usuwa pierwszą jazdę z kolejki razem z jej paczkami.

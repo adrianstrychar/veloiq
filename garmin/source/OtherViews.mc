@@ -64,10 +64,32 @@ class SummaryScreen {
             y += 4;
         }
 
-        var st = r.up.status;
-        if (st.length() == 0) { st = Cfg.paired() ? (m.n < 60 ? "Za krótka jazda, nie wysyłam" : "Wysyłka do VeloIQ...") : "Sparuj z VeloIQ, żeby wysłać jazdę"; }
-        if (r.up.lastError.length() > 0) { st = st + " (" + r.up.lastError + ")"; }
-        Ui.text(dc, w / 2, h - btnH - pad - lh - 2, xt, Util.ellipsis(st, 40), Ui.C, Th.accent);
+        // --- wysyłka do VeloIQ: wyraźny stan (zielony pasek = jazda jest w VeloIQ, pasek postępu w trakcie)
+        var up = r.up;
+        var sy = h - btnH - pad - lh - 4;
+        var bw = w - 2 * pad;
+        var isDone = up.doneKey != null && up.doneKey == r.startEpoch;
+        if (isDone) {
+            Ui.fillRect(dc, pad, sy - 1, bw, lh + 4, Th.good);
+            var txt = "JAZDA W VELOIQ";
+            var tw = dc.getTextWidthInPixels(txt, xt);
+            Ui.check(dc, w / 2 - tw / 2 - lh, sy + lh / 6, lh * 2 / 3, Th.bg);
+            Ui.text(dc, w / 2 + lh / 3, sy, xt, txt, Ui.C, Th.bg);
+        } else if (up.running()) {
+            Ui.fillRect(dc, pad, sy - 1, bw, lh + 4, Th.card);
+            if (up.progN > 0) { Ui.fillRect(dc, pad, sy - 1, bw * up.progI / up.progN, lh + 4, Th.accent); }
+            Ui.text(dc, w / 2, sy, xt, "Wysyłam do VeloIQ " + up.progI + "/" + up.progN, Ui.C, Th.fg);
+        } else {
+            var st = up.status;
+            if (!Cfg.paired()) { st = "Sparuj z VeloIQ, żeby wysłać jazdę"; }
+            else if (m.n < 60) { st = "Za krótka jazda, nie wysyłam"; }
+            else if (up.pending() > 0) {
+                st = up.lastError.length() > 0 ? up.lastError : "Jazda czeka na wysyłkę";
+                var wait = up.retryIn();
+                if (wait > 0) { st = st + " · ponowię za " + wait + " s"; }
+            } else if (st.length() == 0) { st = "Wysyłka do VeloIQ..."; }
+            Ui.text(dc, w / 2, sy, xt, Util.ellipsis(st, 40), Ui.C, up.lastError.length() > 0 ? Th.warn : Th.accent);
+        }
 
         var by = h - btnH - pad / 2;
         Ui.button(dc, pad, by, w - 2 * pad, btnH, "GOTOWE", Th.accent, Th.onAccent);

@@ -86,6 +86,11 @@ final class GarminLink: NSObject {
     var onCoachState: (([String: Any]) -> Void)?
     /// Stan mostu do ekranu Czujniki – patrz status().
     var onStatus: (([String: Any]) -> Void)?
+    /// Licznik wysłał jazdę do VeloIQ (klucz = start jazdy, epoch s).
+    var onUpload: ((Int) -> Void)?
+    /// Diagnostyka: ile próbek „live” przyszło od ostatniego wpisu i z jaką mocą.
+    private var liveCount = 0
+    private var liveSince = Date()
 
     private(set) var lastMessageAt = Date.distantPast
     private(set) var lastLive: GarminLive?
@@ -273,6 +278,18 @@ final class GarminLink: NSObject {
         }, isTransient: false)
     }
 
+    /// Wiadomość z licznika = licznik połączony. Status z SDK potrafi nie przyjść (licznik był połączony już przy
+    /// wyborze w Garmin Connect) – bez tego telefon nic by nie wysyłał: ani „hello”, ani „hb”, ani poleceń.
+    fileprivate func markConnected() {
+        guard !connected, app != nil else { return }
+        connected = true
+        ready = true          // skoro licznik nadaje, usługi BLE są gotowe
+        helloRetries = 0
+        note("licznik połączony (przyszła wiadomość)")
+        hello(force: true)
+        emitStatus()
+    }
+
     /// Licznik połączony: przywitanie, gdy usługi BLE są gotowe (albo po 3 s, gdyby SDK nie dało znać).
     private func greetWhenReady() {
         refreshAppStatus()
@@ -332,6 +349,7 @@ final class GarminLink: NSObject {
     func forget() {}
     func send(_ message: [String: Any]) {}
     func hello(force: Bool = false) {}
+    fileprivate func markConnected() {}
     func openApp() {}
     #endif
 
@@ -345,11 +363,27 @@ final class GarminLink: NSObject {
             note("pierwsza wiadomość z licznika (\(type))")
         }
         lastMessageAt = Date()
+        markConnected()
         if !wasStreaming { wasStreaming = true; emitStatus() }
         startWatch()
         switch type {
         case "live":
-            if let v = d["v"] as? [Any], let live = GarminLive(v) { lastLive = live; onLive?(live) }
+            guard let v = d["v"] as? [Any], let live = GarminLive(v) else {
+                note("zła próbka z licznika (\((d["v"] as? [Any])?.count ?? -1) pól)", every: 30)
+                return
+            }
+            lastLive = live
+            liveCount += 1
+            if Date().timeIntervalSince(liveSince) >= 30 {
+                let rec = live.second >= 0 ? "jazda \(live.second) s" : "podgląd"
+                note("z licznika: \(liveCount) próbek / \(Int(Date().timeIntervalSince(liveSince))) s · \(rec) · moc \(live.power.map { "\($0) W" } ?? "--") · HR \(live.hr.map { "\($0)" } ?? "--")")
+                liveCount = 0; liveSince = Date()
+            }
+            onLive?(live)
+        case "up":
+            let k = (d["k"] as? NSNumber)?.intValue ?? 0
+            note("licznik: jazda wysłana do VeloIQ")
+            onUpload?(k)
         case "cue":
             guard let key = d["k"] as? String else { return }
             var vars: [String: String] = [:]

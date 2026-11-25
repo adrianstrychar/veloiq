@@ -74,7 +74,7 @@ jobs:
           # mniejszy i większy ekran: kontrola układu (do logu tylko kilka zrzutów)
           for d in edge830 edge1050; do
             docker run --rm --entrypoint /bin/bash \
-              -e DEVICE=$d -e SHOT_LOG_FILTER='(05|13a|13b|13c|21a|19)-' \
+              -e DEVICE=$d -e SHOT_LOG_FILTER='(01|05|14|14a)-' \
               -v "$PWD/garmin:/app" -w /app \
               ghcr.io/matco/connectiq-tester:latest ci/screens.sh
           done

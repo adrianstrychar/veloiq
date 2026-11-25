@@ -16,7 +16,7 @@ import { hmmss } from './parts';
 import { loadSavedRoute } from './RouteCard';
 import type { RideRoute } from '@/lib/ride/gpx';
 import { applyRaceTargets, type RacePacing } from '@/lib/ride/race-pacing';
-import { GarminRideDone } from './GarminRideDone';
+import { GarminLastUpload, GarminRideDone } from './GarminRideDone';
 
 type Screen = 'home' | 'sensors' | 'pre' | 'live' | 'summary';
 
@@ -161,7 +161,7 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, on
         </div>
       </section>
     )}
-    {ride.mirrorDone && <GarminRideDone ride={ride} onExportStrava={onExportStrava} />}
+    {ride.mirrorDone ? <GarminRideDone ride={ride} onExportStrava={onExportStrava} /> : ride.native && <GarminLastUpload bump={ride.uploadBump} />}
     <HomeScreen ride={ride} plan={plan} planLabel={planLabel} dateLabel={dateLabel[0].toUpperCase() + dateLabel.slice(1)}
       settings={settings} onSettings={updateSettings}
       onStart={() => setScreen('pre')} onFree={() => start(freeRideScript(ftp))} onSensors={() => setScreen('sensors')}

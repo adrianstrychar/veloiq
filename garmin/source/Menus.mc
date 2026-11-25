@@ -31,6 +31,7 @@ module Menus {
             m.addItem(item("Sparuj z VeloIQ", "kod do wpisania w aplikacji", "pair"));
         }
         if (r.interrupted != null) { m.addItem(item("Odrzuć przerwaną jazdę", "bez zapisu i wysyłki", "dropck")); }
+        m.addItem(item(modeLabel(), modeSub(), "mode"));
         m.addItem(item("Jazda swobodna", "nagrywanie, wysiłki, lapy", "free"));
         m.addItem(item("Ustawienia", null, "settings"));
         if (r.up.pending() > 0) {
@@ -39,6 +40,24 @@ module Menus {
         if (Cfg.paired()) { m.addItem(item("Odłącz konto", Cfg.athlete, "unpair")); }
         m.addItem(item("VeloIQ Edge " + Cfg.VERSION, "veloiq-three.vercel.app", "about"));
         return m;
+    }
+
+    function modeLabel() as String { return Cfg.indoor ? "Tryb: trenażer" : "Tryb: na zewnątrz"; }
+    function modeSub() as String { return Cfg.indoor ? "bez GPS, prędkość z mocy" : "GPS, nawigacja po trasie"; }
+
+    //! Trenażer ⇄ na zewnątrz: GPS wyłącza się / włącza od razu.
+    function setIndoor(on as Boolean) as Void {
+        Cfg.save("indoor", on);
+        var hub = getRide().hub;
+        hub.stop();
+        hub.start(!Cfg.indoor);
+    }
+
+    function linkLabel() as String {
+        var r = getRide();
+        if (!Cfg.phoneLink) { return "Most: wyłączony"; }
+        if (r.link.active) { return "Most: telefon słucha"; }
+        return System.getDeviceSettings().phoneConnected ? "Most: VeloIQ w tel. milczy" : "Most: brak telefonu";
     }
 
     function settings() as WatchUi.Menu2 {
@@ -50,6 +69,7 @@ module Menus {
         m.addItem(toggle("Trenażer (bez GPS)", "indoor", Cfg.indoor));
         m.addItem(toggle("Jasny motyw", "theme", Cfg.theme == 1));
         m.addItem(toggle("Most do telefonu", "phone", Cfg.phoneLink));
+        m.addItem(item(linkLabel(), getRide().link.describe(), "linkinfo"));
         if (getRide().course != null) { m.addItem(toggle("Nawigacja po trasie", "nav", Cfg.navOn)); }
         m.addItem(item("Ekrany jazdy", "wykres, wysiłek, paliwo, podjazd", "screens"));
         m.addItem(item("Pola danych: strona 1", null, "fields0"));
@@ -201,6 +221,11 @@ class HomeMenuDelegate extends WatchUi.Menu2InputDelegate {
             r.clearCheckpoint();
             WatchUi.popView(WatchUi.SLIDE_RIGHT);
             _scr.flash("Przerwana jazda odrzucona");
+        } else if (id.equals("mode")) {
+            Menus.setIndoor(!Cfg.indoor);
+            item.setLabel(Menus.modeLabel());
+            item.setSubLabel(Menus.modeSub());
+            WatchUi.requestUpdate();
         } else if (id.equals("free")) {
             WatchUi.popView(WatchUi.SLIDE_RIGHT);
             _scr.start(true);
@@ -251,12 +276,14 @@ class SettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
             WatchUi.requestUpdate();
         } else if (id.equals("autopause")) { Cfg.save("autoPause", (item as WatchUi.ToggleMenuItem).isEnabled()); }
         else if (id.equals("tones")) { Cfg.save("tones", (item as WatchUi.ToggleMenuItem).isEnabled()); }
-        else if (id.equals("indoor")) {
-            Cfg.save("indoor", (item as WatchUi.ToggleMenuItem).isEnabled());
-            // GPS włącza się / wyłącza od razu
-            var hub = getRide().hub;
-            hub.stop();
-            hub.start(!Cfg.indoor);
+        else if (id.equals("indoor")) { Menus.setIndoor((item as WatchUi.ToggleMenuItem).isEnabled()); }
+        else if (id.equals("linkinfo")) {
+            // sygnał do telefonu (aplikacja VeloIQ odpowie i most się „obudzi”), odświeżony opis
+            var r = getRide();
+            r.link.event({ "t" => "hi", "v" => Cfg.VERSION, "rec" => (r.active() ? 1 : 0) });
+            item.setLabel(Menus.linkLabel());
+            item.setSubLabel(r.link.describe());
+            WatchUi.requestUpdate();
         }
         else if (id.equals("theme")) { Cfg.save("theme", (item as WatchUi.ToggleMenuItem).isEnabled() ? 1 : 0); Th.apply(Cfg.theme); }
         else if (id.equals("phone")) { Cfg.save("link", (item as WatchUi.ToggleMenuItem).isEnabled()); }

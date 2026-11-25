@@ -69,8 +69,10 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
   const mirror = ride.mirror;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { if (!mirror) return; const t = setInterval(() => setNow(Date.now()), 2000); return () => clearInterval(t); }, [mirror]);
-  const silentSec = mirror ? Math.round((now - (ride.liveAt || mirror.startedAt)) / 1000) : 0;
-  const linkLost = !!mirror && ride.liveAt > 0 && silentSec >= 8;
+  // cisza liczona od ostatniej próbki, a gdy żadna nie przyszła – od chwili, gdy telefon dołączył do jazdy
+  const silentSec = mirror ? Math.round((now - (ride.liveAt || ride.mirrorAt || now)) / 1000) : 0;
+  const linkLost = !!mirror && silentSec >= 8;
+  const neverLive = !!mirror && !ride.liveAt;
 
   const phase = ride.paused ? 'paused' : ride.autoPaused ? 'ridePaused' : live?.phase ?? 'running';
   const type = live?.stepType ?? plan?.steps[0]?.type ?? 'warmup';
@@ -135,8 +137,11 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
 
       {mirror && linkLost && (
         <section className={s.cardAmber} role="status" style={{ padding: '10px 14px' }}>
-          <span className={s.strong}>Brak danych z licznika od {silentSec} s</span>
-          <span className={s.small}>Jazda nagrywa się dalej na liczniku. Sprawdź, czy aplikacja VeloIQ na liczniku jest otwarta, a telefon jest w pobliżu z włączonym Bluetooth.</span>
+          <span className={s.strong}>{neverLive ? 'Licznik zaczął jazdę, ale nie przysyła danych na żywo' : `Brak danych z licznika od ${silentSec} s`}</span>
+          <span className={s.small}>
+            Jazda nagrywa się dalej na liczniku. Sprawdź, czy aplikacja VeloIQ na liczniku jest otwarta, a telefon jest w pobliżu z włączonym Bluetooth.
+            {neverLive && ' Szczegóły: Czujniki → Licznik Garmin Edge → Diagnostyka.'}
+          </span>
         </section>
       )}
 
