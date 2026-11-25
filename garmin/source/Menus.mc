@@ -92,6 +92,30 @@ module Menus {
         return m;
     }
 
+    //! Przycisk ENZO: wszystkie polecenia do wybrania ręcznie – to samo, co komendy głosowe przez telefon
+    //! (id pozycji = komenda dla Ride.onPhoneCommand), plus rozmowa głosem, gdy działa most do telefonu.
+    function enzo() as WatchUi.Menu2 {
+        var r = getRide();
+        var e = r.eng;
+        var m = new WatchUi.Menu2({ :title => "Enzo" });
+        if (r.link.active) { m.addItem(item("Mów do Enzo", "głos przez telefon", "talk")); }
+        m.addItem(item("Zapytaj Enzo", "gotowe pytania, odpowiedź na ekranie", "ask"));
+        if (e != null && e.phase != Phase.FREE) { m.addItem(item("Zmień plan", "dłużej, krócej, mocniej, +interwał", "plan")); }
+        m.addItem(item("Zjadłem żel", "+25 g węglowodanów", "eat:25"));
+        m.addItem(item("Zjadłem baton", "+40 g węglowodanów", "eat:40"));
+        m.addItem(item("Wypiłem", null, "drink"));
+        if (!Cfg.indoor) {
+            m.addItem(item("Najbliższa kawiarnia", "dojazd profilem roweru", "route:poi:cafe"));
+            m.addItem(item("Najbliższa woda", "źródło, kran, sklep", "route:poi:water"));
+            m.addItem(item("Najbliższy serwis", "sklep rowerowy", "route:poi:bike"));
+            if (r.nav != null) { m.addItem(item("Wróć na trasę", "nowy dojazd do śladu", "route:rejoin")); }
+            m.addItem(item("Prowadź do startu", "trasa z powrotem", "route:start"));
+        }
+        m.addItem(item("Pokaż wykres", null, "page:wykres"));
+        m.addItem(item("Pokaż paliwo", null, "page:paliwo"));
+        return m;
+    }
+
     //! Zmiany planu w trakcie jazdy – to samo, co komendy głosowe przez telefon („dodaj minutę”, „mocniej o 5%”…).
     function planEdits() as WatchUi.Menu2 {
         var e = getRide().eng;
@@ -345,6 +369,26 @@ class RideMenuDelegate extends WatchUi.Menu2InputDelegate {
         else if (id.equals("rejoin")) { r.reroute("rejoin"); }
         else if (id.equals("tostart")) { r.reroute("start"); }
         WatchUi.popView(WatchUi.SLIDE_RIGHT);
+    }
+}
+
+class EnzoMenuDelegate extends WatchUi.Menu2InputDelegate {
+    function initialize() { Menu2InputDelegate.initialize(); }
+
+    function onSelect(item as WatchUi.MenuItem) as Void {
+        var id = item.getId().toString();
+        var r = getRide();
+        if (id.equals("ask")) {
+            WatchUi.switchToView(Menus.questions(), new QuestionMenuDelegate(), WatchUi.SLIDE_LEFT);
+            return;
+        }
+        if (id.equals("plan")) {
+            WatchUi.switchToView(Menus.planEdits(), new PlanEditDelegate(), WatchUi.SLIDE_LEFT);
+            return;
+        }
+        WatchUi.popView(WatchUi.SLIDE_DOWN);
+        if (id.equals("talk")) { r.talkToPhone(); }
+        else { r.onPhoneCommand(id); }       // ta sama ścieżka co polecenie głosowe z telefonu
     }
 }
 

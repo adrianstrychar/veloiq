@@ -6,7 +6,7 @@ import Toybox.UserProfile;
 //! Ustawienia i dane zawodnika trzymane na urządzeniu (Application.Storage), z kopią w pamięci.
 module Cfg {
     const DEFAULT_API = "https://veloiq-three.vercel.app";
-    const VERSION = "0.3.0";
+    const VERSION = "0.3.1";
 
     var apiBase as String = "https://veloiq-three.vercel.app";
     var token as String = "";          // token urządzenia po sparowaniu z kontem VeloIQ

@@ -99,8 +99,9 @@ class HomeScreen {
         var cw = (w - 2 * pad) / 4;
         var labels = ["MOC", "TĘTNO", "GPS", "TELEFON"];
         var vals = [hub.power == null ? "--" : hub.power.format("%d") + " W", hub.hr == null ? "--" : hub.hr.format("%d"),
-            Cfg.indoor ? "wył." : (hub.hasGps() ? "OK" : "szukam"), r.link.active ? "VeloIQ" : (System.getDeviceSettings().phoneConnected ? "OK" : "--")];
-        var oks = [hub.power != null, hub.hr != null, Cfg.indoor || hub.hasGps(), System.getDeviceSettings().phoneConnected];
+            Cfg.indoor ? "wył." : (hub.hasGps() ? "OK" : "szukam"), r.link.active ? "VeloIQ" : (System.getDeviceSettings().phoneConnected ? "czeka" : "--")];
+        // TELEFON na zielono dopiero, gdy odezwała się aplikacja VeloIQ w telefonie (samo Garmin Connect to za mało)
+        var oks = [hub.power != null, hub.hr != null, Cfg.indoor || hub.hasGps(), r.link.active];
         for (var k = 0; k < 4; k++) {
             var cx = pad + cw * k + cw / 2;
             Ui.text(dc, cx, y, Graphics.FONT_XTINY, labels[k], Ui.C, Th.dim);
@@ -111,6 +112,7 @@ class HomeScreen {
         var line = note;
         if (line == null && r.up.pending() > 0) { line = r.up.status.length() > 0 ? r.up.status : "Jazda czeka na wysyłkę"; }
         if (line == null && r.up.status.length() > 0) { line = r.up.status; }
+        if (line == null && Cfg.phoneLink && !r.link.active && System.getDeviceSettings().phoneConnected) { line = "Otwórz VeloIQ w telefonie"; }
         if (line == null && r.courseNote != null) { line = r.courseNote; }
         if (line == null && r.course != null && !Cfg.indoor) {
             line = "Trasa: " + Util.ellipsis(r.course.name, 16) + ", " + (r.course.total / 1000.0).format("%.0f") + " km" + (Cfg.navOn ? "" : " (wył.)");

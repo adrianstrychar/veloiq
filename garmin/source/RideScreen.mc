@@ -857,11 +857,10 @@ class RideScreen {
         }
     }
 
-    //! Przycisk Enzo: z mostem do telefonu – rozmowa głosem; bez – pytania z listy, odpowiedź na ekranie.
+    //! Przycisk Enzo: lista poleceń do wybrania ręcznie (plan, jedzenie, nawigacja, pytania); z mostem do
+    //! telefonu na górze „Mów do Enzo” – rozmowa głosem.
     function enzo() as Void {
-        var r = getRide();
-        if (r.link.active) { r.talkToPhone(); }
-        else { WatchUi.pushView(Menus.questions(), new QuestionMenuDelegate(), WatchUi.SLIDE_UP); }
+        WatchUi.pushView(Menus.enzo(), new EnzoMenuDelegate(), WatchUi.SLIDE_UP);
     }
 
     function key(k) as Boolean {
