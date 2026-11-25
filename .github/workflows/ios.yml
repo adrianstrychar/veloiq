@@ -42,6 +42,14 @@ jobs:
           grep -c "" /tmp/voice-test.swift
           swift /tmp/voice-test.swift
 
+      - name: Próbki z licznika Garmin (test bez aplikacji)
+        run: |
+          { echo 'import Foundation'
+            awk '/^struct GarminLive \{/{f=1} f{print} f && /^}$/{exit}' mobile/ios-src/RideEngine/GarminLink.swift
+            cat mobile/ios-tests/GarminLiveTest.swift; } > /tmp/live-test.swift
+          grep -c "" /tmp/live-test.swift
+          swift /tmp/live-test.swift
+
       - name: Projekt iOS (mobile/setup-ios.sh)
         run: bash mobile/setup-ios.sh
 
