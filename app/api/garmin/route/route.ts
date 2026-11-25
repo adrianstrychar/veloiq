@@ -68,7 +68,11 @@ export async function POST(req: NextRequest) {
           const km = Math.max(0.1, Math.round((Number(ahead[0]) - prog) / 100) / 10);
           return NextResponse.json({ keep: true, say: `${String(ahead[2]) || 'Jest'} – na trasie za ${km} kilometra. Jedziemy dalej tą trasą.` });
         }
-        const p = await nearestPoi({ lat, lon }, kind);
+        const p = await nearestPoi({ lat, lon }, kind).catch((e) => {
+          console.error('[garmin/route] overpass', e instanceof Error ? e.message : e);
+          return undefined;
+        });
+        if (p === undefined) return NextResponse.json({ error: 'poi_unavailable', message: 'Wyszukiwarka miejsc teraz nie odpowiada. Spróbuj za chwilę.' }, { status: 503 });
         if (!p) return NextResponse.json({ error: 'not_found', message: 'W pobliżu nic takiego nie znalazłem.' }, { status: 404 });
         dest = p;
       }

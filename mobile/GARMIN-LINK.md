@@ -25,6 +25,10 @@ Rozpoznawane od razu w telefonie (bez serwera), resztę rozumie trener AI (`/api
 | „jeszcze jeden interwał” | `repeat` |
 | „zjadłem żel / batona”, „wypiłem” | `eat:25` / `eat:40` / `drink` |
 | „prowadź do startu / do domu”, „wróć na trasę” | `route:start` / `route:rejoin` (licznik pyta serwer o nową trasę profilem roweru) |
+| „najbliższa kawiarnia / woda / serwis / toaleta / stacja paliw / sklep” (też „gdzie jest najbliższa woda?”) | `route:poi:<rodzaj>` – gdy taki punkt jest na trasie do 6 km przed nami, licznik tylko mówi, gdzie; inaczej objazd do najbliższego (do 8 km) |
+| „prowadź do Szklarskiej Poręby”, „jedź do Jeleniej Góry” | `route:place:<nazwa>` (geokoder Photon blisko nas, nazwa z polskimi znakami) |
+
+Objazdy (start, miejsce, punkt) zapamiętują główną trasę: „wróć na trasę” prowadzi z powrotem na nią, od miejsca, w którym z niej zjechaliśmy.
 | „pokaż mapę / wykres / paliwo / podjazd / wysiłek” | `page:…` (strona licznika) |
 
 ## Protokół (słowniki z krótkimi kluczami)

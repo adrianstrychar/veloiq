@@ -6,6 +6,9 @@ import { dist, type PoiKind, type RideRoute, type RoutePoi } from '@/lib/ride/gp
 export const OVERPASS_URLS = () => [
   ...(process.env.OVERPASS_URL ? [process.env.OVERPASS_URL] : []),
   'https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
+  // ostatnia deska ratunku (publiczny mirror VK Maps): w testach z GitHub Actions jedyny, który odpowiadał od ręki.
+  // Dostaje tylko samo zapytanie z serwera VeloIQ (współrzędne, bez danych użytkownika). Własny serwer: OVERPASS_URL.
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 /** overpass-api.de odrzuca (406) zapytania, które nie wyglądają na zwykłego klienta OSM: potrzebny opisowy
  *  User-Agent, Referer i szerokie Accept (samo „application/json” kończy się 406). Ponawianie po 406 grozi banem,
@@ -100,7 +103,7 @@ type OverpassEl = { type?: string; id?: number; lat?: number; lon?: number; cent
 /** Zapytanie do publicznych serwerów Overpass „z asekuracją”: zaczyna od pierwszego, a gdy ten po `hedgeMs` nie odpowie
  *  (albo od razu odmówi), dokłada kolejny; wygrywa pierwsza poprawna odpowiedź, reszta jest przerywana.
  *  Bez zalewania serwerów – kolejny dochodzi dopiero, gdy poprzedni milczy albo odmówił. */
-export async function overpassFetch(query: string, budgetMs = 25000, fetcher: typeof fetch = fetch, hedgeMs = 5000): Promise<OverpassEl[]> {
+export async function overpassFetch(query: string, budgetMs = 25000, fetcher: typeof fetch = fetch, hedgeMs = 4000): Promise<OverpassEl[]> {
   const urls = OVERPASS_URLS();
   const body = `data=${encodeURIComponent(query)}`;
   const ctls: AbortController[] = [];

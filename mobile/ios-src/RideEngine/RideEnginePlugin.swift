@@ -1155,9 +1155,22 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
 
     /// Polecenia głosowe rozpoznawane od razu w telefonie (bez serwera): korekty planu, nawigacja, ekrany licznika.
     /// `t` – tekst bez polskich znaków, małymi literami. Zwraca akcję (jak w odpowiedzi trenera) i krótkie potwierdzenie.
-    static func voiceCommand(_ t: String) -> (action: String, say: String)? {
+    /// `t` – tekst po złożeniu (małe litery, bez polskich znaków); `original` – to samo zdanie w oryginale
+    /// (nazwa miejsca idzie do geokodera z polskimi znakami: „Szklarskiej Poręby”, a nie „szklarskiej poreby”).
+    static func voiceCommand(_ t: String, original: String? = nil) -> (action: String, say: String)? {
         func has(_ ws: String...) -> Bool { ws.contains { t.contains($0) } }
         if has("jak w planie", "przywroc cel", "normalny cel", "cel z planu", "cele z planu") { return ("bias:0", "Cele jak w planie.") }
+        // najbliższy punkt (jak „OK Garmin, najbliższa kawiarnia”) – licznik pyta serwer o trasę profilem roweru.
+        // Przed filtrem pytań: „gdzie jest najbliższa woda?” to też polecenie (objazd; „wróć na trasę” wraca).
+        if has("najblizsz", "gdzie jest", "znajdz", "prowadz do", "jedz do", "nawiguj do", "zabierz mnie do", "szukam") {
+            // całe słowa tam, gdzie łatwo o pomyłkę: „wodospad” to miejsce, a nie woda; „stacja kolejowa” to nie stacja paliw
+            let kinds: [(String, String, String)] = [("kawiarn", "cafe", "kawiarni"), ("kawe", "cafe", "kawiarni"), ("kawa", "cafe", "kawiarni"),
+                ("woda", "water", "wody"), ("wody", "water", "wody"), ("wode", "water", "wody"), ("zrodl", "water", "wody"), ("bidon", "water", "wody"),
+                ("serwis", "bike", "serwisu rowerowego"), ("sklep rowerow", "bike", "serwisu rowerowego"), ("toalet", "toilets", "toalety"),
+                (" wc", "toilets", "toalety"), ("stacji paliw", "fuel", "stacji paliw"), ("stacja paliw", "fuel", "stacji paliw"),
+                ("stacje paliw", "fuel", "stacji paliw"), ("orlen", "fuel", "stacji paliw"), ("sklep", "shop", "sklepu")]
+            if !has("wodospad"), let k = kinds.first(where: { t.contains($0.0) }) { return ("route:poi:\(k.1)", "Szukam najbliższej \(k.2).") }
+        }
         if has("czy ", "?", "ile ", "jak ") { return nil }        // pytanie, nie polecenie
         // liczba z tekstu: cyfry albo słowa (pół, półtorej, jedna… dziesięć, piętnaście, dwadzieścia)
         func amount() -> Double? {
@@ -1192,23 +1205,20 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             return ("bias:-\(p)", "Cel w dół o \(p) procent.")
         }
         // --- nawigacja (licznik Garmin liczy nową trasę profilem roweru)
-        if has("do startu", "do domu", "wracam do domu", "zabierz mnie do", "powrot do startu", "droge do domu") { return ("route:start", "Wyznaczam trasę do startu.") }
+        if has("do startu", "do domu", "wracam do domu", "powrot do startu", "droge do domu") { return ("route:start", "Wyznaczam trasę do startu.") }
         if has("wroc na trase", "powrot na trase", "zgubilem sie", "zgubilam sie", "prowadz na trase", "z powrotem na trase") { return ("route:rejoin", "Wyznaczam powrót na trasę.") }
-        // najbliższy punkt (jak „OK Garmin, najbliższa kawiarnia”) – licznik pyta serwer o trasę profilem roweru
-        if has("najblizsz", "gdzie jest", "znajdz", "prowadz do", "jedz do", "nawiguj do", "zabierz mnie do", "szukam") {
-            let kinds: [(String, String, String)] = [("kawiarn", "cafe", "kawiarni"), ("kawe", "cafe", "kawiarni"), ("kawa", "cafe", "kawiarni"),
-                ("wod", "water", "wody"), ("zrodl", "water", "wody"), ("bidon", "water", "wody"), ("serwis", "bike", "serwisu rowerowego"),
-                ("sklep rowerow", "bike", "serwisu rowerowego"), ("toalet", "toilets", "toalety"), (" wc", "toilets", "toalety"),
-                ("stacj", "fuel", "stacji"), ("sklep", "shop", "sklepu")]
-            if let k = kinds.first(where: { t.contains($0.0) }) { return ("route:poi:\(k.1)", "Szukam najbliższej \(k.2).") }
-        }
         // „prowadź do Szklarskiej Poręby” – cel z nazwy (geokoder na serwerze, blisko nas)
         for lead in ["prowadz do ", "jedz do ", "nawiguj do ", "zabierz mnie do ", "trasa do ", "trase do "] {
             if let r = t.range(of: lead) {
-                let place = t[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
-                if place.count >= 3, !["startu", "domu", "trasy", "mety"].contains(place) {
-                    return ("route:place:\(place)", "Szukam trasy do: \(place).")
+                let folded = t[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+                guard folded.count >= 3, !["startu", "domu", "trasy", "mety"].contains(folded) else { continue }
+                // ta sama końcówka z oryginału (złożenie zachowuje liczbę znaków w polskim tekście)
+                var place = folded
+                if let o = original, o.count == t.count {
+                    let off = t.distance(from: t.startIndex, to: r.upperBound)
+                    place = String(o.dropFirst(off)).trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
                 }
+                return ("route:place:\(place)", "Szukam trasy do: \(place).")
             }
         }
         // --- ekrany licznika
@@ -1261,7 +1271,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             play(lead("ateOk"), "Zapisane – zjedzone."); return true
         }
         // --- korekty planu, nawigacja i ekrany licznika (od razu, bez serwera)
-        if let cmd = Self.voiceCommand(t) {
+        if let cmd = Self.voiceCommand(t, original: q) {
             let phoneLeads = engineQueue.sync { self.engine != nil }
             if !phoneLeads && !GarminLink.shared.isStreaming && (cmd.action.hasPrefix("route:") || cmd.action.hasPrefix("page:")) {
                 play([], "To polecenie działa z licznikiem Garmin."); return true
