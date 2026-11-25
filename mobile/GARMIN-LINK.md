@@ -35,13 +35,24 @@ Objazdy (start, miejsce, punkt) zapamiętują główną trasę: „wróć na tra
 
 | Kierunek | Wiadomość |
 |---|---|
-| Edge → telefon | `{t:"live", v:[s, moc, tętno, kadencja, prędkość×10, faza, krok, zostało, cel↓, cel↑, pauza, moc 3 s, średnia kroku, falstart, przeciąganie, dystans m, sekundy kroku]}` – co sekundę w trakcie jazdy (co 5 s, gdy telefon milczy), przed startem co 2 s (`s = -1`); `-1` = brak czujnika |
+| Edge → telefon | `{t:"live", v:[s, moc, tętno, kadencja, prędkość×10, faza, krok, zostało, cel↓, cel↑, pauza, moc 3 s, średnia kroku, falstart, przeciąganie, dystans m, sekundy kroku]}` – co sekundę w trakcie jazdy (także zanim telefon się przywita), przed startem co 2 s, gdy telefon słucha, inaczej co 5 s (`s = -1`); `-1` = brak czujnika |
 | | `{t:"state", s:"start", k, w, id, ftp, free, in, st:[[typ, czas, moc↓, moc↑, kad↓, kad↑, nazwa]…], el, p, sync?}` – plan dla trybu lustra |
 | | `{t:"st", st:{stan jazdy}}` – co 30 s i na `cmd:"state"`; `{t:"hi", v, rec}` – odpowiedź na `hello` |
 | | `{t:"cue", k, kind, x, v}` – komunikat silnika albo nawigacji (`kind:"nav"`) |
 | | `{t:"talk", st:{stan jazdy}, q?, tk?, b?}` – przycisk ENZO; `q` = gotowe pytanie (raport), `tk`/`b` = token rozmowy i adres serwera |
-| | `{t:"state", s:"start\|pause\|resume\|end", …}` |
+| | `{t:"state", s:"start\|pause\|resume\|end", …}` · `{t:"up", k, ok:1}` – jazda wysłana do VeloIQ |
 | telefon → Edge | `{cmd:…}`: next, pause, resume, cancel, lap, eat, drink, talk, report, sync, state, resync, repeat, extend:N, bias:N, eat:G, route:start, route:rejoin, page:ID · `{say:"odpowiedź Enzo"}` · `{hello:1}` · `{hb:1}` (co 10 s – telefon słucha) |
+
+**Kolejka na liczniku** (`PhoneLink.mc`): najwyżej 3 wiadomości w drodze; kolejna nie czeka na potwierdzenie
+poprzedniej dłużej niż 0,9 s, a wiadomość bez potwierdzenia po 3 s zwalnia miejsce. iPhone potwierdza wysyłkę
+(`onComplete`) często po kilku sekundach albo wcale – czekanie na potwierdzenie dławiło most do jednej wiadomości
+na 20 s. Zdarzenia mają pierwszeństwo, ale próbka `live` idzie co najmniej co drugą wiadomość; nieudane zdarzenie
+(np. start jazdy) wraca do kolejki (3 próby), ponowienia po błędzie co 1–5 s.
+
+**Powitanie z telefonu**: pierwsze `hello` tuż po połączeniu zwykle dostaje `Failure_DeviceNotAvailable`, dlatego
+telefon ponawia je bez limitu (co 4 s, potem co 10 s), aż licznik potwierdzi, a każda wiadomość z licznika też je
+wyzwala. Diagnostyka w telefonie: „powitanie: OK / ponawiam” i co 30 s liczba próbek z licznika z mocą i tętnem.
+Na liczniku: Ustawienia → „Most: …” (wysłane / błędy / bez potwierdzenia).
 
 `hello` włącza nadawanie na liczniku bez wchodzenia w ustawienia. Token rozmowy (`tk`) licznik dostaje z
 `/api/garmin/sync` (ważny 36 h) – dzięki niemu pytania do trenera działają także wtedy, gdy jazda nie była
