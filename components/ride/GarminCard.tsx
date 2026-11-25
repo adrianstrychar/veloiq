@@ -30,7 +30,7 @@ const seen = (iso?: string | null) => {
 
 /** Most licznik → telefon: stan w jednym zdaniu + co zrobić dalej. */
 function linkLine(g: Ride['garminLink']): { ok: boolean; text: string } {
-  if (!g.paired) return { ok: false, text: 'Wybierz licznik raz – potem START na liczniku sam otwiera tę samą jazdę w telefonie: dane na żywo, głos Enzo i „Zapytaj Enzo”. Czujniki zostają przy liczniku.' };
+  if (!g.paired) return { ok: false, text: 'Telefon jeszcze nie rozmawia z licznikiem (to osobny krok od kodu z licznika). Wybierz Edge w Garmin Connect – raz. Potem START na liczniku sam otwiera tę samą jazdę w telefonie: dane na żywo, głos Enzo i „Zapytaj Enzo”.' };
   if (!g.connected) return { ok: false, text: `${g.name ?? 'Licznik'} poza zasięgiem – włącz go i sprawdź, czy jest połączony z Garmin Connect.` };
   if (g.appInstalled === false) return { ok: false, text: 'Na liczniku nie widzę aplikacji VeloIQ. Jeśli jest wgrana kablem, otwórz ją na liczniku – dane mogą popłynąć mimo to.' };
   if (!g.streaming) return { ok: false, text: 'Połączony. Otwórz aplikację VeloIQ na liczniku – telefon sam ją znajdzie (most jest włączony domyślnie od wersji 0.2.2).' };
@@ -114,7 +114,9 @@ export function GarminCard({ ride }: { ride: Ride }) {
         <div className={s.stack} style={{ gap: 10, backgroundColor: '#14171C', borderRadius: 12, padding: '12px' }}>
           <div className={s.row} style={{ gap: 10 }}>
             <span style={{ fontSize: 14, fontWeight: 600 }}>Czujniki i głos Enzo przez licznik</span>
-            {link.paired && <StatusDot ok={!!link.streaming}>{link.streaming ? 'Nadaje' : link.connected ? 'Czeka' : 'Brak'}</StatusDot>}
+            {link.paired
+              ? <StatusDot ok={!!link.streaming}>{link.streaming ? 'Nadaje' : link.connected ? 'Czeka' : 'Brak'}</StatusDot>
+              : <StatusDot ok={false}>Niepołączony</StatusDot>}
           </div>
           <span className={s.small} style={{ fontSize: 13, color: linkLine(link).ok ? 'var(--ok)' : undefined }}>{linkLine(link).text}</span>
           {link.paired ? (

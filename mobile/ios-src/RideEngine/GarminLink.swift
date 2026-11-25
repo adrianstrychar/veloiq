@@ -163,6 +163,10 @@ final class GarminLink: NSObject {
     private var connected = false
     private var appInstalled: Bool?
     private var configured = false
+    /// SDK: „połączony” nie znaczy jeszcze, że usługi BLE licznika są odkryte – wiadomości wysłane wcześniej
+    /// potrafią przepaść. Czekamy na deviceCharacteristicsDiscovered (z zapasem: po 3 s i tak próbujemy).
+    private var ready = false
+    private var helloRetries = 0
 
     private func baseStatus() -> [String: Any] {
         var d: [String: Any] = ["available": true, "paired": device != nil, "connected": connected]
@@ -197,10 +201,14 @@ final class GarminLink: NSObject {
     /// Z SceneDelegate – true, gdy URL był odpowiedzią Garmin Connect (wtedy nie idzie dalej do Capacitora).
     @discardableResult
     func handle(url: URL) -> Bool {
-        guard url.scheme == Self.urlScheme,
-              let list = ConnectIQ.sharedInstance().parseDeviceSelectionResponse(from: url) as? [IQDevice],
-              let dev = list.first(where: { ($0.modelName ?? "").lowercased().contains("edge") }) ?? list.first
-        else { return false }
+        guard url.scheme == Self.urlScheme else { return false }
+        let list = (ConnectIQ.sharedInstance().parseDeviceSelectionResponse(from: url) as? [IQDevice]) ?? []
+        guard let dev = list.first(where: { ($0.modelName ?? "").lowercased().contains("edge") }) ?? list.first else {
+            // inne linki veloiq:// (logowanie) idą dalej do Capacitora; w dzienniku widać, że wrócił pusty wybór
+            note("link \(url.host ?? "-"): bez licznika z Garmin Connect")
+            emitStatus()
+            return false
+        }
         if let data = try? NSKeyedArchiver.archivedData(withRootObject: dev, requiringSecureCoding: true) {
             UserDefaults.standard.set(data, forKey: Self.deviceKey)
         }
@@ -230,9 +238,10 @@ final class GarminLink: NSObject {
         ConnectIQ.sharedInstance().register(forDeviceEvents: dev, delegate: self)
         ConnectIQ.sharedInstance().register(forAppMessages: a, delegate: self)
         connected = ConnectIQ.sharedInstance().getDeviceStatus(dev) == .connected
+        ready = false
+        helloRetries = 0
         note(connected ? "licznik połączony" : "licznik poza zasięgiem / wyłączony")
-        refreshAppStatus()
-        hello(force: true)
+        if connected { greetWhenReady() } else { refreshAppStatus() }
         emitStatus()
     }
 
@@ -247,10 +256,32 @@ final class GarminLink: NSObject {
         lastHello = Date()
         ConnectIQ.sharedInstance().sendMessage(["hello": 1], to: a, progress: nil, completion: { [weak self] r in
             DispatchQueue.main.async {
-                self?.note(r == .success ? "hello → licznik OK" : "hello → licznik: \(NSStringFromSendMessageResult(r) ?? "błąd")")
-                self?.emitStatus()
+                guard let self = self else { return }
+                if r == .success {
+                    self.helloRetries = 0
+                    self.note("hello → licznik OK")
+                } else {
+                    self.note("hello → licznik: \(NSStringFromSendMessageResult(r) ?? "błąd")")
+                    // nieudane powitanie ponawiamy kilka razy co 5 s – bez niego licznik nie wie, że telefon słucha
+                    if self.helloRetries < 5 {
+                        self.helloRetries += 1
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.hello(force: true) }
+                    }
+                }
+                self.emitStatus()
             }
         }, isTransient: false)
+    }
+
+    /// Licznik połączony: przywitanie, gdy usługi BLE są gotowe (albo po 3 s, gdyby SDK nie dało znać).
+    private func greetWhenReady() {
+        refreshAppStatus()
+        if ready { hello(force: true); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self = self, self.connected, !self.ready else { return }
+            self.note("licznik: brak sygnału gotowości – witam mimo to")
+            self.hello(force: true)
+        }
     }
 
     private func refreshAppStatus() {
@@ -354,8 +385,22 @@ extension GarminLink: IQDeviceEventDelegate, IQAppMessageDelegate {
                 let i = Int(status.rawValue)
                 self.note("licznik: \(i >= 0 && i < names.count ? names[i] : "status \(i)")")
             }
-            if self.connected && !was { self.refreshAppStatus(); self.hello(force: true) }
+            if !self.connected { self.ready = false }
+            if self.connected && !was { self.helloRetries = 0; self.greetWhenReady() }
             self.emitStatus()
+        }
+    }
+
+    func deviceCharacteristicsDiscovered(_ device: IQDevice!) {
+        DispatchQueue.main.async {
+            let first = !self.ready
+            self.ready = true
+            if first {
+                self.note("licznik gotowy do rozmowy")
+                self.helloRetries = 0
+                self.refreshAppStatus()
+                self.hello(force: true)
+            }
         }
     }
 
