@@ -1,6 +1,8 @@
 // Wyszukiwanie miejsc do planera tras (Photon / komoot – geokoder na danych OSM, bez klucza).
 // Wyniki bliżej zawodnika wyżej (lat/lon jako podpowiedź), etykieta po polsku: nazwa · miejscowość · region.
 export const PHOTON_URL = () => process.env.PHOTON_URL || 'https://photon.komoot.io/api';
+/** Publiczny Photon (komoot) prosi o opisowy User-Agent. */
+export const PHOTON_HEADERS: Record<string, string> = { 'User-Agent': 'VeloIQ/1.0 (planer tras rowerowych; +https://veloiq-three.vercel.app)', Referer: 'https://veloiq-three.vercel.app/' };
 
 export interface Place { name: string; label: string; lat: number; lon: number }
 

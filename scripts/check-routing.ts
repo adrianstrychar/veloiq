@@ -9,7 +9,7 @@ import { destination, loopRadius, loopWaypoints, planRoutes, similarity, surface
 import { estimateSeconds, speedFor } from '../lib/route/estimate';
 import { surfaceOf, parseTags } from '../lib/route/surface';
 import { fetchPois, nearestPoi, overpassFetch, OVERPASS_URLS, kindOf, overpassQuery, poisFromOverpass, samplePath } from '../lib/route/pois';
-import { photonUrl, placesFromPhoton } from '../lib/route/geocode';
+import { PHOTON_HEADERS, photonUrl, placesFromPhoton } from '../lib/route/geocode';
 import { buildCourse, courseMeta, decodeParts } from '../lib/garmin/course';
 import { rejoinIndex, spliceCourse } from '../lib/route/reroute';
 import { dist } from '../lib/ride/gpx';
@@ -22,7 +22,7 @@ let warn = 0;
 const soft = async (name: string, fn: () => void | Promise<void>) => {
   try { await ok(name, fn); } catch (e) {
     const m = e instanceof Error ? e.message : String(e);
-    if (!/^overpass/.test(m)) throw e;
+    if (!/^(overpass|photon)/.test(m)) throw e;
     warn++; console.log(`WARN ${name}: ${m}`);
   }
 };
@@ -303,16 +303,29 @@ async function live() {
     console.log(`    najbliższa kawiarnia: ${p ? `${p.name} (${p.lat.toFixed(4)}, ${p.lon.toFixed(4)})` : 'brak'}`);
     assert.ok(p != null && Math.abs(p.lat - KARPACZ.lat) < 0.08 && Math.abs(p.lon - KARPACZ.lon) < 0.12);
   });
-  await ok('LIVE geokoder „Szklarska Poręba”', async () => {
-    const r = await fetch(photonUrl('Szklarska Poręba', KARPACZ));
-    const pl = placesFromPhoton(await r.json());
+  await soft('LIVE geokoder „Szklarska Poręba”', async () => {
+    const r = await fetch(photonUrl('Szklarska Poręba', KARPACZ), { headers: PHOTON_HEADERS, signal: AbortSignal.timeout(15000) }).catch((e) => { throw new Error(`photon: ${e}`); });
+    const body = await r.text();
+    if (!r.ok) throw new Error(`photon ${r.status}: ${body.slice(0, 120)}`);
+    const pl = placesFromPhoton(JSON.parse(body));
+    if (pl.length === 0) throw new Error(`photon: pusta odpowiedź ${body.slice(0, 160)}`);
     console.log(`    ${pl.slice(0, 3).map((p) => p.label).join(' | ')}`);
     assert.ok(pl.length > 0 && Math.abs(pl[0].lat - 50.83) < 0.1);
+  });
+  // głos: „prowadź do Szklarskiej Poręby” – nazwa w dopełniaczu, tak jak ją słyszy rozpoznawanie mowy
+  await soft('LIVE geokoder w dopełniaczu „Szklarskiej Poręby” / „Jeleniej Góry”', async () => {
+    for (const [q, lat, lon] of [['Szklarskiej Poręby', 50.83, 15.52], ['Jeleniej Góry', 50.90, 15.73]] as const) {
+      const r = await fetch(photonUrl(q, KARPACZ, 3), { headers: PHOTON_HEADERS, signal: AbortSignal.timeout(15000) }).catch((e) => { throw new Error(`photon: ${e}`); });
+      if (!r.ok) throw new Error(`photon ${r.status}`);
+      const pl = placesFromPhoton(await r.json());
+      console.log(`    ${q} → ${pl.slice(0, 2).map((p) => `${p.label} (${p.lat.toFixed(3)}, ${p.lon.toFixed(3)})`).join(' | ') || 'brak'}`);
+      assert.ok(pl.length > 0 && Math.abs(pl[0].lat - lat) < 0.15 && Math.abs(pl[0].lon - lon) < 0.2, `${q} → ${pl[0]?.label}`);
+    }
   });
 }
 
 (async () => {
   await offline();
   if (process.env.LIVE === '1') await live();
-  console.log(`\n${n} testów OK${warn ? `, ${warn} ostrzeżeń (Overpass nie odpowiedział)` : ''}`);
+  console.log(`\n${n} testów OK${warn ? `, ${warn} ostrzeżeń (publiczny serwis nie odpowiedział)` : ''}`);
 })().catch((e) => { console.error('FAIL', e, (e as { detail?: string })?.detail ?? ''); process.exit(1); });

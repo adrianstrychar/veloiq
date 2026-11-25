@@ -5,7 +5,7 @@ import { buildCourse, courseMeta, CourseError, decodeParts, loadCourse, POI_CODE
 import { planRoutes } from '@/lib/route/plan';
 import { PROFILES, RoutingError, type RouteProfile } from '@/lib/route/brouter';
 import { rejoinIndex, spliceCourse } from '@/lib/route/reroute';
-import { photonUrl, placesFromPhoton } from '@/lib/route/geocode';
+import { PHOTON_HEADERS, photonUrl, placesFromPhoton } from '@/lib/route/geocode';
 import { nearestPoi } from '@/lib/route/pois';
 
 export const dynamic = 'force-dynamic';
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       if (b.to === 'place') {
         const q = String(b.q ?? '').trim().slice(0, 80);
         if (q.length < 2) return NextResponse.json({ error: 'no_place', message: 'Nie usłyszałem nazwy miejsca.' }, { status: 400 });
-        const r = await fetch(photonUrl(q, { lat, lon }, 3), { headers: { 'User-Agent': 'VeloIQ/1.0 (+https://veloiq-three.vercel.app)' }, signal: AbortSignal.timeout(8000) });
+        const r = await fetch(photonUrl(q, { lat, lon }, 3), { headers: PHOTON_HEADERS, signal: AbortSignal.timeout(8000) });
         const p = r.ok ? placesFromPhoton(await r.json())[0] : undefined;
         if (p) dest = { lat: p.lat, lon: p.lon, name: p.name };
         if (!dest) return NextResponse.json({ error: 'not_found', message: `Nie znalazłem: ${q}.` }, { status: 404 });
