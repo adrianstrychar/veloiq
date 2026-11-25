@@ -9,7 +9,7 @@ import { destination, loopRadius, loopWaypoints, planRoutes, similarity, surface
 import { estimateSeconds, speedFor } from '../lib/route/estimate';
 import { surfaceOf, parseTags } from '../lib/route/surface';
 import { fetchPois, nearestPoi, overpassFetch, OVERPASS_URLS, kindOf, overpassQuery, poisFromOverpass, samplePath } from '../lib/route/pois';
-import { findPlace, PHOTON_HEADERS, photonUrl, pickPlace, placesFromPhoton } from '../lib/route/geocode';
+import { findPlace, nominativeGuess, PHOTON_HEADERS, photonUrl, pickPlace, placesFromPhoton } from '../lib/route/geocode';
 import { buildCourse, courseMeta, decodeParts } from '../lib/garmin/course';
 import { rejoinIndex, spliceCourse } from '../lib/route/reroute';
 import { dist } from '../lib/ride/gpx';
@@ -257,6 +257,11 @@ async function offline() {
     assert.equal(pickPlace([far, town], [obelisk], KARPACZ)?.name, 'Szklarska Poręba');
     assert.equal(pickPlace([far], [obelisk], KARPACZ)?.name, obelisk.name);
     assert.equal(pickPlace([far], [], KARPACZ), null);
+    // dopełniacz z mowy → mianownik do wyszukiwania miejscowości
+    for (const [g, n] of [['Szklarskiej Poręby', 'Szklarska Poręba'], ['Jeleniej Góry', 'Jelenia Góra'], ['Karpacza', 'Karpacz'], ['Przesieki', 'Przesieka'],
+      ['Przełęczy Okraj', 'Przełęcz Okraj'], ['Wrocławia', 'Wrocław'], ['Białej Wody', 'Biała Woda'], ['Śnieżki', 'Śnieżka'], ['Kowar', 'Kowar']]) {
+      assert.equal(nominativeGuess(g), n, g);
+    }
   });
 }
 
