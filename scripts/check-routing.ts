@@ -16,6 +16,16 @@ import { dist } from '../lib/ride/gpx';
 
 let n = 0;
 const ok = async (name: string, fn: () => void | Promise<void>) => { await fn(); n++; console.log(`ok  ${name}`); };
+// publiczne serwery Overpass bywają przeciążone albo odcinają adresy CI – brak odpowiedzi to ostrzeżenie, nie błąd kodu
+// (zła odpowiedź, która przyszła, nadal kończy test błędem)
+let warn = 0;
+const soft = async (name: string, fn: () => void | Promise<void>) => {
+  try { await ok(name, fn); } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    if (!/^overpass/.test(m)) throw e;
+    warn++; console.log(`WARN ${name}: ${m}`);
+  }
+};
 const M_LAT = 1 / 110_540;
 const mLon = (lat: number) => 1 / (111_320 * Math.cos((lat * Math.PI) / 180));
 
@@ -279,13 +289,17 @@ async function live() {
     const l = await planRoutes({ mode: 'ab', start: KARPACZ, end: JELENIA, profile: 'calm' }, rider);
     show('spokojna', l);
   });
-  await ok('LIVE „Przed tobą” (Overpass) dla trasy szosowej', async () => {
-    const pois = await fetchPois(road[0].route);
+  await soft('LIVE „Przed tobą” (Overpass) dla trasy szosowej', async () => {
+    const t0 = Date.now();
+    const pois = await fetchPois(road[0].route, fetch, 45000);
+    console.log(`    czas: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     console.log(`    punkty: ${pois.length} → ${pois.slice(0, 8).map((p) => `${p.name} @${km(p.d)}`).join(', ')}`);
     assert.ok(Array.isArray(pois));
   });
-  await ok('LIVE „prowadź do najbliższej kawiarni” (Overpass, 8 km)', async () => {
-    const p = await nearestPoi(KARPACZ, 'cafe');
+  await soft('LIVE „prowadź do najbliższej kawiarni” (Overpass, 8 km)', async () => {
+    const t0 = Date.now();
+    const p = await nearestPoi(KARPACZ, 'cafe', fetch, 45000);
+    console.log(`    czas: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     console.log(`    najbliższa kawiarnia: ${p ? `${p.name} (${p.lat.toFixed(4)}, ${p.lon.toFixed(4)})` : 'brak'}`);
     assert.ok(p != null && Math.abs(p.lat - KARPACZ.lat) < 0.08 && Math.abs(p.lon - KARPACZ.lon) < 0.12);
   });
@@ -300,5 +314,5 @@ async function live() {
 (async () => {
   await offline();
   if (process.env.LIVE === '1') await live();
-  console.log(`\n${n} testów OK`);
+  console.log(`\n${n} testów OK${warn ? `, ${warn} ostrzeżeń (Overpass nie odpowiedział)` : ''}`);
 })().catch((e) => { console.error('FAIL', e, (e as { detail?: string })?.detail ?? ''); process.exit(1); });
