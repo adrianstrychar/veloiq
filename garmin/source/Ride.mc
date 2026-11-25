@@ -905,6 +905,14 @@ class Ride {
         nav.update(hub.lat, hub.lon, speed == null ? null : speed * 3.6, eng.s);
     }
 
+    //! Nowa trasa z planera w telefonie: pobierz od razu. W trakcie jazdy wchodzi zamiast obecnej (jak powrót na trasę).
+    function courseNow() as Void {
+        if (!Cfg.paired()) { return; }
+        if (active()) { _reroute = true; showBanner("Pobieram nową trasę...", "nav", 5); }
+        courseNote = "Pobieram trasę...";
+        api.get("/api/garmin/course/part", { "i" => "meta" }, method(:onCourseMeta));
+    }
+
     // ------------------------------------------------------------------ powrót na trasę / do startu (serwer VeloIQ)
     //! to = "start" (miejsce startu jazdy) albo "rejoin" (najbliższy sensowny punkt trasy przed nami + reszta trasy).
     //! Serwer wyznacza dojazd profilem trasy (szosa / gravel / MTB) i podmienia trasę; licznik pobiera ją jak zwykle.
@@ -1220,6 +1228,7 @@ class Ride {
         else if (cmd.equals("talk")) { if (eng != null) { talkToPhone(); } }
         else if (cmd.equals("report")) { if (eng != null) { askPhone("raport"); } }
         else if (cmd.equals("sync")) { link.event(active() ? startMsg(true) : { "t" => "state", "s" => "idle" }); }
+        else if (cmd.equals("resync")) { courseNow(); }
         else if (cmd.equals("route:start")) { reroute("start"); }
         else if (cmd.equals("route:rejoin")) { reroute("rejoin"); }
         else if (cmd.equals("state")) { if (eng != null && active()) { link.event({ "t" => "st", "st" => coachState() }); } }

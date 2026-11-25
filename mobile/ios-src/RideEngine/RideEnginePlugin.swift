@@ -40,6 +40,7 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "garminChoose", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "garminForget", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "garminOpenApp", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "garminCommand", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "garminSync", returnType: CAPPluginReturnPromise),
     ]
 
@@ -737,6 +738,12 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     }
     @objc func garminForget(_ call: CAPPluginCall) {
         DispatchQueue.main.async { GarminLink.shared.forget(); call.resolve(GarminLink.shared.status()) }
+    }
+    /// Polecenie z ekranu dla aplikacji na liczniku – tylko z listy dozwolonych.
+    @objc func garminCommand(_ call: CAPPluginCall) {
+        let cmd = call.getString("cmd") ?? ""
+        guard ["resync"].contains(cmd) else { return call.reject("unknown command") }
+        DispatchQueue.main.async { GarminLink.shared.sendCommand(cmd); call.resolve() }
     }
     @objc func garminOpenApp(_ call: CAPPluginCall) {
         DispatchQueue.main.async { GarminLink.shared.openApp(); call.resolve() }

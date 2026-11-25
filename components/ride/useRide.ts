@@ -201,6 +201,8 @@ export function useRide() {
     garminChoose: () => run(() => engine.garminChoose()),
     garminForget: () => run(async () => setGarminLink(await engine.garminForget())),
     garminOpenApp: () => run(() => engine.garminOpenApp()),
+    /** Licznik pobiera trasę z VeloIQ od razu (gdy most działa) – bez czekania na synchronizację. */
+    garminResync: () => engine.garminCommand({ cmd: 'resync' }).catch(() => undefined),
     /** Jazda z licznika (tryb lustra) – null, gdy jazdę prowadzi telefon albo nic nie trwa. */
     mirror, mirrorDone, liveAt, planEdit,
     clearMirrorDone: () => setMirrorDone(null),

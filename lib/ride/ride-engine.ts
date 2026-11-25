@@ -197,6 +197,8 @@ export interface RideEnginePlugin {
   garminChoose(): Promise<void>;
   garminForget(): Promise<GarminLinkStatus>;
   garminOpenApp(): Promise<void>;
+  /** Polecenie dla aplikacji na liczniku: "resync" – pobierz trasę z VeloIQ teraz (także w trakcie jazdy). */
+  garminCommand(o: { cmd: 'resync' }): Promise<void>;
   /** Bieżąca jazda z licznika (po otwarciu / powrocie aplikacji) + prośba do licznika o pełny stan. */
   garminSync(): Promise<GarminLinkStatus & { mirror?: GarminRide }>;
   addListener(event: 'garmin', cb: (d: GarminLinkStatus) => void): Promise<PluginListenerHandle>;

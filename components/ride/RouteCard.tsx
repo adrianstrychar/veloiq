@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import s from './ride.module.css';
 import { routeFromGpx, type RideRoute } from '@/lib/ride/gpx';
 import { RoutePlanner } from './RoutePlanner';
+import { useRideContext } from './RideProvider';
 
 const KEY = 'veloiq.route.v1';
 
@@ -89,6 +90,7 @@ interface GarminCourseInfo { id: string; name: string; total: number; climbs: nu
 /** Trasa na liczniku Garmin Edge (aplikacja VeloIQ na liczniku): wysyłka wybranej trasy i podgląd tego, co czeka
  *  na licznik. Widoczne tylko, gdy konto ma sparowany licznik. Licznik pobiera trasę przy synchronizacji. */
 function GarminCourse({ route }: { route: RideRoute | null }) {
+  const ride = useRideContext();
   const [paired, setPaired] = useState(false);
   const [course, setCourse] = useState<GarminCourseInfo | null>(null);
   const [busy, setBusy] = useState(false);
@@ -105,6 +107,16 @@ function GarminCourse({ route }: { route: RideRoute | null }) {
     } catch { /* offline – sekcja zostaje w ostatnim stanie */ }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  // trasa z planera trafia na licznik sama (raz na trasę) – plik GPX wysyła się przyciskiem
+  const autoSent = useRef<string | null>(null);
+  useEffect(() => {
+    if (!paired || !route?.profile) return;
+    const key = `${route.name}:${route.total}:${route.pts.length}`;
+    if (autoSent.current === key) return;
+    autoSent.current = key;
+    void sendRef.current?.();
+  }, [paired, route]);
+  const sendRef = useRef<(() => Promise<void>) | null>(null);
 
   if (!paired) return null;
 
@@ -116,11 +128,15 @@ function GarminCourse({ route }: { route: RideRoute | null }) {
       const j = (await r.json().catch(() => ({}))) as { ok?: boolean; course?: GarminCourseInfo; message?: string };
       if (r.ok && j.ok && j.course) {
         setCourse(j.course);
-        setMsg({ ok: true, text: 'Wysłane. Na liczniku: MENU → Synchronizuj (albo uruchom aplikację VeloIQ na nowo).' });
+        if (ride.garminLink.streaming) {
+          void ride.garminResync();
+          setMsg({ ok: true, text: 'Wysłane – licznik pobiera trasę (kilka sekund).' });
+        } else setMsg({ ok: true, text: 'Wysłane. Na liczniku: MENU → Synchronizuj (albo uruchom aplikację VeloIQ na nowo).' });
       } else setMsg({ ok: false, text: j.message ?? 'Nie udało się wysłać trasy.' });
     } catch { setMsg({ ok: false, text: 'Brak połączenia z serwerem.' }); }
     finally { setBusy(false); }
   };
+  sendRef.current = send;
   const remove = async () => {
     setBusy(true); setMsg(null);
     try { await fetch('/api/garmin/course', { method: 'DELETE' }); setCourse(null); } catch { /* spróbuj ponownie */ }
