@@ -39,6 +39,10 @@ const raw = track({ lat: 50.78, lon: 15.75, ele: 600 }, [[0, 1200, 0], [90, 1500
 const route = buildRoute('Pętla testowa', raw);
 // tryb startowy: cel mocy i taktyka na pierwszym podjeździe (jak po applyRaceTargets)
 if (route.climbs[0]) Object.assign(route.climbs[0], { low: 280, high: 300, tier: 'atak' });
+// trasa z planera (v2): nawierzchnia odcinkami (asfalt → szuter na podjeździe → teren na końcu) i punkty „Przed tobą”
+route.profile = 'gravel';
+route.surface = [[0, 0], [1250, 1], [2900, 2]];
+route.pois = [{ d: 900, kind: 'water', name: 'Źródełko' }, { d: 2400, kind: 'cafe', name: 'Schronisko' }, { d: 3300, kind: 'bike', name: 'Serwis Karkonosze' }];
 
 const course = buildCourse(route);
 const meta = courseMeta(course);
@@ -90,7 +94,9 @@ ${course.parts.map((p) => '            ' + str(p)).join(',\n')}
         for (var i = 0; i < parts.size(); i++) { Application.Storage.setValue("crs_p" + i, parts[i]); }
         Application.Storage.setValue("crs_t", ${arr(meta.cues)});
         Application.Storage.setValue("crs_c", ${arr(meta.climbs)});
-        Application.Storage.setValue("crs", { "id" => ${str(meta.id)}, "name" => ${str(meta.name)}, "total" => ${meta.total}, "gain" => ${meta.gain}, "n" => ${meta.n}, "parts" => ${meta.parts} });
+        Application.Storage.setValue("crs_s", ${arr(meta.surf ?? [])});
+        Application.Storage.setValue("crs_q", ${arr((meta.pois ?? []).map((p) => [p[0], p[1], str(String(p[2]))]))});
+        Application.Storage.setValue("crs", { "id" => ${str(meta.id)}, "name" => ${str(meta.name)}, "total" => ${meta.total}, "gain" => ${meta.gain}, "n" => ${meta.n}, "parts" => ${meta.parts}, "prof" => ${str(meta.prof ?? '')} });
         Application.Storage.setValue("crs_ok", ${str(meta.id)});
     }
 ${withDrive ? `

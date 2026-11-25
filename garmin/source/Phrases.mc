@@ -63,6 +63,8 @@ module Phrases {
         else if (key.equals("navTop")) { t = "Szczyt!\nmożna odetchnąć"; }
         else if (key.equals("navLeft")) { t = "Do mety {km} km"; }
         else if (key.equals("navDone")) { t = "Meta!\nkoniec trasy"; }
+        else if (key.equals("navPoi")) { t = "Za {km} km: {kind}\n{name}"; }
+        else if (key.equals("navReroute")) { t = "{say}"; }
         return t == null ? null : Util.render(t, vars);
     }
 

@@ -118,6 +118,9 @@ function testNavDrive(logger as Test.Logger) as Boolean {
     }
     ok = ok && log.find("navLeft", "km", 2) > 0 && log.find("navLeft", "km", 1) > 0;
     ok = ok && topAt >= 2730 && topAt <= 2760;
+    // „Przed tobą”: woda i schronisko zapowiedziane raz (≤ 2 km przed), nawierzchnia z trasy planera
+    ok = ok && log.count("navPoi") == 3 && log.find("navPoi", "name", "Schronisko") > 0 && log.find("navPoi", "kind", "Woda") >= 0;
+    ok = ok && nav.course.surfAt(100) == 0 && nav.course.surfAt(2000) == 1 && nav.course.surfAt(3000) == 2 && nav.course.prof.equals("gravel");
     // stan dla trenera (te same pola co w telefonie)
     var st = nav.state();
     ok = ok && st.get("left") <= 15 && st.get("acquired") == true && st.get("name").equals("Pętla testowa");

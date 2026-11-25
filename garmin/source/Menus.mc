@@ -51,8 +51,20 @@ module Menus {
         m.addItem(toggle("Jasny motyw", "theme", Cfg.theme == 1));
         m.addItem(toggle("Most do telefonu", "phone", Cfg.phoneLink));
         if (getRide().course != null) { m.addItem(toggle("Nawigacja po trasie", "nav", Cfg.navOn)); }
+        m.addItem(item("Ekrany jazdy", "wykres, wysiłek, paliwo, podjazd", "screens"));
         m.addItem(item("Pola danych: strona 1", null, "fields0"));
         m.addItem(item("Pola danych: strona 2", null, "fields1"));
+        return m;
+    }
+
+    //! Ekrany graficzne jazdy – można wyłączyć te, których nie używasz (mniej przewijania).
+    function screens() as WatchUi.Menu2 {
+        var m = new WatchUi.Menu2({ :title => "Ekrany jazdy" });
+        m.addItem(new WatchUi.ToggleMenuItem("Wykres treningu", "moc na tle planu", "pgChart", Cfg.pgChart, {}));
+        m.addItem(new WatchUi.ToggleMenuItem("Wysiłek", "rezerwa W', strefy", "pgEffort", Cfg.pgEffort, {}));
+        m.addItem(new WatchUi.ToggleMenuItem("Paliwo", "węglowodany, picie", "pgFuel", Cfg.pgFuel, {}));
+        m.addItem(new WatchUi.ToggleMenuItem("Podjazd", "profil na trasie", "pgClimb", Cfg.pgClimb, {}));
+        m.addItem(new WatchUi.ToggleMenuItem("Kolorowe krawędzie", "zgodność z celem", "edges", Cfg.edges, {}));
         return m;
     }
 
@@ -69,11 +81,27 @@ module Menus {
             m.addItem(item("Okrążenie", null, "lap"));
         }
         if (r.nav != null) { m.addItem(item(r.nav.enabled ? "Wyłącz nawigację" : "Włącz nawigację", r.nav.course.name, "navtoggle")); }
-        m.addItem(item("Zjadłem", "przesuń przypomnienie", "eat"));
+        if (r.nav != null) { m.addItem(item("Wróć na trasę", "nowy dojazd do śladu", "rejoin")); }
+        if (!Cfg.indoor) { m.addItem(item("Prowadź do startu", "trasa z powrotem", "tostart")); }
+        m.addItem(item("Zjadłem żel", "+25 g węglowodanów", "eat"));
         m.addItem(item("Wypiłem", null, "drink"));
-        if (scr.page == 1 || scr.page == 2) { m.addItem(item("Pola danych tej strony", null, "fields")); }
+        if (e != null && e.phase != Phase.FREE) { m.addItem(item("Zmień plan", "dłużej, mocniej, +interwał", "plan")); }
+        if (scr.pageId() == Pg.F1 || scr.pageId() == Pg.F2) { m.addItem(item("Pola danych tej strony", null, "fields")); }
         m.addItem(item(r.state == RideState.PAUSED ? "Wznów" : "Pauza", null, "pause"));
         m.addItem(item("Zakończ jazdę", null, "end"));
+        return m;
+    }
+
+    //! Zmiany planu w trakcie jazdy – to samo, co komendy głosowe przez telefon („dodaj minutę”, „mocniej o 5%”…).
+    function planEdits() as WatchUi.Menu2 {
+        var e = getRide().eng;
+        var m = new WatchUi.Menu2({ :title => "Zmień plan" });
+        m.addItem(item("Krok +1 min", null, "extend:60"));
+        m.addItem(item("Krok -1 min", null, "extend:-60"));
+        m.addItem(item("Cele mocy +5%", e != null && e.bias != 0 ? "teraz " + e.bias + "%" : null, "bias:+5"));
+        m.addItem(item("Cele mocy -5%", null, "bias:-5"));
+        if (e != null && e.bias != 0) { m.addItem(item("Cele jak w planie", null, "bias:0")); }
+        m.addItem(item("Jeszcze jeden interwał", null, "repeat"));
         return m;
     }
 
@@ -209,6 +237,10 @@ class SettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
         else if (id.equals("theme")) { Cfg.save("theme", (item as WatchUi.ToggleMenuItem).isEnabled() ? 1 : 0); Th.apply(Cfg.theme); }
         else if (id.equals("phone")) { Cfg.save("link", (item as WatchUi.ToggleMenuItem).isEnabled()); }
         else if (id.equals("nav")) { Cfg.save("navOn", (item as WatchUi.ToggleMenuItem).isEnabled()); }
+        else if (id.equals("screens")) { WatchUi.pushView(Menus.screens(), new SettingsMenuDelegate(), WatchUi.SLIDE_LEFT); }
+        else if (id.equals("pgChart") || id.equals("pgEffort") || id.equals("pgFuel") || id.equals("pgClimb") || id.equals("edges")) {
+            Cfg.save(id, (item as WatchUi.ToggleMenuItem).isEnabled());
+        }
         else if (id.equals("fields0")) { WatchUi.pushView(Menus.fields(0), new FieldsMenuDelegate(0), WatchUi.SLIDE_LEFT); }
         else if (id.equals("fields1")) { WatchUi.pushView(Menus.fields(1), new FieldsMenuDelegate(1), WatchUi.SLIDE_LEFT); }
     }
@@ -288,7 +320,12 @@ class RideMenuDelegate extends WatchUi.Menu2InputDelegate {
             return;
         }
         if (id.equals("fields")) {
-            WatchUi.switchToView(Menus.fields(_scr.page - 1), new FieldsMenuDelegate(_scr.page - 1), WatchUi.SLIDE_LEFT);
+            var fi = _scr.pageId() == Pg.F2 ? 1 : 0;
+            WatchUi.switchToView(Menus.fields(fi), new FieldsMenuDelegate(fi), WatchUi.SLIDE_LEFT);
+            return;
+        }
+        if (id.equals("plan")) {
+            WatchUi.switchToView(Menus.planEdits(), new PlanEditDelegate(), WatchUi.SLIDE_LEFT);
             return;
         }
         if (id.equals("end")) {
@@ -299,12 +336,14 @@ class RideMenuDelegate extends WatchUi.Menu2InputDelegate {
         if (id.equals("talk")) { r.talkToPhone(); }
         else if (id.equals("falstart")) { if (r.eng != null) { r.eng.cancelStart(); } }
         else if (id.equals("next") || id.equals("lap")) { r.lapButton(); }
-        else if (id.equals("eat")) { if (r.eng != null) { r.eng.fueled(true); r.showBanner("Zapisane: jedzenie", "info", 3); } }
-        else if (id.equals("drink")) { if (r.eng != null) { r.eng.fueled(false); r.showBanner("Zapisane: picie", "info", 3); } }
+        else if (id.equals("eat")) { r.fuel(25); }
+        else if (id.equals("drink")) { r.fuel(0); }
         else if (id.equals("navtoggle")) {
             if (r.nav != null) { r.setNav(!r.nav.enabled); r.showBanner(r.nav.enabled ? "Nawigacja włączona" : "Nawigacja wyłączona", "info", 3); }
         }
         else if (id.equals("pause")) { r.togglePause(); }
+        else if (id.equals("rejoin")) { r.reroute("rejoin"); }
+        else if (id.equals("tostart")) { r.reroute("start"); }
         WatchUi.popView(WatchUi.SLIDE_RIGHT);
     }
 }
@@ -347,5 +386,14 @@ class PauseMenuDelegate extends WatchUi.Menu2InputDelegate {
         } else if (id.equals("discard")) {
             WatchUi.pushView(new WatchUi.Confirmation("Odrzucić jazdę?"), new DiscardConfirm(), WatchUi.SLIDE_IMMEDIATE);
         }
+    }
+}
+
+class PlanEditDelegate extends WatchUi.Menu2InputDelegate {
+    function initialize() { Menu2InputDelegate.initialize(); }
+
+    function onSelect(item as WatchUi.MenuItem) as Void {
+        getRide().planEdit(item.getId().toString());
+        WatchUi.popView(WatchUi.SLIDE_RIGHT);
     }
 }

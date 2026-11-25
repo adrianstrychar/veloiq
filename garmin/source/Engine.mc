@@ -541,6 +541,108 @@ class Engine {
     }
 
     //! Ręczne przejście do następnego kroku (przycisk Lap / menu). W czekaniu = „start teraz”.
+    // ------------------------------------------------------------------ zmiany planu w trakcie jazdy (głos / menu)
+    var bias as Number = 0;          // % korekty celów mocy kroków pracy (0 = jak w planie)
+    hidden var _base = null;         // oryginalne [lo, hi] kroków – przy pierwszej korekcie
+
+    //! Wydłuża (sec > 0) albo skraca (sec < 0) bieżący krok. Skrócenie poniżej przejechanego czasu
+    //! zostawia 5 s do końca. Zwraca faktyczną zmianę w sekundach (0 = brak kroku).
+    function extendStep(sec as Number) as Number {
+        var st = step();
+        if (st == null) { return 0; }
+        var nd = st.dur + sec;
+        var minDur = inStep + 5;
+        if (nd < minDur) { nd = minDur; }
+        if (nd > 4 * 3600) { nd = 4 * 3600; }
+        var delta = nd - st.dur;
+        st.dur = nd;
+        _total += delta;
+        return delta;
+    }
+
+    //! Cele mocy kroków pracy (od bieżącego do końca planu) o pct % w górę / w dół względem planu; 0 = plan.
+    //! Przerwy i schłodzenie bez zmian – „mocniej” dotyczy pracy, nie odpoczynku.
+    function setBias(pct as Number) as Void {
+        if (pct > 25) { pct = 25; }
+        if (pct < -25) { pct = -25; }
+        if (_base == null) {
+            _base = [];
+            for (var k = 0; k < wk.steps.size(); k++) { _base.add([wk.steps[k].lo, wk.steps[k].hi]); }
+        }
+        for (var i = (phase == Phase.FREE ? wk.steps.size() : stepIdx); i < wk.steps.size(); i++) {
+            var x = wk.steps[i];
+            if (x.type == StepType.RECOVERY || x.type == StepType.COOLDOWN) { continue; }
+            var b = _base[i];
+            x.lo = Util.round(b[0] * (100 + pct) / 100.0);
+            x.hi = Util.round(b[1] * (100 + pct) / 100.0);
+        }
+        bias = pct;
+    }
+
+    //! Jeszcze jeden interwał: kopia ostatniego (albo najbliższego) interwału z przerwą po nim, wstawiona zaraz po
+    //! bieżącym kroku. W interwale → [przerwa, interwał]; w przerwie / rozgrzewce → [interwał, przerwa];
+    //! w schłodzeniu → schłodzenie kończy się teraz, potem interwał i dalsze schłodzenie. false = po planie / brak interwałów.
+    function repeatInterval() as Boolean {
+        if (phase == Phase.FREE || stepIdx >= wk.steps.size()) { return false; }
+        var n = wk.steps.size();
+        var iv = -1;
+        for (var i = stepIdx; i >= 0; i--) { if (wk.steps[i].type == StepType.INTERVAL) { iv = i; break; } }
+        if (iv < 0) { for (var j = stepIdx; j < n; j++) { if (wk.steps[j].type == StepType.INTERVAL) { iv = j; break; } } }
+        if (iv < 0) { return false; }
+        var ivc = copyStep(wk.steps[iv]);
+        ivc.name = "Dodatkowy interwał";
+        ivc.start = 1;                       // start po mocy – zawodnik rusza, kiedy jest gotów
+        var rec = null;
+        if (iv + 1 < n && wk.steps[iv + 1].type == StepType.RECOVERY) { rec = copyStep(wk.steps[iv + 1]); }
+        else {
+            rec = new WStep();
+            rec.name = "Przerwa"; rec.type = StepType.RECOVERY; rec.dur = Util.max(120, ivc.dur / 2);
+            rec.lo = Util.round(wk.ftp * 0.40); rec.hi = Util.round(wk.ftp * 0.55);
+        }
+        var cur = wk.steps[stepIdx];
+        var ins = [];
+        if (cur.type == StepType.INTERVAL) { ins.add(rec); ins.add(ivc); }
+        else if (cur.type == StepType.COOLDOWN) { ins.add(ivc); ins.add(rec); ins.add(copyStep(cur)); }
+        else { ins.add(ivc); ins.add(rec); }
+        var steps = wk.steps.slice(0, stepIdx + 1);
+        steps.addAll(ins);
+        steps.addAll(wk.steps.slice(stepIdx + 1, null));
+        wk.steps = steps;
+        if (_base != null) {
+            var nb = _base.slice(0, stepIdx + 1);
+            for (var q = 0; q < ins.size(); q++) { nb.add([ins[q].lo, ins[q].hi]); }
+            nb.addAll(_base.slice(stepIdx + 1, null));
+            _base = nb;
+            if (bias != 0) { setBias(bias); }
+        }
+        renumber();
+        _total = wk.totalSec();
+        if (cur.type == StepType.COOLDOWN) { skipStep(); }
+        return true;
+    }
+
+    hidden function copyStep(x as WStep) as WStep {
+        var c = new WStep();
+        c.name = x.name; c.type = x.type; c.dur = x.dur; c.lo = x.lo; c.hi = x.hi;
+        c.cadLo = x.cadLo; c.cadHi = x.cadHi; c.start = x.start; c.hrLo = x.hrLo; c.hrHi = x.hrHi;
+        return c;
+    }
+
+    //! Numeracja interwałów po zmianie planu (jak w konstruktorze) – nazwa dodanego interwału z numerem.
+    hidden function renumber() as Void {
+        var cnt = 0;
+        _ivNo = [];
+        for (var k = 0; k < wk.steps.size(); k++) {
+            if (wk.steps[k].type == StepType.INTERVAL) {
+                if (!isChained(k)) { cnt++; }
+                _ivNo.add(cnt);
+            } else {
+                _ivNo.add(0);
+            }
+        }
+        intervalCount = cnt;
+    }
+
     function skipStep() as Void {
         if (phase == Phase.FREE || s < 0) { return; }
         if (wk.steps[stepIdx].type == StepType.INTERVAL) { closeInterval(false); }

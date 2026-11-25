@@ -31,6 +31,16 @@ class Ride {
     var courseNote = null;      // stan pobierania trasy do pokazania na ekranie startowym
     hidden var _cMeta = null;   // nagłówek pobieranej trasy
     hidden var _cPart as Number = 0;
+    hidden var _reroute as Boolean = false;   // pobierana trasa to powrót na trasę / do startu – wchodzi w trakcie jazdy
+    var startLat = null;        // miejsce startu jazdy (pierwszy fix GPS) – „prowadź do startu”
+    var startLon = null;
+    // wykres treningu i paliwo
+    var pTrace = null;          // moc co 10 s (W / 4 w bajcie) – strona WYKRES
+    hidden var _trSum as Number = 0;
+    hidden var _trN as Number = 0;
+    var choBurn as Float = 0.0; // g węglowodanów spalonych (szacunek z intensywności względem FTP)
+    var choEat as Number = 0;   // g zjedzonych (żel 25 g, baton 40 g – z ekranu, menu albo głosem)
+    var drinks as Number = 0;
 
     var plan = null;            // trening wybrany na ekranie startowym (Workout) albo null
     var wk = null;              // trening bieżącej jazdy (plan albo jazda swobodna)
@@ -104,7 +114,7 @@ class Ride {
 
     var result = null;          // podsumowanie po zapisie
     var recordFit as Boolean = true;   // false tylko w testach: symulator nie pozwala założyć drugiej sesji FIT w tym samym wywołaniu
-    var uiPage as Number = -1;  // prośba o przełączenie strony ekranu jazdy (tryb demo)
+    var uiPage as Number = -1;  // prośba o przełączenie strony ekranu jazdy – identyfikator Pg (głos, tryb demo)
     var uiZoom as Number = -1;  // jw. – skala mapy na stronie TRASA
     var saved as Boolean = false;
     hidden var _timer = null;
@@ -216,6 +226,7 @@ class Ride {
     function onCourseMeta(code as Number, data) as Void {
         if (code != 200 || data == null || !(data instanceof Dictionary) || Util.int(data.get("parts"), 0) <= 0) {
             courseNote = "Trasa: " + Api.errorText(code);
+            _reroute = false;
             return;
         }
         Course.clear();
@@ -251,12 +262,23 @@ class Ride {
         var id = Util.str(_cMeta.get("id"), "");
         Application.Storage.setValue("crs_t", _cMeta.get("cues"));
         Application.Storage.setValue("crs_c", _cMeta.get("climbs"));
+        Application.Storage.setValue("crs_s", _cMeta.get("surf"));
+        Application.Storage.setValue("crs_q", _cMeta.get("pois"));
         Application.Storage.setValue("crs", { "id" => id, "name" => _cMeta.get("name"), "total" => _cMeta.get("total"),
-            "gain" => _cMeta.get("gain"), "n" => _cMeta.get("n"), "parts" => _cMeta.get("parts") });
+            "gain" => _cMeta.get("gain"), "n" => _cMeta.get("n"), "parts" => _cMeta.get("parts"), "prof" => _cMeta.get("prof") });
         Application.Storage.setValue("crs_ok", id);
         _cMeta = null;
         var c = Course.load();
         if (!active()) { course = c; }
+        else if (_reroute && c != null) {
+            // nowa trasa w trakcie jazdy: nawigacja od nowa (dopasuje się do pozycji w kilka sekund)
+            course = c;
+            nav = new Nav(c);
+            nav.owner = self;
+            showBanner("Nowa trasa\n" + (c.total / 1000.0).format("%.1f") + " km", "nav", 6);
+            tone("good");
+        }
+        _reroute = false;
         courseNote = c == null ? "Trasa: błąd danych" : null;
         WatchUi.requestUpdate();
     }
@@ -349,6 +371,8 @@ class Ride {
         _dsSum = 0; _dsN = 0; _dsCad = 0; _dsCadN = 0; _gpsSeen = false;
         _ckS = 0; _ckG = 0;
         cues = []; banner = null; enzoText = null; enzoBusy = false;
+        startLat = null; startLon = null;
+        pTrace = []b; _trSum = 0; _trN = 0; choBurn = 0.0; choEat = 0; drinks = 0;
         _stillRun = 0; _moveRun = 0;
         result = null; saved = false;
     }
@@ -527,6 +551,7 @@ class Ride {
         var c = hub.cad;
         eng.tick(p, h, c);
         var pw = p == null ? 0 : p;
+        accum(pw);
 
         // okrążenie
         lapN++; lapSumP += pw;
@@ -551,6 +576,42 @@ class Ride {
         if (link != null && Cfg.phoneLink && (link.active || eng.s % 5 == 0)) {
             link.live(liveVec(0));
         }
+    }
+
+    //! Sekunda jazdy dla wykresu (średnia co 10 s) i bilansu węglowodanów. Udział węglowodanów w spalaniu rośnie
+    //! z intensywnością: ~35% poniżej 50% FTP, ~65% przy 75% FTP, ~90% przy progu (typowe wartości z badań).
+    //! Energia z jedzenia ≈ praca w kJ (sprawność mięśni ~24% · 4,184 kJ/kcal ≈ 1).
+    hidden function accum(pw as Number) as Void {
+        _trSum += pw; _trN++;
+        if (_trN >= 10) {
+            var a = _trSum / _trN / 4;
+            if (pTrace.size() < 4000) { pTrace.add(a > 255 ? 255 : a); }
+            _trSum = 0; _trN = 0;
+        }
+        if (pw <= 0) { return; }
+        var r = pw.toFloat() / eng.m.ftp;
+        var f = r < 0.5 ? 0.35 : (r < 0.75 ? 0.35 + (r - 0.5) * 1.2 : (r < 1.0 ? 0.65 + (r - 0.75) : 0.95));
+        choBurn += pw / 1000.0 * f / 4.0;
+    }
+
+    //! Jedzenie (g węglowodanów) albo picie (g = 0): przypomnienia silnika, bilans na stronie PALIWO.
+    function fuel(g as Number) as Void {
+        if (eng == null) { return; }
+        if (g > 0) {
+            eng.fueled(true);
+            choEat += g;
+            showBanner("Zapisane: " + g + " g\nrazem " + choEat + " g", "info", 3);
+        } else {
+            eng.fueled(false);
+            drinks++;
+            showBanner("Zapisane: picie", "info", 3);
+        }
+        WatchUi.requestUpdate();
+    }
+
+    function showPageById(name as String) as Void {
+        var id = Pg.byName(name);
+        if (id >= 0) { uiPage = id; WatchUi.requestUpdate(); }
     }
 
     hidden function flushSample(force as Boolean) as Void {
@@ -693,7 +754,8 @@ class Ride {
             for (var j = _ckG; j < gb; j++) { Application.Storage.setValue("ck_g" + j, Util.b64(_gStore.block(j))); }
             _ckG = gb > 0 ? gb - 1 : 0;
             Application.Storage.setValue("ck", { "t" => startEpoch, "s" => eng.s + 1, "ns" => _sStore.count, "nb" => nb, "gb" => gb,
-                "d" => dist, "a" => ascent, "free" => (wk.isFree() ? 1 : 0), "name" => wk.name, "at" => Time.now().value() });
+                "d" => dist, "a" => ascent, "free" => (wk.isFree() ? 1 : 0), "name" => wk.name, "at" => Time.now().value(),
+                "fe" => choEat, "fd" => drinks });
         } catch (ex) {
             // pamięć pełna – nic więcej nie zrobimy; nagranie FIT i jazda trwają normalnie
         }
@@ -743,6 +805,8 @@ class Ride {
         startEpoch = Util.int(ck.get("t"), Time.now().value());
         dist = Util.num(ck.get("d"), 0.0).toFloat();
         ascent = Util.int(ck.get("a"), 0);
+        choEat = Util.int(ck.get("fe"), 0);
+        drinks = Util.int(ck.get("fd"), 0);
         _distBase = dist;
         _ascBase = ascent;
         // ślad GPS wraca w całości od razu (same bajty), próbki mocy przechodzą przez silnik partiami
@@ -784,6 +848,7 @@ class Ride {
             _sStore.add(cur.slice(o, o + 4));
             for (var k = 0; k < 5; k++) {
                 eng.tick(p, h, c);
+                accum(p);
                 lapN++; lapSumP += p;
                 if (p > lapMaxP) { lapMaxP = p; }
                 if (h != null) { lapSumHr += h; lapHrN++; }
@@ -833,9 +898,40 @@ class Ride {
 
     // ------------------------------------------------------------------ nawigacja po trasie
     hidden function navTick() as Void {
-        if (nav == null || hub.lat == null || hub.lon == null) { return; }
+        if (hub.lat == null || hub.lon == null) { return; }
         if (!hub.simulated && !hub.hasGps()) { return; }
+        if (startLat == null) { startLat = hub.lat; startLon = hub.lon; }
+        if (nav == null) { return; }
         nav.update(hub.lat, hub.lon, speed == null ? null : speed * 3.6, eng.s);
+    }
+
+    // ------------------------------------------------------------------ powrót na trasę / do startu (serwer VeloIQ)
+    //! to = "start" (miejsce startu jazdy) albo "rejoin" (najbliższy sensowny punkt trasy przed nami + reszta trasy).
+    //! Serwer wyznacza dojazd profilem trasy (szosa / gravel / MTB) i podmienia trasę; licznik pobiera ją jak zwykle.
+    function reroute(to as String) as Void {
+        if (!active()) { return; }
+        if (!Cfg.paired()) { showBanner("Sparuj licznik z VeloIQ,\nżeby wyznaczać trasy", "error", 5); return; }
+        if (hub.lat == null || hub.lon == null || (!hub.simulated && !hub.hasGps())) { showBanner("Czekam na GPS", "error", 4); return; }
+        if (to.equals("rejoin") && nav == null) { to = "start"; }
+        if (to.equals("start") && startLat == null) { showBanner("Nie znam miejsca startu", "error", 4); return; }
+        var body = { "to" => to, "lat" => hub.lat, "lon" => hub.lon } as Dictionary;
+        if (startLat != null) { body.put("sLat", startLat); body.put("sLon", startLon); }
+        if (nav != null) { body.put("prog", nav.progress.toNumber()); body.put("prof", nav.course.prof); }
+        showBanner(to.equals("start") ? "Wyznaczam trasę\ndo startu..." : "Wyznaczam powrót\nna trasę...", "nav", 8);
+        api.post("/api/garmin/route", body, method(:onReroute));
+    }
+
+    function onReroute(code as Number, data) as Void {
+        if (code != 200 || data == null || !(data instanceof Dictionary)) {
+            var msg = (data instanceof Dictionary && data.get("message") != null) ? data.get("message").toString() : Api.errorText(code);
+            showBanner("Trasa: " + msg, "error", 6);
+            link.event({ "t" => "cue", "k" => "navReroute", "kind" => "nav", "x" => "Nie udało się wyznaczyć trasy. " + msg, "v" => { "say" => msg } });
+            return;
+        }
+        var say = Util.str(data.get("say"), "Nowa trasa gotowa.");
+        link.event({ "t" => "cue", "k" => "navReroute", "kind" => "nav", "x" => say, "v" => { "say" => say } });
+        _reroute = true;
+        onCourseMeta(200, data);
     }
 
     //! Zdarzenie nawigacji: baner na liczniku + ten sam klucz do telefonu (głos Enzo ma nagrania skrętów i podjazdów).
@@ -953,6 +1049,12 @@ class Ride {
         d.put("workout", wk.name);
         d.put("ftp", wk.ftp);
         d.put("elapsedSec", eng.s + 1);
+        // paliwo i rezerwa (pytania „co zjeść?”, „dam radę?”) oraz korekta planu głosem
+        d.put("carbsEatenG", choEat);
+        d.put("carbsBurnedG", Util.round(choBurn));
+        d.put("drinks", drinks);
+        d.put("wBalPct", m.wBalPct());
+        if (eng.bias != 0) { d.put("targetBiasPct", eng.bias); }
         d.put("phase", Phase.key(eng.phase));
         d.put("power3s", Util.round(eng.hist.avgP(3)));
         d.put("power30s", Util.round(eng.hist.avgP(30)));
@@ -1112,12 +1214,52 @@ class Ride {
         else if (cmd.equals("resume")) { resume(); }
         else if (cmd.equals("cancel")) { if (eng != null) { eng.cancelStart(); } }
         else if (cmd.equals("lap")) { lapButton(); }
-        else if (cmd.equals("eat")) { if (eng != null) { eng.fueled(true); } }
-        else if (cmd.equals("drink")) { if (eng != null) { eng.fueled(false); } }
+        else if (cmd.equals("eat")) { fuel(25); }
+        else if (cmd.equals("drink")) { fuel(0); }
+        else if (cmd.find("eat:") == 0) { fuel(Util.clamp(Util.int(cmd.substring(4, cmd.length()).toNumber(), 25), 5, 120)); }
         else if (cmd.equals("talk")) { if (eng != null) { talkToPhone(); } }
         else if (cmd.equals("report")) { if (eng != null) { askPhone("raport"); } }
         else if (cmd.equals("sync")) { link.event(active() ? startMsg(true) : { "t" => "state", "s" => "idle" }); }
+        else if (cmd.equals("route:start")) { reroute("start"); }
+        else if (cmd.equals("route:rejoin")) { reroute("rejoin"); }
         else if (cmd.equals("state")) { if (eng != null && active()) { link.event({ "t" => "st", "st" => coachState() }); } }
+        else if (cmd.find(":") != null) { planEdit(cmd); }
+        else if (cmd.equals("repeat")) { planEdit(cmd); }
+    }
+
+    //! Zmiana planu w trakcie jazdy (głos przez telefon albo menu „Zmień plan”):
+    //!   extend:SEK (ujemne = skróć), bias:PROC (0 = plan), repeat, page:ID.
+    //! Telefon dostaje odświeżony plan (start z sync=1), żeby wykres i Enzo znały zmiany.
+    function planEdit(cmd as String) as Void {
+        var i = cmd.find(":");
+        var verb = i == null ? cmd : cmd.substring(0, i);
+        var argS = i == null ? "" : cmd.substring(i + 1, cmd.length());
+        var plus = argS.length() > 0 && argS.substring(0, 1).equals("+");
+        if (plus) { argS = argS.substring(1, argS.length()); }
+        var arg = Util.int(argS.toNumber(), 0);
+        if (verb.equals("page")) {
+            showPageById(argS);
+            return;
+        }
+        if (eng == null || !active()) { return; }
+        var msg = null;
+        if (verb.equals("extend")) {
+            var d = eng.extendStep(arg);
+            if (d != 0) { msg = (d > 0 ? "Krok dłuższy o " : "Krok krótszy o ") + Util.durShort(d > 0 ? d : -d); }
+            else { msg = eng.phase == Phase.FREE ? "Plan zakończony" : null; }
+        } else if (verb.equals("bias")) {
+            var b = arg;
+            if (plus || arg < 0) { b = eng.bias + arg; }      // „+5” / „-5” względem obecnej korekty, „0” / „10” – wprost
+            eng.setBias(b);
+            msg = eng.bias == 0 ? "Cele mocy jak w planie" : "Cele mocy " + (eng.bias > 0 ? "+" : "") + eng.bias + "%";
+            var st = eng.step();
+            if (st != null && st.type != StepType.RECOVERY && st.type != StepType.COOLDOWN) { msg = msg + "\nteraz " + st.lo + "-" + st.hi + " W"; }
+        } else if (verb.equals("repeat")) {
+            msg = eng.repeatInterval() ? "Dodany interwał\nrazem " + eng.intervalCount : "Nie ma czego powtórzyć";
+        }
+        if (msg != null) { showBanner(msg, "info", 5); tone("msg"); }
+        if (link.active) { link.event(startMsg(true)); }
+        WatchUi.requestUpdate();
     }
 
     function onPhoneSay(text as String) as Void {

@@ -268,3 +268,51 @@ function testPhoneMirrorProtocol(logger as Test.Logger) as Boolean {
     Smoke.cleanup();
     return ok;
 }
+
+//! Zmiany planu w trakcie jazdy (głos / menu „Zmień plan”): dłuższy krok, cele +5%, jeszcze jeden interwał,
+//! paliwo; do tego pamięć urządzenia przy treningu z trasą (zapas na nowe strony).
+(:test)
+function testPlanEditsAndFuel(logger as Test.Logger) as Boolean {
+    Smoke.cleanup();
+    var r = getRide();
+    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.put("tones", false); Cfg.put("link", false); Cfg.put("ftp", 300); Cfg.load();
+    var w = new Workout();
+    w.ftp = 300; w.name = "Edycja";
+    w.add("Rozgrzewka", StepType.WARMUP, 120, 150, 200);
+    w.add("Interwał 1", StepType.INTERVAL, 120, 280, 300);
+    w.add("Przerwa", StepType.RECOVERY, 60, 100, 160);
+    w.add("Schłodzenie", StepType.COOLDOWN, 120, 120, 160);
+    r.plan = w;
+    r.recordFit = false;
+    if (!r.startRide(false)) { r.recordFit = true; return false; }
+    r.recordFit = true;
+    var e = r.eng;
+    for (var i = 0; i < 30; i++) { r.simTick(180, 120, 88, 9.0); }
+    var rem0 = e.stepRemaining();
+    r.planEdit("extend:60");
+    var ok = e.stepRemaining() == rem0 + 60 && e.wk.steps[0].dur == 180;
+    r.planEdit("extend:-600");                       // nie da się skrócić poniżej przejechanego czasu
+    ok = ok && e.stepRemaining() >= 4 && e.stepRemaining() <= 6;
+    r.planEdit("bias:+5");
+    ok = ok && e.bias == 5 && e.wk.steps[1].lo == 294 && e.wk.steps[1].hi == 315 && e.wk.steps[2].hi == 160;
+    r.planEdit("bias:+5");
+    ok = ok && e.bias == 10 && e.wk.steps[1].hi == 330;
+    r.planEdit("bias:0");
+    ok = ok && e.bias == 0 && e.wk.steps[1].hi == 300;
+    r.planEdit("repeat");                             // w rozgrzewce: [interwał, przerwa] zaraz po niej
+    logger.debug("kroki=" + e.wk.steps.size() + " interwały=" + e.intervalCount + " nazwa=" + e.wk.steps[1].name);
+    ok = ok && e.wk.steps.size() == 6 && e.intervalCount == 2 && e.wk.steps[1].type == StepType.INTERVAL && e.wk.steps[2].type == StepType.RECOVERY;
+    ok = ok && e.wk.steps[1].name.equals("Dodatkowy interwał") && e.intervalNo(3) == 2;
+    // paliwo: dwa żele, picie; spalanie rośnie z mocą
+    r.fuel(25); r.fuel(25); r.fuel(0);
+    for (var j = 0; j < 60; j++) { r.simTick(300, 150, 90, 9.0); }
+    logger.debug("cho spalone=" + r.choBurn + " zjedzone=" + r.choEat + " picie=" + r.drinks + " ślad=" + r.pTrace.size());
+    ok = ok && r.choEat == 50 && r.drinks == 1 && r.choBurn > 3.0 && r.choBurn < 25.0 && r.pTrace.size() == 9;
+    var st = r.coachState();
+    ok = ok && st.get("carbsEatenG") == 50;
+    var stats = System.getSystemStats();
+    logger.debug("pamięć: użyta " + stats.usedMemory + " z " + stats.totalMemory + " B, wolne " + stats.freeMemory + " B");
+    r.finish(false);
+    Smoke.cleanup();
+    return ok;
+}

@@ -6,7 +6,7 @@ import Toybox.UserProfile;
 //! Ustawienia i dane zawodnika trzymane na urządzeniu (Application.Storage), z kopią w pamięci.
 module Cfg {
     const DEFAULT_API = "https://veloiq-three.vercel.app";
-    const VERSION = "0.2.2";
+    const VERSION = "0.3.0";
 
     var apiBase as String = "https://veloiq-three.vercel.app";
     var token as String = "";          // token urządzenia po sparowaniu z kontem VeloIQ
@@ -25,6 +25,12 @@ module Cfg {
     var navOn as Boolean = true;        // nawigacja po trasie GPX z VeloIQ (gdy trasa jest pobrana)
     var phoneLink as Boolean = true;   // most do telefonu (aplikacja VeloIQ z Connect IQ) – domyślnie włączony; klucz "link"
     var pages = null;                  // konfiguracja stron pól danych: [[id, id, …], [id, …]]
+    // ekrany graficzne (Ustawienia → Ekrany jazdy) – domyślnie wszystkie
+    var pgChart as Boolean = true;     // WYKRES treningu
+    var pgEffort as Boolean = true;    // WYSIŁEK (rezerwa W′, strefy)
+    var pgFuel as Boolean = true;      // PALIWO
+    var pgClimb as Boolean = true;     // PODJAZD (na trasie)
+    var edges as Boolean = true;       // kolorowe krawędzie ekranu TRENING (zgodność z celem – jak diody Wahoo)
 
     function get(key as String, dflt) {
         var v = Application.Storage.getValue(key);
@@ -58,6 +64,11 @@ module Cfg {
         phoneLink = get("link", true);       // stary klucz "phoneLink" (domyślnie wył.) celowo pominięty
         navOn = get("navOn", true);
         pages = get("pages", null);
+        pgChart = get("pgChart", true);
+        pgEffort = get("pgEffort", true);
+        pgFuel = get("pgFuel", true);
+        pgClimb = get("pgClimb", true);
+        edges = get("edges", true);
     }
 
     function save(key as String, v) as Void {
