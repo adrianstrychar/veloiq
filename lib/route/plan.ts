@@ -99,19 +99,23 @@ export function similarity(a: RideRoute, b: RideRoute): number {
   return common / Math.max(1, Math.min(A.size, B.size));
 }
 
-/** Krótki opis, czym wariant wyróżnia się na tle pozostałych. */
+/** Krótki opis, czym wariant wyróżnia się na tle pozostałych: każdy wariant dostaje inną etykietę – dla każdej
+ *  cechy wybieramy najlepszy z jeszcze nieopisanych. */
 export function tagRoutes(list: PlannedRoute[], profile: RouteProfile): void {
   if (!list.length) return;
-  const by = (f: (x: PlannedRoute) => number) => list.reduce((m, x) => (f(x) < f(m) ? x : m));
-  const used = new Set<PlannedRoute>();
-  const put = (x: PlannedRoute, tag: string) => { if (!used.has(x)) { x.tag = tag; used.add(x); } };
-  put(by((x) => x.stats.estSec), 'Najszybsza');
-  if (list.length > 1) put(by((x) => x.stats.gain), 'Najmniej podjazdów');
-  if (list.length > 2) {
-    if (profile === 'road' || profile === 'calm') put(by((x) => x.stats.mainRoad), 'Najmniej ruchu');
-    else put(by((x) => -(x.stats.surface[1] + x.stats.surface[2])), profile === 'mtb' ? 'Najwięcej terenu' : 'Najwięcej szutru');
+  const free = new Set(list);
+  const pick = (f: (x: PlannedRoute) => number, tag: string) => {
+    let best: PlannedRoute | null = null;
+    free.forEach((x) => { if (!best || f(x) < f(best)) best = x; });
+    if (best) { (best as PlannedRoute).tag = tag; free.delete(best); }
+  };
+  pick((x) => x.stats.estSec, 'Najszybsza');
+  if (free.size) {
+    if (profile === 'road' || profile === 'calm') pick((x) => x.stats.mainRoad - x.stats.total * 0.001, 'Najmniej ruchu');
+    else pick((x) => -(x.stats.surface[1] + x.stats.surface[2]) / Math.max(1, x.stats.total), profile === 'mtb' ? 'Najwięcej terenu' : 'Najwięcej szutru');
   }
-  list.forEach((x, i) => { if (!used.has(x)) x.tag = `Wariant ${i + 1}`; });
+  if (free.size) pick((x) => x.stats.gain / Math.max(1, x.stats.total), 'Najłagodniejsza');
+  free.forEach((x) => { x.tag = 'Inny wariant'; });
 }
 
 const pl = (n: number) => Math.round(n);

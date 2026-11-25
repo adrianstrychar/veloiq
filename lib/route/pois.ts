@@ -2,7 +2,11 @@
 // najwyżej ~150 m od trasy, z OpenStreetMap przez Overpass API. Wynik: dystans od startu, rodzaj, nazwa.
 import { dist, type PoiKind, type RideRoute, type RoutePoi } from '@/lib/ride/gpx';
 
-export const OVERPASS_URL = () => process.env.OVERPASS_URL || 'https://overpass-api.de/api/interpreter';
+/** Serwery Overpass po kolei (pierwszy z OVERPASS_URL); kolejny, gdy poprzedni odmówi albo nie odpowie. */
+export const OVERPASS_URLS = () => [
+  ...(process.env.OVERPASS_URL ? [process.env.OVERPASS_URL] : []),
+  'https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter',
+];
 export const POI_LABEL: Record<PoiKind, string> = {
   cafe: 'Kawiarnia', water: 'Woda pitna', toilets: 'Toaleta', bike: 'Serwis rowerowy', shop: 'Sklep', fuel: 'Stacja paliw', food: 'Jedzenie',
 };
@@ -83,16 +87,22 @@ export function poisFromOverpass(r: RideRoute, elements: unknown[]): RoutePoi[] 
 }
 
 export async function fetchPois(r: RideRoute, fetcher: typeof fetch = fetch, timeoutMs = 25000): Promise<RoutePoi[]> {
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), timeoutMs);
-  try {
-    const res = await fetcher(OVERPASS_URL(), {
-      method: 'POST', signal: ctl.signal,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'VeloIQ/1.0 (+https://veloiq-three.vercel.app)' },
-      body: `data=${encodeURIComponent(overpassQuery(samplePath(r)))}`,
-    });
-    if (!res.ok) throw new Error(`overpass ${res.status}`);
-    const j = (await res.json()) as { elements?: unknown[] };
-    return poisFromOverpass(r, j.elements ?? []);
-  } finally { clearTimeout(timer); }
+  const body = `data=${encodeURIComponent(overpassQuery(samplePath(r)))}`;
+  let lastErr: unknown = null;
+  for (const url of OVERPASS_URLS()) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), timeoutMs);
+    try {
+      const res = await fetcher(url, {
+        method: 'POST', signal: ctl.signal, body,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'User-Agent': 'VeloIQ/1.0 (+https://veloiq-three.vercel.app)' },
+      });
+      if (!res.ok) throw new Error(`overpass ${res.status} (${new URL(url).host})`);
+      const j = (await res.json()) as { elements?: unknown[] };
+      return poisFromOverpass(r, j.elements ?? []);
+    } catch (e) {
+      lastErr = e;
+    } finally { clearTimeout(timer); }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('overpass');
 }

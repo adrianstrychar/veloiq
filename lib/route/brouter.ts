@@ -125,6 +125,8 @@ export function hintsToCues(t: BrouterTrack, scale = 1): RouteCue[] {
   const byCmd: Record<number, TurnDir> = { 2: 'left', 3: 'slightLeft', 4: 'sharpLeft', 5: 'right', 6: 'slightRight', 7: 'sharpRight', 8: 'slightLeft', 9: 'slightRight', 10: 'uturn', 11: 'uturn', 15: 'uturn' };
   for (const h of t.hints) {
     let dir: TurnDir | undefined = byCmd[h.cmd];
+    // „trzymaj się lewej/prawej” i lekkie skręty o mały kąt to szum (rozwidlenia, łuki) – zapowiadamy tylko wyraźne
+    if ((h.cmd === 8 || h.cmd === 9 || h.cmd === 3 || h.cmd === 6) && Math.abs(h.angle) < 35) continue;
     if (h.cmd === 13 || h.cmd === 14) {
       if (h.angle <= -100) dir = 'sharpLeft';
       else if (h.angle <= -30) dir = 'left';
@@ -134,6 +136,8 @@ export function hintsToCues(t: BrouterTrack, scale = 1): RouteCue[] {
     if (!dir) continue;
     const d = Math.round(t.cum[h.idx] * scale);
     if (d < 30) continue;
+    const prev = out[out.length - 1];
+    if (prev && d - prev.d < 40) { if (Math.abs(h.angle) > Math.abs(prev.angle)) out[out.length - 1] = { d, dir, angle: Math.round(h.angle) }; continue; }
     out.push({ d, dir, angle: Math.round(h.angle) });
   }
   return out;
