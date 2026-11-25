@@ -55,7 +55,7 @@ class RootView extends WatchUi.View {
 
     function onUpdate(dc as Graphics.Dc) as Void {
         var r = getRide();
-        if (r.uiPage >= 0) { rideScr.page = r.uiPage; r.uiPage = -1; }
+        if (r.uiPage >= 0) { var pi = rideScr.indexOf(r.uiPage); rideScr.page = pi < 0 ? 0 : pi; r.uiPage = -1; }
         if (r.uiZoom >= 0) { rideScr.zoom = r.uiZoom; r.uiZoom = -1; }
         current().draw(dc);
     }

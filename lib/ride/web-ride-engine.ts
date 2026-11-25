@@ -131,6 +131,8 @@ export class WebRideEngine implements RideEnginePlugin {
   async garminChoose() { /* tylko natywnie */ }
   async garminForget() { return { available: false }; }
   async garminOpenApp() { /* tylko natywnie */ }
+  async garminCommand() { /* tylko natywnie */ }
+  async garminSync() { return { available: false }; }
   async talk() { this.emit('coach', { state: 'error', text: 'Rozmowa z Enzo działa w aplikacji na iPhonie.' }); }
   async skipStep() { this.engine?.skipStep(true); this.emitLive(); }
   async cancelStart() { this.engine?.cancelStart(true); this.emitLive(); }

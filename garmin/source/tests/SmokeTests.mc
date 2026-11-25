@@ -31,7 +31,7 @@ module Smoke {
     }
 
     function drawAll(scr as RideScreen, g as Graphics.Dc) as Void {
-        for (var p = 0; p < 5; p++) {
+        for (var p = 0; p < scr.pageCount(); p++) {
             scr.page = p;
             scr.draw(g);
         }
@@ -78,7 +78,7 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
     var r = getRide();
     var g = Smoke.dc();
     var scr = new RideScreen();
-    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
+    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.put("tones", false); Cfg.put("link", false); Cfg.load();
     r.plan = Smoke.plan();
     r.finish(false);
     r.reset();
@@ -100,7 +100,7 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
         if (e.falseStartLeft() > 0) { sawFs = true; }
         // wszystkie strony co kilka sekund; z banerem częściej, ale tylko stronę główną (symulator rysuje wolno)
         if (i % 10 == 0) { Smoke.drawAll(scr, g); }
-        else if (r.banner != null && i % 3 == 0) { scr.page = (i / 3) % 5; scr.draw(g); }
+        else if (r.banner != null && i % 3 == 0) { scr.page = (i / 3) % scr.pageCount(); scr.draw(g); }
         if (i == 140) { Menus.ride(scr); }
         if (i == 200) { r.showEnzo("Bravissimo! Trzymasz 302 waty, dokładnie w celu. Jeszcze dwie minuty, forca!"); Smoke.drawAll(scr, g); r.dismissEnzo(); }
         if (i == 300) { r.pause(); Smoke.drawAll(scr, g); scr.tap(100, 300); r.resume(); }
@@ -142,7 +142,7 @@ function testSmokeFreeRide(logger as Test.Logger) as Boolean {
     var r = getRide();
     var g = Smoke.dc();
     var scr = new RideScreen();
-    Cfg.put("autoPause", true); Cfg.put("indoor", false); Cfg.put("autoLapMode", 3); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
+    Cfg.put("autoPause", true); Cfg.put("indoor", false); Cfg.put("autoLapMode", 3); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("link", false); Cfg.load();
     r.plan = null;
     r.recordFit = false;      // nagrywanie FIT sprawdza test jazdy z planu (jedna sesja na przebieg symulatora)
     if (!r.startRide(true)) { logger.debug("startRide failed"); r.recordFit = true; return false; }
@@ -175,7 +175,7 @@ function testSmokeFreeRide(logger as Test.Logger) as Boolean {
 function testSyncAndEnzo(logger as Test.Logger) as Boolean {
     Smoke.cleanup();
     var r = getRide();
-    Cfg.put("token", "t"); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
+    Cfg.put("token", "t"); Cfg.put("tones", false); Cfg.put("link", false); Cfg.load();
     var today = r.todayIso();
     // odpowiedź /api/garmin/sync w formacie serwera (lib/garmin/sync.ts)
     r.onSync(200, {
@@ -229,5 +229,97 @@ function testStores(logger as Test.Logger) as Boolean {
     ok = ok && bs.blockCount() == 2 && bs.block(0).size() == 2248 && bs.block(1).size() == 152 && Util.b64(bs.block(0)).length() == 3000;
     ok = ok && Util.durationPl(150).equals("2 minuty 30 sekund") && Util.clock(3725).equals("1:02:05") && Util.r5(12.4) == 10
         && Util.render("a {x} b {y}", { "x" => 5, "y" => "z" }).equals("a 5 b z") && Util.round(-2.5) == -3;
+    return ok;
+}
+
+//! Most do telefonu (tryb lustra): start jazdy niesie cały plan, próbka live ma 17 pól, „sync” w trakcie jazdy
+//! odsyła start z sync=1, pauza przechodzi do wektora live.
+(:test)
+function testPhoneMirrorProtocol(logger as Test.Logger) as Boolean {
+    Smoke.cleanup();
+    var r = getRide();
+    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.put("tones", false); Cfg.put("link", false); Cfg.put("ftp", 300); Cfg.load();
+    var w = new Workout();
+    w.ftp = 300; w.name = "Test 2x1";
+    w.add("Rozgrzewka", StepType.WARMUP, 60, 150, 200);
+    w.add("Interwał 1", StepType.INTERVAL, 60, 280, 300);
+    w.add("Przerwa", StepType.RECOVERY, 60, 100, 160);
+    r.plan = w;
+    r.recordFit = false;
+    if (!r.startRide(false)) { r.recordFit = true; return false; }
+    r.recordFit = true;
+    for (var i = 0; i < 20; i++) { r.simTick(180, 120, 88, 9.0); }
+    var sm = r.startMsg(true);
+    var st = sm.get("st") as Array;
+    var ok = "start".equals(sm.get("s")) && st.size() == 3 && (st[1] as Array)[0] == StepType.INTERVAL && (st[1] as Array)[3] == 300
+        && sm.get("sync") == 1 && sm.get("el") == 20 && sm.get("k") == r.startEpoch && "Test 2x1".equals(sm.get("w"));
+    var v = r.liveVec(0);
+    logger.debug("live=" + v.toString() + " el=" + sm.get("el"));
+    ok = ok && v.size() == 17 && v[0] == 19 && v[1] == 180 && v[11] == 180 && v[10] == 0 && v[16] >= 19 && v[16] <= 20;
+    r.pause();
+    ok = ok && r.startMsg(false).get("p") == 1 && r.liveVec(1)[10] == 1;
+    r.resume();
+    // polecenia z telefonu: „następny krok” i „sync” nie wywracają jazdy (most wyłączony – bez wysyłki w symulatorze)
+    r.onPhoneCommand("next");
+    r.onPhoneCommand("sync");
+    r.onPhoneCommand("state");
+    ok = ok && r.eng.stepIdx == 1 && r.active();
+    r.finish(false);
+    Smoke.cleanup();
+    return ok;
+}
+
+//! Zmiany planu w trakcie jazdy (głos / menu „Zmień plan”): dłuższy krok, cele +5%, jeszcze jeden interwał,
+//! paliwo; do tego pamięć urządzenia przy treningu z trasą (zapas na nowe strony).
+(:test)
+function testPlanEditsAndFuel(logger as Test.Logger) as Boolean {
+    Smoke.cleanup();
+    var r = getRide();
+    Cfg.put("autoPause", false); Cfg.put("indoor", true); Cfg.put("tones", false); Cfg.put("link", false); Cfg.put("ftp", 300); Cfg.load();
+    var w = new Workout();
+    w.ftp = 300; w.name = "Edycja";
+    w.add("Rozgrzewka", StepType.WARMUP, 120, 150, 200);
+    w.add("Interwał 1", StepType.INTERVAL, 120, 280, 300);
+    w.add("Przerwa", StepType.RECOVERY, 60, 100, 160);
+    w.add("Schłodzenie", StepType.COOLDOWN, 120, 120, 160);
+    r.plan = w;
+    r.recordFit = false;
+    if (!r.startRide(false)) { r.recordFit = true; return false; }
+    r.recordFit = true;
+    var e = r.eng;
+    for (var i = 0; i < 30; i++) { r.simTick(180, 120, 88, 9.0); }
+    var rem0 = e.stepRemaining();
+    r.planEdit("extend:60");
+    var ok = e.stepRemaining() == rem0 + 60 && e.wk.steps[0].dur == 180;
+    r.planEdit("extend:-600");                       // nie da się skrócić poniżej przejechanego czasu
+    ok = ok && e.stepRemaining() >= 4 && e.stepRemaining() <= 6;
+    r.planEdit("bias:+5");
+    ok = ok && e.bias == 5 && e.wk.steps[1].lo == 294 && e.wk.steps[1].hi == 315 && e.wk.steps[2].hi == 160;
+    r.planEdit("bias:+5");
+    ok = ok && e.bias == 10 && e.wk.steps[1].hi == 330;
+    r.planEdit("bias:0");
+    ok = ok && e.bias == 0 && e.wk.steps[1].hi == 300;
+    r.planEdit("repeat");                             // w rozgrzewce: [interwał, przerwa] zaraz po niej
+    logger.debug("kroki=" + e.wk.steps.size() + " interwały=" + e.intervalCount + " nazwa=" + e.wk.steps[1].name);
+    ok = ok && e.wk.steps.size() == 6 && e.intervalCount == 2 && e.wk.steps[1].type == StepType.INTERVAL && e.wk.steps[2].type == StepType.RECOVERY;
+    ok = ok && e.wk.steps[1].name.equals("Dodatkowy interwał") && e.intervalNo(3) == 2;
+    // paliwo: dwa żele, picie; spalanie rośnie z mocą
+    r.fuel(25); r.fuel(25); r.fuel(0);
+    for (var j = 0; j < 60; j++) { r.simTick(300, 150, 90, 9.0); }
+    logger.debug("cho spalone=" + r.choBurn + " zjedzone=" + r.choEat + " picie=" + r.drinks + " ślad=" + r.pTrace.size());
+    ok = ok && r.choEat == 50 && r.drinks == 1 && r.choBurn > 3.0 && r.choBurn < 25.0 && r.pTrace.size() == 9;
+    var st = r.coachState();
+    ok = ok && st.get("carbsEatenG") == 50;
+    // „prowadź do kawiarni”, a kawiarnia jest na trasie: serwer odpowiada keep – trasa zostaje, jest tylko komunikat
+    var crs = r.course;
+    r.onReroute(200, { "keep" => true, "say" => "Schronisko – na trasie za 1.2 kilometra." });
+    ok = ok && r.course == crs && r.banner != null && (r.banner as String).find("Schronisko") != null;
+    // odmowa serwera: komunikat błędu, trasa bez zmian
+    r.onReroute(404, { "message" => "W pobliżu nic takiego nie znalazłem." });
+    ok = ok && r.course == crs && r.banner != null && (r.banner as String).find("nic takiego") != null;
+    var stats = System.getSystemStats();
+    logger.debug("pamięć: użyta " + stats.usedMemory + " z " + stats.totalMemory + " B, wolne " + stats.freeMemory + " B");
+    r.finish(false);
+    Smoke.cleanup();
     return ok;
 }

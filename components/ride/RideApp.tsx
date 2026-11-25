@@ -16,6 +16,7 @@ import { hmmss } from './parts';
 import { loadSavedRoute } from './RouteCard';
 import type { RideRoute } from '@/lib/ride/gpx';
 import { applyRaceTargets, type RacePacing } from '@/lib/ride/race-pacing';
+import { GarminRideDone } from './GarminRideDone';
 
 type Screen = 'home' | 'sensors' | 'pre' | 'live' | 'summary';
 
@@ -28,7 +29,7 @@ export interface RideAppProps {
   onSave: (summary: WorkoutSummary, samples: RecordedSample[], script: WorkoutScript, settings: RideSettings, startedAt: Date) => Promise<void>;
   onAskCoach?: () => void;
   /** Eksport ostatnio zapisanej jazdy na Stravę. */
-  onExportStrava?: () => Promise<{ url?: string; pending?: boolean; already?: boolean }>;
+  onExportStrava?: (rideId?: string) => Promise<{ url?: string; pending?: boolean; already?: boolean }>;
   /** Najbliższy start ze strategią – tryb startowy (cele mocy na podjazdach trasy GPX). */
   racePacing?: RacePacing;
 }
@@ -73,10 +74,24 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, on
   // trening trwa (także po wznowieniu z awarii) → ekran na żywo; koniec → podsumowanie
   useEffect(() => {
     if (!ride.active) return;
-    const c = readCurrent();
-    if (c) { setScript(c.script); setStartedAt(new Date(c.startedAt)); }
+    if (ride.mirror) {
+      // jazda z licznika Garmin: plan i godzina startu z licznika (telefon nie nagrywa – nic do zapisania tutaj)
+      setScript(ride.mirror.script.steps.length ? ride.mirror.script : null);
+      setStartedAt(new Date(ride.mirror.startedAt));
+    } else {
+      const c = readCurrent();
+      if (c) { setScript(c.script); setStartedAt(new Date(c.startedAt)); }
+    }
     setScreen('live');
-  }, [ride.active]);
+  }, [ride.active, ride.mirror]); // eslint-disable-line react-hooks/exhaustive-deps
+  // plan zmieniony głosem w trakcie jazdy z telefonu („dodaj minutę”, „mocniej o 5%”, „jeszcze jeden interwał”)
+  useEffect(() => {
+    if (ride.active && ride.planEdit && !ride.mirror) setScript((sc) => (sc ? { ...sc, steps: ride.planEdit!.steps } : sc));
+  }, [ride.planEdit]); // eslint-disable-line react-hooks/exhaustive-deps
+  // koniec jazdy na liczniku: z ekranu na żywo wracamy na start (tam karta z wysyłką jazdy do VeloIQ)
+  useEffect(() => {
+    if (!ride.active && !ride.summary && screen === 'live') setScreen('home');
+  }, [ride.active, ride.summary, screen]);
   useEffect(() => {
     if (!ride.summary) return;
     setScreen('summary');
@@ -146,6 +161,7 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, on
         </div>
       </section>
     )}
+    {ride.mirrorDone && <GarminRideDone ride={ride} onExportStrava={onExportStrava} />}
     <HomeScreen ride={ride} plan={plan} planLabel={planLabel} dateLabel={dateLabel[0].toUpperCase() + dateLabel.slice(1)}
       settings={settings} onSettings={updateSettings}
       onStart={() => setScreen('pre')} onFree={() => start(freeRideScript(ftp))} onSensors={() => setScreen('sensors')}

@@ -1,0 +1,56 @@
+name: Trasy (żywy test)
+
+# Planer tras VeloIQ na prawdziwych serwisach: BRouter (profile szosa / gravel / MTB / spokojna, warianty, pętle),
+# Overpass („Przed tobą”) i Photon (wyszukiwanie miejsc). Plus testy bez sieci i testy licznika Garmin po stronie serwera.
+
+on:
+  push:
+    paths:
+      - 'lib/route/**'
+      - 'lib/garmin/**'
+      - 'lib/ride/gpx.ts'
+      - 'scripts/check-routing.ts'
+      - 'scripts/check-garmin.ts'
+      - '.github/workflows/routing.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: routing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: BRouter – które profile odpowiadają (diagnostyka)
+        continue-on-error: true
+        run: |
+          for p in fastbike fastbike-verylowtraffic fastbike-lowtraffic gravel mtb trekking safety; do
+            code=$(curl -s --max-time 40 -o /tmp/r.txt -w "%{http_code}" "https://brouter.de/brouter?lonlats=15.755,50.7753|15.7194,50.9044&profile=$p&alternativeidx=0&format=geojson" || true)
+            echo "$p → HTTP $code $(head -c 160 /tmp/r.txt | tr '\n' ' ')"
+          done
+          curl -s -o /tmp/r.txt -w "param test HTTP %{http_code}\n" "https://brouter.de/brouter?lonlats=15.755,50.7753|15.7194,50.9044&profile=gravel&alternativeidx=0&format=geojson&timode=3&profile:prefer_unpaved_paths=1"; head -c 200 /tmp/r.txt; echo
+      - name: Overpass – diagnostyka
+        continue-on-error: true
+        run: |
+          Q='[out:json][timeout:25];node(around:150,50.7753,15.7550,50.7800,15.7500)["amenity"~"^(cafe|drinking_water)$"];out body 20;'
+          for url in https://overpass-api.de/api/interpreter https://overpass.private.coffee/api/interpreter https://maps.mail.ru/osm/tools/overpass/api/interpreter https://overpass.kumi.systems/api/interpreter; do
+            c=$(curl -s --http1.1 --max-time 25 -o /tmp/o.txt -w "%{http_code}" -A "VeloIQ/1.0 (planer tras rowerowych; +https://veloiq-three.vercel.app)" -e "https://veloiq-three.vercel.app/" -H "Accept: */*" -X POST --data-urlencode "data=$Q" "$url" || true)
+            echo "$url → HTTP $c: $(head -c 120 /tmp/o.txt 2>/dev/null | tr '\n' ' ')"
+          done
+      - run: npm ci --no-audit --no-fund
+      - name: Testy serwera licznika
+        run: npx -y tsx --tsconfig tsconfig.json scripts/check-garmin.ts
+      - name: Planer tras – bez sieci i na żywo
+        env:
+          LIVE: '1'
+        run: npx -y tsx --tsconfig tsconfig.json scripts/check-routing.ts

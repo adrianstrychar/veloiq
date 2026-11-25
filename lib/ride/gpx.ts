@@ -9,6 +9,12 @@ export interface RouteClimb {
   // tryb startowy (strategia wyścigu): cel mocy i taktyka na tym podjeździe
   low?: number; high?: number; tier?: 'oszczedz' | 'atak' | 'full'; tip?: string;
 }
+/** Nawierzchnia odcinka trasy: 0 asfalt · 1 szuter / utwardzona · 2 teren (ścieżka, grunt) · 3 nieznana. */
+export type SurfaceCode = 0 | 1 | 2 | 3;
+/** Punkt „Przed tobą” na trasie (Overpass/OSM): kawiarnia, woda, toaleta, serwis rowerowy, sklep, stacja. */
+export type PoiKind = 'cafe' | 'water' | 'toilets' | 'bike' | 'shop' | 'fuel' | 'food';
+export interface RoutePoi { d: number; kind: PoiKind; name: string; off?: number /* m od trasy */ }
+
 export interface RideRoute {
   name: string;
   total: number;                                    // m
@@ -17,12 +23,17 @@ export interface RideRoute {
   cues: RouteCue[];
   climbs: RouteClimb[];
   raceId?: string;   // trasa wgrana do startu w kalendarzu (tryb startowy w „Jedź”)
+  // trasa z planera VeloIQ (BRouter): profil, nawierzchnia odcinkami [od m, kod], punkty po drodze, czas jazdy
+  profile?: string;
+  surface?: [number, SurfaceCode][];
+  pois?: RoutePoi[];
+  estSec?: number;
 }
 
-interface Raw { lat: number; lon: number; ele: number | null }
+export interface Raw { lat: number; lon: number; ele: number | null }
 
 const R = 6371000, rad = Math.PI / 180;
-function dist(a: Raw, b: Raw) {
+export function dist(a: Raw, b: Raw) {
   const dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
@@ -171,4 +182,21 @@ export function buildRoute(name: string, raw: Raw[]): RideRoute {
 export function routeFromGpx(xml: string): RideRoute {
   const { name, raw } = parseGpx(xml);
   return buildRoute(name, raw);
+}
+
+/** RideRoute → plik GPX (eksport trasy z planera: Garmin Connect, Komoot, Wahoo, inne liczniki). */
+export function routeToGpx(r: RideRoute): string {
+  const esc = (s: string) => s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c] as string));
+  const pts = r.pts.map((p) => `<trkpt lat="${p[0].toFixed(6)}" lon="${p[1].toFixed(6)}">${p[2] != null ? `<ele>${p[2]}</ele>` : ''}</trkpt>`).join('\n      ');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="VeloIQ" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>${esc(r.name)}</name></metadata>
+  <trk>
+    <name>${esc(r.name)}</name>
+    <trkseg>
+      ${pts}
+    </trkseg>
+  </trk>
+</gpx>
+`;
 }

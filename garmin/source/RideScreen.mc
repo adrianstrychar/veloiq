@@ -4,18 +4,69 @@ import Toybox.Math;
 import Toybox.System;
 import Toybox.WatchUi;
 
-//! Ekrany jazdy: TRENING (cel mocy, odliczanie, profil), dwie strony własnych pól danych, OKRĄŻENIA / SERIE, ENZO
-//! oraz – gdy jedziemy po trasie GPX – TRASA (ostatnia strona: jedno przesunięcie wstecz z ekranu treningu).
+//! Identyfikatory stron jazdy (kolejność na liczniku jak tutaj; część stron jest opcjonalna – Ustawienia → Ekrany).
+module Pg {
+    const MAIN = 0;      // TRENING – cel mocy, odliczanie, profil
+    const CHART = 1;     // WYKRES – cały trening z mocą na tle celów, kolejne kroki (jak ekran treningu w Edge 1060)
+    const EFFORT = 2;    // WYSIŁEK – rezerwa W′ (stamina), czas do wyczerpania, strefy mocy
+    const F1 = 3;        // pola danych 1
+    const F2 = 4;        // pola danych 2
+    const FUEL = 5;      // PALIWO – spalone węglowodany, zjedzone, cel na godzinę, glikogen
+    const LAPS = 6;      // OKRĄŻENIA / SERIE
+    const ENZO = 7;      // ENZO
+    const CLIMB = 8;     // PODJAZD – profil podjazdu w kolorach nachylenia (jak ClimbPro), kolejne podjazdy
+    const NAV = 9;       // TRASA – ostatnia: jedno przesunięcie wstecz z ekranu treningu
+
+    function byName(n as String) as Number {
+        var t = ["trening", "wykres", "wysilek", "pola1", "pola2", "paliwo", "okrazenia", "enzo", "podjazd", "trasa"];
+        for (var i = 0; i < t.size(); i++) { if (t[i].equals(n)) { return i; } }
+        if (n.equals("mapa")) { return NAV; }
+        return -1;
+    }
+}
+
+//! Ekrany jazdy: TRENING, WYKRES, WYSIŁEK, dwie strony własnych pól danych, PALIWO, OKRĄŻENIA / SERIE, ENZO,
+//! a na trasie – PODJAZD i TRASA (ostatnia strona: jedno przesunięcie wstecz z ekranu treningu).
 //! Strony: przesunięcie palcem w bok albo przyciski góra/dół. Rysowany przez RootView.
 class RideScreen {
-    const PAGES = 5;
-    const NAV_PAGE = 5;
-    var page as Number = 0;
+    var page as Number = 0;      // indeks w pages()
     var hits;
     var zoom as Number = 1;      // strona TRASA: 0 = 400 m, 1 = 1 km, 2 = 3 km, 3 = 10 km, 4 = cała trasa
+    var chartZoom as Number = 0; // strona WYKRES: 0 = cały trening, 1 = najbliższe 20 min
+
+    //! Aktywne strony (identyfikatory Pg) w kolejności przewijania.
+    function pages() {
+        var r = getRide();
+        var e = r.eng;
+        var out = [Pg.MAIN];
+        if (Cfg.pgChart && e != null && !e.wk.isFree()) { out.add(Pg.CHART); }
+        if (Cfg.pgEffort) { out.add(Pg.EFFORT); }
+        out.add(Pg.F1);
+        out.add(Pg.F2);
+        if (Cfg.pgFuel) { out.add(Pg.FUEL); }
+        out.add(Pg.LAPS);
+        out.add(Pg.ENZO);
+        if (r.nav != null && r.nav.enabled && Cfg.pgClimb && r.nav.course.climbs.size() > 0) { out.add(Pg.CLIMB); }
+        if (r.nav != null) { out.add(Pg.NAV); }
+        return out;
+    }
 
     function pageCount() as Number {
-        return getRide().nav != null ? PAGES + 1 : PAGES;
+        return pages().size();
+    }
+
+    //! Identyfikator bieżącej strony.
+    function pageId() as Number {
+        var ps = pages();
+        if (page >= ps.size() || page < 0) { page = 0; }
+        return ps[page];
+    }
+
+    //! Indeks strony o danym identyfikatorze (albo -1, gdy strona jest wyłączona / niedostępna).
+    function indexOf(id as Number) as Number {
+        var ps = pages();
+        for (var i = 0; i < ps.size(); i++) { if (ps[i] == id) { return i; } }
+        return -1;
     }
 
     function initialize() {
@@ -31,12 +82,16 @@ class RideScreen {
         if (e == null) { return; }
         var w = dc.getWidth();
         var h = dc.getHeight();
-        if (page >= pageCount()) { page = 0; }
+        var pid = pageId();
         var top = drawBar(dc, r, w, h);
-        if (page == 0) { drawMain(dc, r, e, top, w, h); }
-        else if (page == NAV_PAGE) { drawNav(dc, r, e, top, w, h); }
-        else if (page == 1 || page == 2) { drawGrid(dc, r, top, w, h, page - 1); }
-        else if (page == 3) { drawLaps(dc, r, e, top, w, h); }
+        if (pid == Pg.MAIN) { drawMain(dc, r, e, top, w, h); if (Cfg.edges) { Pages2.edges(dc, r, e, top, w, h); } }
+        else if (pid == Pg.NAV) { drawNav(dc, r, e, top, w, h); }
+        else if (pid == Pg.F1 || pid == Pg.F2) { drawGrid(dc, r, top, w, h, pid == Pg.F1 ? 0 : 1); }
+        else if (pid == Pg.LAPS) { drawLaps(dc, r, e, top, w, h); }
+        else if (pid == Pg.CHART) { Pages2.chart(dc, self, r, e, top, w, h); }
+        else if (pid == Pg.EFFORT) { Pages2.effort(dc, self, r, e, top, w, h); }
+        else if (pid == Pg.FUEL) { Pages2.fuel(dc, self, r, e, top, w, h); }
+        else if (pid == Pg.CLIMB) { Pages2.climb(dc, self, r, e, top, w, h); }
         else { drawEnzo(dc, r, top, w, h); }
 
         if (r.state == RideState.PAUSED) { drawPaused(dc, r, w, h); }
@@ -328,7 +383,13 @@ class RideScreen {
         var nc = nav.acquired ? nav.nextClimb() : null;
         var line = c.name;
         var lcol = Th.dim;
-        if (nc != null) {
+        var np = nav.acquired ? nav.nextPois(1) : [];
+        var poiNear = np.size() > 0 && np[0][1] < 10000 && (nc == null || (nc[1] > 5000 && np[0][1] < nc[1]));
+        if (poiNear) {
+            var pq = c.pois[np[0][0]];
+            line = Poi.label(pq[1]) + " za " + Ui.meters(np[0][1]) + ": " + Util.str(pq[2], "");
+            lcol = Th.accent;
+        } else if (nc != null) {
             var cl = c.climbs[nc[0]];
             var tg = cl[4] > 0 ? ", " + cl[4] + "-" + cl[5] + " W" : "";
             var cdesc = ((cl[1] - cl[0]) / 1000.0).format("%.1f") + " km " + Util.round(cl[3] / 10.0) + "%";
@@ -411,15 +472,27 @@ class RideScreen {
         var px = 0;
         var py = 0;
         var first = true;
-        dc.setPenWidth(whole ? 2 : 4);
+        dc.setPenWidth(whole ? 3 : 5);
         var i = from;
+        // trasa z planera: kolor nawierzchni (asfalt / szuter / teren), przejechane – szare
+        var sf = c.surf;
+        var ri = 0;
+        var colors = [Th.accent, Th.warn, Th.good, Th.accent];
         while (true) {
             var dx = (c.lon(i) - lo0) * kx;
             var dy = (c.lat(i) - la0) * ky;
             var sx = Util.round(ox + (dx * cs - dy * sn) * scale);
             var sy = Util.round(oy - (dx * sn + dy * cs) * scale);
             if (!first) {
-                dc.setColor(nav.acquired && c.cum[i] <= nav.progress ? Th.dim : Th.accent, Graphics.COLOR_TRANSPARENT);
+                var col = Th.accent;
+                if (nav.acquired && c.cum[i] <= nav.progress) { col = Th.dim; }
+                else if (sf.size() > 0) {
+                    var mid = (c.cum[i] + c.cum[i - (i > from ? 1 : 0)]) / 2;
+                    while (ri + 1 < sf.size() && sf[ri + 1][0] <= mid) { ri++; }
+                    var code = sf[ri][1];
+                    col = colors[code >= 0 && code < 4 ? code : 0];
+                }
+                dc.setColor(col, Graphics.COLOR_TRANSPARENT);
                 dc.drawLine(px, py, sx, sy);
             }
             first = false;
@@ -429,11 +502,26 @@ class RideScreen {
             if (i > to) { i = to; }
         }
         dc.setPenWidth(1);
+        _mt = [la0, lo0, kx, ky, ox, oy, sn, cs, scale];
         // start i meta
         if (whole) {
-            _mt = [la0, lo0, kx, ky, ox, oy, sn, cs, scale];
             marker(dc, c, 0, Th.good);
             marker(dc, c, c.n - 1, Th.warn);
+        }
+        // punkty „Przed tobą” na mapie: kółko z literą rodzaju
+        var ps = c.pois;
+        for (var q = 0; q < ps.size(); q++) {
+            if (nav.acquired && ps[q][0] < nav.progress - 100) { continue; }
+            var si = c.segAt(ps[q][0]);
+            var pdx = (c.lon(si) - lo0) * kx;
+            var pdy = (c.lat(si) - la0) * ky;
+            var qx = Util.round(ox + (pdx * cs - pdy * sn) * scale);
+            var qy = Util.round(oy - (pdx * sn + pdy * cs) * scale);
+            if (qx < x - 10 || qx > x + w + 10 || qy < y - 10 || qy > y + h + 10) { continue; }
+            dc.setColor(Th.fg, Graphics.COLOR_TRANSPARENT);
+            dc.fillCircle(qx, qy, 8);
+            dc.setColor(Th.bg, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(qx, qy, Graphics.FONT_XTINY, Poi.sign(ps[q][1]), Ui.C | Ui.VC);
         }
         // pozycja: w zbliżeniu trójkąt „do przodu”, na całej trasie kropka
         var mx = Util.round(ox);
@@ -742,6 +830,8 @@ class RideScreen {
     }
 
     // ------------------------------------------------------------------ sterowanie
+    function addHit(h) as Void { hits.add(h); }
+
     function tap(x, y) as Void {
         var r = getRide();
         if (r.enzoText != null) { r.dismissEnzo(); return; }
@@ -758,6 +848,10 @@ class RideScreen {
             else if (id.equals("end")) { WatchUi.pushView(Menus.pause(), new PauseMenuDelegate(), WatchUi.SLIDE_UP); }
             else if (id.equals("talk")) { r.talkToPhone(); }
             else if (id.equals("zoom")) { zoom = (zoom + 1) % 5; WatchUi.requestUpdate(); }
+            else if (id.equals("czoom")) { chartZoom = (chartZoom + 1) % 2; WatchUi.requestUpdate(); }
+            else if (id.equals("gel")) { r.fuel(25); }
+            else if (id.equals("bar")) { r.fuel(40); }
+            else if (id.equals("drink")) { r.fuel(0); }
             else if (id.equals("ask")) { WatchUi.pushView(Menus.questions(), new QuestionMenuDelegate(), WatchUi.SLIDE_UP); }
             return;
         }

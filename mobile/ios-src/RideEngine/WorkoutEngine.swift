@@ -23,11 +23,14 @@ final class WorkoutEngine {
     var onSecond: ((Int, Int?, Int?, Int?, Double?) -> Void)? // (sekunda, moc, hr, kadencja, balans) – do zapisu
     var onPlanFinished: ((WorkoutSummary) -> Void)?
 
-    let script: WorkoutScript
+    private(set) var script: WorkoutScript
     private let R: ResolvedRules
     private let phrases: [String: String]
-    private let intervalNumbers: [Int?]
-    private let intervalCount: Int
+    private var intervalNumbers: [Int?]
+    private var intervalCount: Int
+    /// Korekta celów mocy kroków pracy w % (0 = jak w planie) i oryginalne cele do jej cofnięcia.
+    private(set) var bias = 0
+    private var baseTargets: [(Int, Int)]?
 
     // Czas
     private(set) var startDate: Date
@@ -130,6 +133,69 @@ final class WorkoutEngine {
     }
 
     private var step: WorkoutStep? { stepIdx < script.steps.count ? script.steps[stepIdx] : nil }
+
+    // MARK: - Korekty planu w trakcie jazdy (te same co na liczniku Garmin – Engine.mc)
+
+    /// Wydłuża (sec > 0) albo skraca (sec < 0) bieżący krok; skrócenie zostawia co najmniej 5 s. Zwraca zmianę w s.
+    @discardableResult
+    func extendStep(_ sec: Int) -> Int {
+        guard phase != .free, stepIdx < script.steps.count else { return 0 }
+        let cur = script.steps[stepIdx].durationSec
+        let nd = min(4 * 3600, max(inStep + 5, cur + sec))
+        script.steps[stepIdx].durationSec = nd
+        return nd - cur
+    }
+
+    /// Cele mocy kroków pracy od bieżącego o pct % względem planu (przerwy i schłodzenie bez zmian); 0 = plan.
+    func setBias(_ pct: Int) {
+        let p = min(25, max(-25, pct))
+        if baseTargets == nil { baseTargets = script.steps.map { ($0.powerLow, $0.powerHigh) } }
+        guard let base = baseTargets else { return }
+        let from = phase == .free ? script.steps.count : stepIdx
+        for i in from..<script.steps.count where i < base.count {
+            let t = script.steps[i].type
+            if t == "recovery" || t == "cooldown" { continue }
+            script.steps[i].powerLow = Int((Double(base[i].0) * Double(100 + p) / 100).rounded())
+            script.steps[i].powerHigh = Int((Double(base[i].1) * Double(100 + p) / 100).rounded())
+        }
+        bias = p
+    }
+
+    /// Jeszcze jeden interwał: kopia ostatniego (albo najbliższego) interwału z przerwą po nim zaraz po bieżącym kroku.
+    /// W interwale → [przerwa, interwał]; w schłodzeniu → interwał, przerwa i dalsze schłodzenie (schłodzenie kończy się teraz).
+    @discardableResult
+    func repeatInterval() -> Bool {
+        guard phase != .free, stepIdx < script.steps.count else { return false }
+        let steps = script.steps
+        guard let iv = (0...stepIdx).reversed().first(where: { steps[$0].isInterval }) ?? (stepIdx..<steps.count).first(where: { steps[$0].isInterval }) else { return false }
+        var ivc = steps[iv]
+        ivc.name = "Dodatkowy interwał"
+        ivc.start = "auto"
+        let rec: WorkoutStep
+        if iv + 1 < steps.count, steps[iv + 1].type == "recovery" { rec = steps[iv + 1] }
+        else {
+            rec = WorkoutStep(name: "Przerwa", type: "recovery", durationSec: max(120, ivc.durationSec / 2),
+                              powerLow: Int(Double(script.ftp) * 0.40), powerHigh: Int(Double(script.ftp) * 0.55),
+                              cadenceLow: nil, cadenceHigh: nil, cueStart: nil, start: nil, hrLow: nil, hrHigh: nil)
+        }
+        let cur = steps[stepIdx]
+        let ins: [WorkoutStep] = cur.isInterval ? [rec, ivc] : cur.type == "cooldown" ? [ivc, rec, cur] : [ivc, rec]
+        script.steps.insert(contentsOf: ins, at: stepIdx + 1)
+        if var base = baseTargets {
+            base.insert(contentsOf: ins.map { ($0.powerLow, $0.powerHigh) }, at: stepIdx + 1)
+            baseTargets = base
+            if bias != 0 { setBias(bias) }
+        }
+        var n = 0
+        intervalNumbers = script.steps.indices.map { i -> Int? in
+            guard script.steps[i].isInterval else { return nil }
+            if !Self.chainedAt(script.steps, i) { n += 1 }
+            return n
+        }
+        intervalCount = n
+        if cur.type == "cooldown" { skipStep() }
+        return true
+    }
 
     /// Interwał startuje automatycznie (wykrywanie po mocy)? Pierwszy krok nigdy.
     func isAuto(_ idx: Int) -> Bool { Self.autoAt(script.steps, idx) }

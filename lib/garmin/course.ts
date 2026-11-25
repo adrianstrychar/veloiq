@@ -5,6 +5,8 @@
 //   punkt = 12 B: szer. int32 LE (mikrostopnie), dług. int32 LE, wysokość uint16 LE (m + 500, 65535 = brak),
 //                 odległość od poprzedniego punktu uint16 LE (m, po trasie)
 // Skręty: [dystans m, kod kierunku]; podjazdy: [start m, koniec m, przewyższenie m, nachylenie ×10, cel↓ W, cel↑ W, taktyka].
+// Trasa z planera (v2, pola opcjonalne): nawierzchnia [od m, kod 0 asfalt / 1 szuter / 2 teren / 3 ?],
+// „Przed tobą” [dystans m, kod rodzaju, nazwa], profil (road|gravel|mtb|calm) – do powrotu na trasę z licznika.
 import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { plainText } from './sync';
@@ -17,6 +19,9 @@ const MAX_GAP_M = 200;                 // najdłuższy odcinek bez punktu (profi
 
 export const DIR_CODES = ['left', 'right', 'slightLeft', 'slightRight', 'sharpLeft', 'sharpRight', 'uturn'] as const;
 export const TIER_CODES = ['', 'oszczedz', 'atak', 'full'] as const;
+export const POI_CODES = ['cafe', 'water', 'toilets', 'bike', 'shop', 'fuel', 'food'] as const;
+const MAX_SURF = 150;
+const MAX_POIS = 40;
 
 export interface CoursePoint { lat: number; lon: number; ele: number | null; d: number }
 export interface StoredCourse {
@@ -29,7 +34,14 @@ export interface StoredCourse {
   parts: string[];      // base64
   cues: number[][];
   climbs: number[][];
+  surf?: number[][];
+  pois?: (number | string)[][];
+  prof?: string;
   savedAt: string;
+  /** Objazd w trakcie jazdy („prowadź do kawiarni”, „do startu”): główna trasa i postęp na niej (m) w chwili zjazdu –
+   *  „wróć na trasę” wraca na nią, a nie na objazd. */
+  base?: StoredCourse;
+  baseProg?: number;
 }
 
 export class CourseError extends Error {}
@@ -162,14 +174,36 @@ export function buildCourse(route: unknown): StoredCourse {
     return [start, end, int(o.gain, 0, 9000), int(Number(o.grade) * 10, 0, 400), low > 0 && high >= low ? low : 0, low > 0 && high >= low ? high : 0, tier];
   }).filter((x): x is number[] => x != null).sort((a, b) => a[0] - b[0]).slice(0, MAX_CLIMBS);
 
+  const surf = (Array.isArray(r.surface) ? r.surface : []).map((x) => {
+    const a = Array.isArray(x) ? x : [];
+    const code = int(a[1], 0, 3);
+    return [int(a[0], 0, total), code];
+  }).filter((x, i, arr) => i === 0 || x[0] > arr[i - 1][0]).slice(0, MAX_SURF);
+
+  const pois = (Array.isArray(r.pois) ? r.pois : []).map((x) => {
+    const o = (x ?? {}) as Record<string, unknown>;
+    const k = POI_CODES.indexOf(String(o.kind) as (typeof POI_CODES)[number]);
+    if (k < 0) return null;
+    return [int(o.d, 0, total), k, plainText(String(o.name ?? '')).trim().slice(0, 24)];
+  }).filter((x): x is (number | string)[] => x != null).sort((a, b) => (a[0] as number) - (b[0] as number)).slice(0, MAX_POIS);
+
+  const prof = ['road', 'gravel', 'mtb', 'calm'].includes(String(r.profile)) ? String(r.profile) : undefined;
   const name = plainText(String(r.name ?? 'Trasa')).trim().slice(0, 40) || 'Trasa';
-  const id = createHash('sha1').update(bin).update(JSON.stringify([name, cues, climbs])).digest('hex').slice(0, 12);
-  return { v: 1, id, name, total, gain: int(r.gain, 0, 30000), n: pts.length, parts, cues, climbs, savedAt: new Date().toISOString() };
+  const id = createHash('sha1').update(bin).update(JSON.stringify([name, cues, climbs, surf, pois])).digest('hex').slice(0, 12);
+  return {
+    v: 1, id, name, total, gain: int(r.gain, 0, 30000), n: pts.length, parts, cues, climbs,
+    ...(surf.length > 1 || (surf.length === 1 && surf[0][1] !== 3) ? { surf } : {}),
+    ...(pois.length ? { pois } : {}), ...(prof ? { prof } : {}),
+    savedAt: new Date().toISOString(),
+  };
 }
 
 /** Nagłówek trasy dla licznika (bez punktów – te idą częściami). */
 export function courseMeta(c: StoredCourse) {
-  return { id: c.id, name: c.name, total: c.total, gain: c.gain, n: c.n, parts: c.parts.length, cues: c.cues, climbs: c.climbs };
+  return {
+    id: c.id, name: c.name, total: c.total, gain: c.gain, n: c.n, parts: c.parts.length, cues: c.cues, climbs: c.climbs,
+    ...(c.surf ? { surf: c.surf } : {}), ...(c.pois ? { pois: c.pois } : {}), ...(c.prof ? { prof: c.prof } : {}),
+  };
 }
 
 // ---------------------------------------------------------------- zapis (Supabase Storage, bucket `rides`)

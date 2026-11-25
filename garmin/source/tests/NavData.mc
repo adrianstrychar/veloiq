@@ -20,8 +20,10 @@ module NavData {
         for (var i = 0; i < parts.size(); i++) { Application.Storage.setValue("crs_p" + i, parts[i]); }
         Application.Storage.setValue("crs_t", [[1210, 1], [2710, 0]]);
         Application.Storage.setValue("crs_c", [[1060, 2730, 119, 71, 280, 300, 2]]);
-        Application.Storage.setValue("crs", { "id" => "55e10dd10e76", "name" => "Pętla testowa", "total" => 3610, "gain" => 119, "n" => 22, "parts" => 1 });
-        Application.Storage.setValue("crs_ok", "55e10dd10e76");
+        Application.Storage.setValue("crs_s", [[0, 0], [1250, 1], [2900, 2]]);
+        Application.Storage.setValue("crs_q", [[900, 1, "Źródełko"], [2400, 0, "Schronisko"], [3300, 3, "Serwis Karkonosze"]]);
+        Application.Storage.setValue("crs", { "id" => "455fba0811dd", "name" => "Pętla testowa", "total" => 3610, "gain" => 119, "n" => 22, "parts" => 1, "prof" => "gravel" });
+        Application.Storage.setValue("crs_ok", "455fba0811dd");
     }
 
     //! Przejazd po trasie: [szer., dług.] w mikrostopniach co 10 m (jedna para na sekundę).

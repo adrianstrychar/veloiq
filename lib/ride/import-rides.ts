@@ -12,7 +12,7 @@ import { downsampleStreams } from '@/lib/strava/streams';
 import { recalculateFitnessMetrics, recalculateFtpEstimate, recalculateVo2Estimate } from '@/lib/sync';
 import type { SavedSample } from './save-ride';
 import { virtualDistances } from './virtual-speed';
-import { dedupeVeloiqRides } from './dedupe';
+import { dedupeLocalRides, dedupeVeloiqRides } from './dedupe';
 
 export const isVeloiqRideId = (id: number | string) => Number(id) < 0;
 export const veloiqActivityId = (startedAtIso: string) => -Math.floor(new Date(startedAtIso).getTime() / 1000);
@@ -126,15 +126,21 @@ export function buildActivityRow(ride: RideRow, samples: SavedSample[], athleteI
  * Bezpieczne do wołania często (jedno zapytanie, gdy nic nowego). Zwraca liczbę dodanych.
  */
 export async function importMissingRides(supabase: SupabaseClient, userId: string, athleteId: string): Promise<number> {
+  // ta sama jazda z telefonu i z licznika Garmin (obie nagrywały) → jedna aktywność
+  const dups = await dedupeLocalRides(supabase, userId, athleteId).catch(() => 0);
   const { data: rides, error } = await supabase
     .from('rides')
     .select('id, started_at, duration_sec, avg_power, normalized_power, intensity_factor, tss, kj, avg_hr, max_hr, outdoor, workout_name, series, samples_path, source')
     .eq('user_id', userId)
     .neq('source', 'veloiq-web-sim') // symulacja w przeglądarce to nie trening
     .not('source', 'like', '%:strava:%') // wysłane na Stravę – wracają jako aktywność ze Stravy
+    .not('source', 'like', '%:dup:%')    // druga kopia tej samej jazdy (telefon + licznik)
     .order('started_at', { ascending: false })
     .limit(30);
-  if (error || !rides?.length) return 0;
+  if (error || !rides?.length) {
+    if (dups) await recalculateFitnessMetrics(supabase, athleteId).catch(() => undefined);
+    return 0;
+  }
 
   const ids = rides.map((r) => veloiqActivityId(r.started_at as string));
   const { data: have } = await supabase.from('strava_activities').select('strava_activity_id').in('strava_activity_id', ids);
@@ -156,7 +162,7 @@ export async function importMissingRides(supabase: SupabaseClient, userId: strin
   }
   // ta sama jazda jest już ze Stravy (np. z Garmina) → kopia VeloIQ znika, dane podpięte pod Stravę
   if (added) added -= Math.min(added, await dedupeVeloiqRides(supabase, athleteId).catch(() => 0));
-  if (added) {
+  if (added || dups) {
     await recalculateFitnessMetrics(supabase, athleteId);
     await recalculateFtpEstimate(supabase, athleteId);
     await recalculateVo2Estimate(supabase, athleteId);

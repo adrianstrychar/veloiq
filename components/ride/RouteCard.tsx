@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import s from './ride.module.css';
 import { routeFromGpx, type RideRoute } from '@/lib/ride/gpx';
+import { RoutePlanner } from './RoutePlanner';
+import { useRideContext } from './RideProvider';
 
 const KEY = 'veloiq.route.v1';
 
@@ -42,6 +44,30 @@ export function RouteMap({ route, pos, done, height = 140 }: { route: RideRoute;
   );
 }
 
+const SURF_COLOR = ['#4A8FC7', '#D9A557', '#5B9B7E', '#8A8F98'];
+const SURF_NAME = ['asfalt', 'szuter', 'teren', 'nieznana'];
+/** Nawierzchnia trasy z planera: pasek odcinków i udział procentowy. */
+function SurfaceLine({ route }: { route: RideRoute }) {
+  const runs = route.surface ?? [];
+  const m = [0, 0, 0, 0];
+  runs.forEach((r, i) => { m[r[1]] += (i + 1 < runs.length ? runs[i + 1][0] : route.total) - r[0]; });
+  const all = m.reduce((a, b) => a + b, 0) || 1;
+  const prof = route.profile === 'gravel' ? 'Gravel' : route.profile === 'mtb' ? 'MTB' : route.profile === 'calm' ? 'Spokojna' : 'Szosa';
+  return (
+    <div className={s.stack} style={{ gap: 4 }}>
+      <div style={{ display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', background: 'var(--surface-3)' }} aria-hidden="true">
+        {runs.map((r, i) => {
+          const len = (i + 1 < runs.length ? runs[i + 1][0] : route.total) - r[0];
+          return <div key={i} style={{ width: `${(len / route.total) * 100}%`, background: SURF_COLOR[r[1]] }} />;
+        })}
+      </div>
+      <span className={s.small} style={{ fontSize: 12 }}>
+        {prof}{route.estSec ? ` · ok. ${Math.floor(route.estSec / 3600)}:${String(Math.round(route.estSec / 60) % 60).padStart(2, '0')} h jazdy` : ''} · {m.map((x, i) => (x / all >= 0.03 ? `${SURF_NAME[i]} ${Math.round((x / all) * 100)}%` : null)).filter(Boolean).join(', ')}
+      </span>
+    </div>
+  );
+}
+
 /** Profil wysokości (mały). */
 function RouteProfile({ route }: { route: RideRoute }) {
   const e = route.pts.map((p) => p[2]).filter((x): x is number => x != null);
@@ -64,6 +90,7 @@ interface GarminCourseInfo { id: string; name: string; total: number; climbs: nu
 /** Trasa na liczniku Garmin Edge (aplikacja VeloIQ na liczniku): wysyłka wybranej trasy i podgląd tego, co czeka
  *  na licznik. Widoczne tylko, gdy konto ma sparowany licznik. Licznik pobiera trasę przy synchronizacji. */
 function GarminCourse({ route }: { route: RideRoute | null }) {
+  const ride = useRideContext();
   const [paired, setPaired] = useState(false);
   const [course, setCourse] = useState<GarminCourseInfo | null>(null);
   const [busy, setBusy] = useState(false);
@@ -80,6 +107,16 @@ function GarminCourse({ route }: { route: RideRoute | null }) {
     } catch { /* offline – sekcja zostaje w ostatnim stanie */ }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  // trasa z planera trafia na licznik sama (raz na trasę) – plik GPX wysyła się przyciskiem
+  const autoSent = useRef<string | null>(null);
+  useEffect(() => {
+    if (!paired || !route?.profile) return;
+    const key = `${route.name}:${route.total}:${route.pts.length}`;
+    if (autoSent.current === key) return;
+    autoSent.current = key;
+    void sendRef.current?.();
+  }, [paired, route]);
+  const sendRef = useRef<(() => Promise<void>) | null>(null);
 
   if (!paired) return null;
 
@@ -91,11 +128,15 @@ function GarminCourse({ route }: { route: RideRoute | null }) {
       const j = (await r.json().catch(() => ({}))) as { ok?: boolean; course?: GarminCourseInfo; message?: string };
       if (r.ok && j.ok && j.course) {
         setCourse(j.course);
-        setMsg({ ok: true, text: 'Wysłane. Na liczniku: MENU → Synchronizuj (albo uruchom aplikację VeloIQ na nowo).' });
+        if (ride.garminLink.streaming) {
+          void ride.garminResync();
+          setMsg({ ok: true, text: 'Wysłane – licznik pobiera trasę (kilka sekund).' });
+        } else setMsg({ ok: true, text: 'Wysłane. Na liczniku: MENU → Synchronizuj (albo uruchom aplikację VeloIQ na nowo).' });
       } else setMsg({ ok: false, text: j.message ?? 'Nie udało się wysłać trasy.' });
     } catch { setMsg({ ok: false, text: 'Brak połączenia z serwerem.' }); }
     finally { setBusy(false); }
   };
+  sendRef.current = send;
   const remove = async () => {
     setBusy(true); setMsg(null);
     try { await fetch('/api/garmin/course', { method: 'DELETE' }); setCourse(null); } catch { /* spróbuj ponownie */ }
@@ -132,6 +173,7 @@ export function RouteCard({ route, onRoute, garminRoute }: {
   const input = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [planner, setPlanner] = useState(false);
 
   async function pick(f: File | undefined) {
     if (!f) return;
@@ -162,10 +204,22 @@ export function RouteCard({ route, onRoute, garminRoute }: {
             <div className={s.stack}><span className={s.metricLabel}>Skręty</span><span className={s.statValue}>{route.cues.length}</span></div>
             <div className={s.stack}><span className={s.metricLabel}>Podjazdy</span><span className={s.statValue}>{route.climbs.length}</span></div>
           </div>
+          {route.surface && route.surface.length > 0 && <SurfaceLine route={route} />}
+          {route.pois && route.pois.length > 0 && (
+            <span className={s.small} style={{ color: 'var(--text-2)' }}>
+              Przed tobą: {route.pois.slice(0, 5).map((p) => `${p.name} (${(p.d / 1000).toFixed(0)} km)`).join(' · ')}{route.pois.length > 5 ? ` · +${route.pois.length - 5}` : ''}
+            </span>
+          )}
           <span className={s.small}>Enzo zapowie skręty, podjazdy i kilometry do mety. Działa offline, z GPS telefonu.</span>
         </>
       ) : (
-        <span className={s.small}>Wgraj plik GPX (Komoot, Strava, RideWithGPS, Garmin) – Enzo poprowadzi Cię po trasie głosem.</span>
+        <span className={s.small}>Zaplanuj trasę pod swój rower (szosa, gravel, MTB) albo wgraj plik GPX (Komoot, Strava, RideWithGPS, Garmin) – Enzo poprowadzi Cię głosem.</span>
+      )}
+      <button type="button" className={s.btnPrimary} style={{ height: 52, fontSize: 16 }} onClick={() => setPlanner(true)}>
+        {route ? 'Zaplanuj inną trasę' : 'Zaplanuj trasę'}
+      </button>
+      {planner && (
+        <RoutePlanner onClose={() => setPlanner(false)} onPick={(r) => { saveRoute(r); onRoute(r); setPlanner(false); }} />
       )}
       <input ref={input} type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" hidden onChange={(e) => pick(e.target.files?.[0])} />
       <button type="button" className={s.btnGhost} onClick={() => input.current?.click()} disabled={busy}>
@@ -231,6 +285,13 @@ export function NavCard({ nav, route, pos, onToggle }: {
           {nav.nextClimb.onIt ? 'Na podjeździe' : `Podjazd za ${m(nav.nextClimb.in)}`}: {(nav.nextClimb.len / 1000).toFixed(1)} km · {nav.nextClimb.grade}% · +{nav.nextClimb.gain} m
         </span>
       )}
+      {(() => {
+        // „Przed tobą” (trasa z planera): najbliższy punkt – woda, kawiarnia, serwis – w ciągu 15 km
+        const p = nav?.acquired ? route.pois?.find((x) => x.d >= nav.progress - 50) : undefined;
+        if (!p || p.d - (nav?.progress ?? 0) > 15000) return null;
+        const label: Record<string, string> = { water: 'Woda', cafe: 'Kawiarnia', bike: 'Serwis', toilets: 'Toaleta', shop: 'Sklep', fuel: 'Stacja', food: 'Jedzenie' };
+        return <span className={s.small} style={{ color: 'var(--cyan)' }}>{label[p.kind] ?? 'Punkt'} za {m(Math.max(0, p.d - (nav?.progress ?? 0)))}: {p.name}</span>;
+      })()}
       {/* tryb startowy: cel mocy na podjazd ze strategii */}
       {nav?.nextClimb?.low && nav.nextClimb.high && nav.nextClimb.in < 5000 && (
         <div className={s.row} style={{ alignItems: 'baseline' }}>

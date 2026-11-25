@@ -8,7 +8,7 @@ struct WorkoutScript: Codable {
     let name: String
     let ftp: Int
     let lang: String?
-    let steps: [WorkoutStep]          // pusta lista = jazda swobodna
+    var steps: [WorkoutStep]          // pusta lista = jazda swobodna (zmieniana tylko przez korekty planu w silniku)
     let rules: WorkoutRules?
     let phrases: [String: String]?
     let briefing: RideBriefing?
@@ -30,15 +30,16 @@ struct RideBriefing: Codable {
 }
 
 struct WorkoutStep: Codable {
-    let name: String
+    // zmienne pola: korekty planu w trakcie jazdy (głos: „dodaj minutę”, „mocniej o 5%”, „jeszcze jeden interwał”)
+    var name: String
     let type: String // warmup | interval | recovery | steady | cooldown
-    let durationSec: Int
-    let powerLow: Int
-    let powerHigh: Int
+    var durationSec: Int
+    var powerLow: Int
+    var powerHigh: Int
     let cadenceLow: Int?
     let cadenceHigh: Int?
     let cueStart: String?
-    let start: String? // "auto" | "time" – domyślnie interwały ≥ 60 s → auto
+    var start: String? // "auto" | "time" – domyślnie interwały ≥ 60 s → auto
     let hrLow: Int?    // zakres tętna kroku; recovery: hrHigh = próg „zregenerowany”
     let hrHigh: Int?
 

@@ -44,7 +44,8 @@ export function PreRideScreen({ ride, plan, settings, onSettings, onBack, onStar
     { k: 'autoStart', label: 'Interwały startują automatycznie', sub: 'Wykrywam start po mocy – plan przesuwa się razem z Tobą.' },
     { k: 'announceArm', label: 'Zapowiedź minutę wcześniej', sub: 'Głos + odliczanie 10 s i 3-2-1.' },
     { k: 'autoPause', label: 'Auto-pauza', sub: 'Jak w Garminie: poniżej 3 km/h i bez mocy stoper staje, ruszasz – liczy dalej.' },
-    { k: 'notifyDevice', label: 'Powiadomienia na licznik', sub: 'Krótkie komunikaty Enzo (start, korekta, seria, jedzenie) na Garminie – przez powiadomienia iPhone’a.' },
+    // z aplikacją VeloIQ na liczniku Garmin powiadomienia byłyby drugim, wiszącym komunikatem – telefon ich nie wysyła
+    ...(ride.garminLink.paired ? [] : [{ k: 'notifyDevice' as const, label: 'Powiadomienia na licznik', sub: 'Krótkie komunikaty Enzo na liczniku bez aplikacji VeloIQ (Wahoo, Garmin) – przez powiadomienia iPhone’a.' }]),
   ];
   const levels: { v: VoiceLevel; l: string; hint: string }[] = [
     { v: 'full', l: 'Pełne', hint: 'Zapowiedzi, korekty mocy i kadencji, podsumowania serii.' },

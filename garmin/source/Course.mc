@@ -32,9 +32,24 @@ module Dir {
     }
 }
 
+//! Rodzaje punktów „Przed tobą” – kody jak POI_CODES w lib/garmin/course.ts.
+module Poi {
+    function label(k as Number) as String {
+        var t = ["Kawiarnia", "Woda", "Toaleta", "Serwis", "Sklep", "Stacja", "Jedzenie"];
+        return (k >= 0 && k < t.size()) ? t[k] : "Punkt";
+    }
+    //! Krótki znak na mapę i listę (czcionki licznika nie mają emoji).
+    function sign(k as Number) as String {
+        var t = ["K", "W", "WC", "S", "Sk", "P", "J"];
+        return (k >= 0 && k < t.size()) ? t[k] : "?";
+    }
+}
+
 //! Trasa GPX pobrana z VeloIQ (lib/garmin/course.ts): uproszczony ślad w pamięci jako bajty
 //! (12 B na punkt: szer. i dług. w mikrostopniach, wysokość + 500 m, odległość od poprzedniego punktu),
 //! skręty [dystans, kierunek] i podjazdy [start, koniec, przewyższenie, nachylenie×10, cel↓, cel↑, taktyka].
+//! Trasa z planera ma też nawierzchnię [od m, kod 0 asfalt / 1 szuter / 2 teren / 3 ?] i punkty
+//! „Przed tobą” [dystans, rodzaj, nazwa] oraz profil (road / gravel / mtb / calm) do powrotu na trasę.
 class Course {
     const REC = 12;
     var id as String = "";
@@ -44,6 +59,9 @@ class Course {
     var n as Number = 0;           // liczba punktów
     var cues;                      // [[d, dir], …]
     var climbs;                    // [[start, end, gain, grade10, low, high, tier], …]
+    var surf;                      // [[od m, kod], …] – pusta tablica dla zwykłego pliku GPX
+    var pois;                      // [[d, rodzaj, nazwa], …]
+    var prof as String = "";
     var cum;                       // dystans narastająco dla każdego punktu (m)
     var minLat as Number = 0;
     var maxLat as Number = 0;
@@ -54,8 +72,11 @@ class Course {
     var hasEle as Boolean = false;
     hidden var _b as ByteArray;
 
-    function initialize(meta as Dictionary, bytes as ByteArray, cueList, climbList) {
+    function initialize(meta as Dictionary, bytes as ByteArray, cueList, climbList, surfList, poiList) {
         id = Util.str(meta.get("id"), "");
+        prof = Util.str(meta.get("prof"), "");
+        surf = surfList instanceof Array ? surfList : [];
+        pois = poiList instanceof Array ? poiList : [];
         name = Util.str(meta.get("name"), "Trasa");
         total = Util.int(meta.get("total"), 0);
         gain = Util.int(meta.get("gain"), 0);
@@ -117,6 +138,18 @@ class Course {
         return lo;
     }
 
+    //! Kod nawierzchni w miejscu d (m po trasie) albo -1, gdy trasa jej nie ma.
+    function surfAt(d) as Number {
+        var sz = surf.size();
+        if (sz == 0) { return -1; }
+        var code = surf[0][1];
+        for (var i = 1; i < sz; i++) {
+            if (surf[i][0] > d) { break; }
+            code = surf[i][1];
+        }
+        return code;
+    }
+
     //! Wysokość w miejscu d (m po trasie), interpolowana; null bez danych.
     function eleAt(d) {
         if (!hasEle || n < 2) { return null; }
@@ -147,7 +180,8 @@ class Course {
             bytes.addAll(part as ByteArray);
         }
         if (bytes.size() < 2 * 12) { return null; }
-        return new Course(meta, bytes, Application.Storage.getValue("crs_t"), Application.Storage.getValue("crs_c"));
+        return new Course(meta, bytes, Application.Storage.getValue("crs_t"), Application.Storage.getValue("crs_c"),
+            Application.Storage.getValue("crs_s"), Application.Storage.getValue("crs_q"));
     }
 
     static function clear() as Void {
@@ -157,6 +191,8 @@ class Course {
         Application.Storage.deleteValue("crs");
         Application.Storage.deleteValue("crs_t");
         Application.Storage.deleteValue("crs_c");
+        Application.Storage.deleteValue("crs_s");
+        Application.Storage.deleteValue("crs_q");
         Application.Storage.deleteValue("crs_ok");
     }
 
@@ -187,6 +223,7 @@ class Nav {
     hidden var _lastGlobal as Number = -100;
     hidden var _cueSaid as ByteArray;
     hidden var _climbSaid as ByteArray;
+    hidden var _poiSaid as ByteArray;
     hidden var _lastKmLeft as Number = -1;
     hidden var _done as Boolean = false;
     hidden var _speed as Float = 0.0;    // km/h, wygładzona
@@ -199,6 +236,7 @@ class Nav {
         course = c;
         _cueSaid = new [c.cues.size()]b;
         _climbSaid = new [c.climbs.size()]b;
+        _poiSaid = new [c.pois.size() + 1]b;
     }
 
     function setEnabled(on as Boolean) as Void {
@@ -289,7 +327,35 @@ class Nav {
         progress = c.cum[mi] + (c.cum[mi + 1] - c.cum[mi]) * mt;
         checkCues();
         checkClimbs();
+        checkPois();
         checkDistance();
+    }
+
+    //! Woda, kawiarnia i serwis 2 km przed nami – jedna zapowiedź na punkt (zaplanuj postój albo bidon).
+    hidden function checkPois() as Void {
+        var ps = course.pois;
+        for (var i = 0; i < ps.size(); i++) {
+            var k = ps[i][1];
+            if (k != 0 && k != 1 && k != 3) { continue; }
+            var to = ps[i][0] - progress;
+            if (to < 0 || _poiSaid[i] > 0) { continue; }
+            if (to <= 2000 && to > 300) {
+                _poiSaid[i] = 1;
+                say("navPoi", { "name" => Util.str(ps[i][2], Poi.label(k)), "kind" => Poi.label(k), "km" => (to / 1000.0).format("%.1f"), "m" => Util.round(to / 100.0) * 100 });
+                return;
+            }
+        }
+    }
+
+    //! Najbliższe punkty „Przed tobą”: [[indeks, metry do punktu], …] (najwyżej `count`).
+    function nextPois(count as Number) {
+        var out = [];
+        var ps = course.pois;
+        for (var i = 0; i < ps.size() && out.size() < count; i++) {
+            var to = ps[i][0] - progress;
+            if (to >= -50) { out.add([i, to < 0 ? 0 : to.toNumber()]); }
+        }
+        return out;
     }
 
     //! Indeks najbliższego niewykonanego skrętu (≥ 20 m za nim = wykonany) albo -1.

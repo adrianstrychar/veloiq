@@ -65,6 +65,12 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
   const hasDist = outdoorGps || live?.vKm != null;
   const f1 = (x: number) => x.toFixed(1).replace('.', ',');
   useEffect(() => { if (!confirmStop) return; const t = setTimeout(() => setConfirmStop(false), 3000); return () => clearTimeout(t); }, [confirmStop]);
+  // jazda z licznika Garmin: czy dane nadal płyną (zegar co 2 s – próbki mogą przestać przychodzić)
+  const mirror = ride.mirror;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { if (!mirror) return; const t = setInterval(() => setNow(Date.now()), 2000); return () => clearInterval(t); }, [mirror]);
+  const silentSec = mirror ? Math.round((now - (ride.liveAt || mirror.startedAt)) / 1000) : 0;
+  const linkLost = !!mirror && ride.liveAt > 0 && silentSec >= 8;
 
   const phase = ride.paused ? 'paused' : ride.autoPaused ? 'ridePaused' : live?.phase ?? 'running';
   const type = live?.stepType ?? plan?.steps[0]?.type ?? 'warmup';
@@ -101,7 +107,12 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
   const progress = Math.min(100, Math.round(((live?.stepElapsed ?? 0) / stepDur) * 100));
 
   const stop = () => { if (confirmStop) { setConfirmStop(false); ride.stop(); } else setConfirmStop(true); };
-  const stopBtn = (
+  const stopBtn = mirror ? (
+    // jazdę nagrywa licznik – kończy się ją na liczniku (zapis FIT i wysyłka do VeloIQ są po jego stronie)
+    <span className={s.btnDark} role="note" style={{ opacity: 0.75, fontSize: 13, textAlign: 'center', lineHeight: 1.2, cursor: 'default' }}>
+      <IconStop />Zakończ na liczniku
+    </span>
+  ) : (
     <button type="button" className={s.btnDanger} onClick={stop} aria-label={confirmStop ? 'Potwierdź zakończenie' : 'Zakończ'}>
       <IconStop />{confirmStop ? 'Na pewno?' : phase === 'free' ? 'Zakończ jazdę' : 'Stop'}
     </button>
@@ -115,11 +126,19 @@ export function LiveScreen({ ride, plan }: { ride: Ride; plan: WorkoutScript | n
       <header className={s.topbar}>
         <span className={chipCls}>{chip}</span>
         <div className={s.row} style={{ gap: 12 }}>
+          {mirror && <StatusDot ok={!linkLost}>Garmin</StatusDot>}
           <StatusDot ok={live?.power !== undefined}>Moc</StatusDot>
           <StatusDot ok={live?.hr !== undefined}>HR</StatusDot>
           <span className={s.clock}>{hmmss(live?.elapsed ?? 0)}</span>
         </div>
       </header>
+
+      {mirror && linkLost && (
+        <section className={s.cardAmber} role="status" style={{ padding: '10px 14px' }}>
+          <span className={s.strong}>Brak danych z licznika od {silentSec} s</span>
+          <span className={s.small}>Jazda nagrywa się dalej na liczniku. Sprawdź, czy aplikacja VeloIQ na liczniku jest otwarta, a telefon jest w pobliżu z włączonym Bluetooth.</span>
+        </section>
+      )}
 
       {/* --- przerwa: czekam na start */}
       {(phase === 'armed' || phase === 'waiting') && next ? (

@@ -3,6 +3,7 @@ import UserNotifications
 
 /// Krótkie powiadomienia z komunikatów Enzo – iPhone przekazuje je na licznik (Garmin Edge,
 /// Wahoo) przez „Smart Notifications”. Tylko zwięzłe fakty, bez rozmowy. Wyłącznik w ustawieniach jazdy.
+/// Gdy wybrano licznik Garmin z aplikacją VeloIQ (most Connect IQ), powiadomień nie ma wcale.
 final class EnzoNotifier: NSObject, UNUserNotificationCenterDelegate {
     var enabled = true
     private static let thread = "veloiq.enzo"
@@ -86,8 +87,19 @@ final class EnzoNotifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Usuwa z centrum powiadomień (i tym samym z licznika) wszystkie wcześniejsze komunikaty Enzo.
+    static func clearDelivered() {
+        let c = UNUserNotificationCenter.current()
+        c.getDeliveredNotifications { list in
+            let ids = list.filter { $0.request.content.threadIdentifier == thread }.map { $0.request.identifier }
+            if !ids.isEmpty { c.removeDeliveredNotifications(withIdentifiers: ids) }
+        }
+    }
+
     func post(_ key: String?, _ vars: [String: String]) {
-        guard enabled, let body = Self.text(key, vars) else { return }
+        // licznik Garmin z aplikacją VeloIQ pokazuje komunikaty sam – powiadomienie systemowe byłoby drugim,
+        // wiszącym na ekranie licznika do ręcznego zamknięcia
+        guard enabled, !GarminLink.hasDevice, let body = Self.text(key, vars) else { return }
         let c = UNUserNotificationCenter.current()
         let content = UNMutableNotificationContent()
         content.title = "VeloIQ"

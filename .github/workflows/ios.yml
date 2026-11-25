@@ -8,6 +8,7 @@ on:
   push:
     paths:
       - 'mobile/ios-src/**'
+      - 'mobile/ios-tests/**'
       - 'mobile/setup-ios.sh'
       - 'ios/**'
       - '.github/workflows/ios.yml'
@@ -31,6 +32,15 @@ jobs:
         with:
           node-version: 20
           cache: npm
+
+      - name: Komendy głosowe w jeździe (test bez aplikacji)
+        run: |
+          # funkcja voiceCommand z RideEnginePlugin.swift (do zamykającego „    }”) + test z mobile/ios-tests
+          { echo 'import Foundation'; echo 'enum V {'
+            awk '/static func voiceCommand\(/{f=1} f{print} f && /^    }$/{exit}' mobile/ios-src/RideEngine/RideEnginePlugin.swift
+            echo '}'; cat mobile/ios-tests/VoiceCommandsTest.swift; } > /tmp/voice-test.swift
+          grep -c "" /tmp/voice-test.swift
+          swift /tmp/voice-test.swift
 
       - name: Projekt iOS (mobile/setup-ios.sh)
         run: bash mobile/setup-ios.sh

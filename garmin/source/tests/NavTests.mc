@@ -118,6 +118,9 @@ function testNavDrive(logger as Test.Logger) as Boolean {
     }
     ok = ok && log.find("navLeft", "km", 2) > 0 && log.find("navLeft", "km", 1) > 0;
     ok = ok && topAt >= 2730 && topAt <= 2760;
+    // „Przed tobą”: woda i schronisko zapowiedziane raz (≤ 2 km przed), nawierzchnia z trasy planera
+    ok = ok && log.count("navPoi") == 3 && log.find("navPoi", "name", "Schronisko") > 0 && log.find("navPoi", "kind", "Woda") >= 0;
+    ok = ok && nav.course.surfAt(100) == 0 && nav.course.surfAt(2000) == 1 && nav.course.surfAt(3000) == 2 && nav.course.prof.equals("gravel");
     // stan dla trenera (te same pola co w telefonie)
     var st = nav.state();
     ok = ok && st.get("left") <= 15 && st.get("acquired") == true && st.get("name").equals("Pętla testowa");
@@ -172,13 +175,14 @@ function testNavRide(logger as Test.Logger) as Boolean {
     var g = Smoke.dc();
     var scr = new RideScreen();
     var home = new HomeScreen();
-    Cfg.put("autoPause", false); Cfg.put("indoor", false); Cfg.put("autoLapMode", 0); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("phoneLink", false); Cfg.load();
+    Cfg.put("autoPause", false); Cfg.put("indoor", false); Cfg.put("autoLapMode", 0); Cfg.put("ftp", 300); Cfg.put("tones", false); Cfg.put("link", false); Cfg.load();
     r.course = Course.load();
     r.plan = null;
     home.draw(g);                       // linia „Trasa: …” na ekranie startowym
     r.recordFit = false;
     if (!r.startRide(true)) { logger.debug("startRide failed"); r.recordFit = true; return false; }
-    var ok = r.nav != null && scr.pageCount() == 6;
+    var ok = r.nav != null && scr.indexOf(Pg.NAV) == scr.pageCount() - 1 && scr.indexOf(Pg.CLIMB) >= 0;
+    logger.debug("strony=" + scr.pages().toString());
     var d = NavData.drive();
     var n = d.size() / 2;
     var sawClimb = false;
@@ -190,9 +194,7 @@ function testNavRide(logger as Test.Logger) as Boolean {
         if (cn != null && !sawClimb) { sawClimb = true; climbLeft = cn[2]; ok = ok && cn[0] == 280 && cn[1] == 300 && cn[3] == 1 && cn[4] == 1 && cn[5] == 2; }
         if (i % 12 == 0) {
             scr.zoom = (i / 12) % 5;
-            scr.page = scr.NAV_PAGE; scr.draw(g);
-            scr.page = 0; scr.draw(g);
-            scr.page = 1; scr.draw(g);
+            for (var p = 0; p < scr.pageCount(); p++) { scr.page = p; scr.draw(g); }
         }
     }
     logger.debug("progress=" + r.nav.progress + " sawClimb=" + sawClimb + " climbLeft=" + climbLeft + " cues=" + r.cues.size() + " banner=" + r.banner);
@@ -202,9 +204,12 @@ function testNavRide(logger as Test.Logger) as Boolean {
     // pola danych nawigacji
     logger.debug("pola: " + Fields.value(34, r) + " | " + Fields.value(35, r) + " | " + Fields.value(36, r) + " | " + Fields.value(37, r));
     ok = ok && Fields.value(34, r).equals("0.0") && Fields.value(35, r).equals("--");
+    logger.debug("ok przed wyłączeniem=" + ok);
     // wyłączenie w trakcie jazdy
     r.setNav(false);
-    scr.page = scr.NAV_PAGE; scr.draw(g);
+    scr.page = scr.indexOf(Pg.NAV); scr.draw(g);
+    logger.debug("po wyłączeniu: strony=" + scr.pages().toString() + " climbNow=" + r.climbNow() + " route=" + r.coachState().get("route"));
+    ok = ok && scr.indexOf(Pg.NAV) == scr.pageCount() - 1 && scr.indexOf(Pg.CLIMB) == -1;   // TRASA zostaje (włączenie z menu), PODJAZD znika
     ok = ok && r.climbNow() == null && r.coachState().get("route") == null;
     r.finish(false);
     r.reset();
