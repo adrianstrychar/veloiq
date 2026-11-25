@@ -67,6 +67,8 @@ export function useRide() {
   const [mirror, setMirror] = useState<GarminRide | null>(null);
   const [mirrorDone, setMirrorDone] = useState<GarminRide | null>(null);
   const [liveAt, setLiveAt] = useState(0);
+  // plan zmieniony głosem w trakcie jazdy z telefonu – ekran pokazuje aktualne kroki
+  const [planEdit, setPlanEdit] = useState<{ steps: WorkoutScript['steps']; bias: number } | null>(null);
   const mirrorKey = useRef<number | null>(null);
   const cueId = useRef(0);
   const lastElapsed = useRef(0);
@@ -125,6 +127,7 @@ export function useRide() {
     }));
     handles.push(engine.addListener('garmin', (d) => setGarminLink((g) => ({ ...g, ...d, available: d.available !== false }))));
     handles.push(engine.addListener('garminRide', onGarminRide));
+    handles.push(engine.addListener('planChanged', (d) => setPlanEdit(d)));
     engine.garminStatus().then(setGarminLink).catch(() => setGarminLink({ available: false }));
     // jazda z licznika, która trwała, zanim otworzyła się ta strona (albo gdy aplikacja była w tle)
     const syncMirror = () => {
@@ -167,7 +170,7 @@ export function useRide() {
     route, nav,
     start: (script: WorkoutScript, s: RideSettings, simulate = !native, rt: RideRoute | null = null) => run(async () => {
       if (mirrorKey.current != null) throw new Error('Jazdę nagrywa teraz licznik Garmin – ten ekran pokazuje ją na żywo.');
-      setCues([]); setMirrorDone(null); setPlanDone(null); setSummary(null); setLive(null); setNav(null);
+      setCues([]); setMirrorDone(null); setPlanEdit(null); setPlanDone(null); setSummary(null); setLive(null); setNav(null);
       const useRoute = s.outdoor ? rt : null;
       setRoute(useRoute);
       await engine.startWorkout({ script: applySettings(script, s), outdoor: s.outdoor, simulate, route: useRoute ?? undefined,
@@ -199,7 +202,7 @@ export function useRide() {
     garminForget: () => run(async () => setGarminLink(await engine.garminForget())),
     garminOpenApp: () => run(() => engine.garminOpenApp()),
     /** Jazda z licznika (tryb lustra) – null, gdy jazdę prowadzi telefon albo nic nie trwa. */
-    mirror, mirrorDone, liveAt,
+    mirror, mirrorDone, liveAt, planEdit,
     clearMirrorDone: () => setMirrorDone(null),
     pause: () => run(async () => { await engine.pause(); setPaused(true); }),
     resume: () => run(async () => { await engine.resume(); setPaused(false); setAutoPaused(false); }),

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { createAdminSupabaseClient } from '@/lib/supabase';
 import { verifyRideToken } from '@/lib/ride/ride-token';
+import { cleanAction } from '@/lib/ride/coach-actions';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 20;
@@ -17,7 +18,15 @@ ZASADY ODPOWIEDZI:
 - Bezpieczeństwo ponad plan: ból w klatce, zawroty głowy, duszność, ostry ból stawu → każ przerwać trening i odpocząć; przy niepokojących objawach – kontakt z lekarzem.
 - Jedzenie/picie: konkretnie (np. ok. 60–90 g węglowodanów na godzinę przy dłuższej jeździe, kilka łyków co 10–15 minut).
 - Styl Enzo: ciepły, energiczny, czasem „Forca!” albo „Brawissimo!”, ale bez przesady.
-- Jeśli zawodnik WPROST prosi o sterowanie jazdą: „następny krok/pomiń” → action "next", „pauza/zatrzymaj” → "pause", „wznów” → "resume", „falstart/anuluj start interwału” → "cancel". Inaczej action null.
+- Jeśli zawodnik WPROST prosi o zmianę jazdy, ustaw "action" (inaczej null) i w "say" krótko potwierdź, co zmieniasz:
+  „następny krok/pomiń” → "next"; „pauza/zatrzymaj” → "pause"; „wznów” → "resume"; „falstart/anuluj start interwału” → "cancel"; „okrążenie/lap” → "lap";
+  „dodaj/przedłuż o N minut” → "extend:<sekundy>" (np. 2 minuty → "extend:120"); „skróć o N minut” → "extend:-<sekundy>";
+  „mocniej / podnieś cel o N%” → "bias:+N"; „lżej / obniż cel o N%” → "bias:-N" (bez liczby: 5); „cel jak w planie” → "bias:0";
+  „jeszcze jeden interwał / dodaj serię” → "repeat";
+  „zjadłem żel” → "eat:25", „zjadłem batona” → "eat:40", „wypiłem” → "drink";
+  „prowadź do startu / do domu / wracam” → "route:start"; „wróć na trasę / zgubiłem się” → "route:rejoin";
+  „pokaż mapę/trasę/wykres/paliwo/podjazd/wysiłek/trening” → "page:<mapa|wykres|paliwo|podjazd|wysilek|trening>".
+  Zmiany planu proponuj tylko, gdy zawodnik o nie prosi; przy oznakach przemęczenia możesz zasugerować "bias:-5" słowami, bez akcji.
 Zwróć WYŁĄCZNIE JSON: {"say": "…", "action": null}`;
 
 function mmss(sec: unknown) {
@@ -50,6 +59,9 @@ export async function POST(req: NextRequest) {
     `Kadencja ${st.cadence ?? 'brak'}, praca ${st.kJ ?? '?'} kJ (≈ tyle samo kcal)${st.distanceKm != null ? `, dystans ${st.distanceKm} km, prędkość ${st.speedKmh} km/h` : ''}.`,
     st.route ? `Trasa GPX: ${JSON.stringify(st.route)} (metry).` : '',
     st.sinceEatSec != null ? `Ostatnie jedzenie ${mmss(st.sinceEatSec)} temu, picie ${mmss(st.sinceDrinkSec)} temu.` : '',
+    st.carbsEatenG != null ? `Węglowodany: zjedzone ${st.carbsEatenG} g, spalone ok. ${st.carbsBurnedG ?? '?'} g (cel ok. 60–90 g na godzinę po pierwszych 30 minutach).` : '',
+    st.wBalPct != null ? `Rezerwa W′ (beztlenowa): ${st.wBalPct}%.` : '',
+    st.targetBiasPct ? `Cele mocy zmienione w trakcie jazdy o ${st.targetBiasPct}%.` : '',
   ].filter(Boolean).join('\n');
 
   try {
@@ -64,7 +76,7 @@ export async function POST(req: NextRequest) {
       try {
         const j = JSON.parse(m[0]) as { say?: string; action?: string | null };
         if (j.say) say = j.say;
-        if (j.action === 'next' || j.action === 'pause' || j.action === 'resume' || j.action === 'cancel') action = j.action;
+        action = cleanAction(j.action);
       } catch { /* zostaje surowy tekst */ }
     }
     return NextResponse.json({ say: say.replace(/[*_#`]/g, '').slice(0, 400), action });

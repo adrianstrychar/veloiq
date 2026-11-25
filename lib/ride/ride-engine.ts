@@ -202,6 +202,8 @@ export interface RideEnginePlugin {
   addListener(event: 'garmin', cb: (d: GarminLinkStatus) => void): Promise<PluginListenerHandle>;
   /** Start / koniec jazdy na liczniku (tryb lustra). W trakcie: zwykłe zdarzenia 'live', 'cue', 'paused', 'resumed'. */
   addListener(event: 'garminRide', cb: (d: GarminRide) => void): Promise<PluginListenerHandle>;
+  /** Plan zmieniony głosem w trakcie jazdy z telefonu (dłuższy krok, cele ±%, dodatkowy interwał). */
+  addListener(event: 'planChanged', cb: (d: { steps: WorkoutScript['steps']; bias: number }) => void): Promise<PluginListenerHandle>;
   removeAllListeners(): Promise<void>;
 }
 

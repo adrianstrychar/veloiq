@@ -64,12 +64,15 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     /// głosy nigdy nie nakładały się na siebie. Tryb systemowy: synteza iOS.
     private func say(_ key: String?, _ vars: [String: String], _ text: String, interrupt: Bool) {
         if voiceMode == "enzo", let d = director {
+            // komunikaty bez nagrań Enzo (punkty po drodze, nowa trasa) – syntezator, żeby nie przepadły
+            if let k = key, Self.ttsKeys.contains(k), !text.isEmpty { speaker.speak(text, interrupt: interrupt); return }
             guard let k = key, let seg = d.compose(k, vars), !seg.isEmpty else { return }
             d.play(seg, interrupt: interrupt)
             return
         }
         speaker.speak(text, interrupt: interrupt)
     }
+    private static let ttsKeys: Set<String> = ["navPoi", "navReroute"]
     private var speakerLanguage = "pl-PL"
     private let location = LocationTracker()
 
@@ -1111,9 +1114,87 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
             case "resume":
                 eng.resume(); self.saveRecoveryState()
                 self.notifyListeners("resumed", data: ["elapsed": eng.lastSecond])
-            default: break
+            case "lap":
+                DispatchQueue.main.async { self.flicLap() }
+            case "drink":
+                eng.fueled("drink")
+            case "repeat":
+                if eng.repeatInterval() { self.emitPlanChanged(eng) }
+            default:
+                // korekty planu: extend:±SEK, bias:±PROC (+N / -N względem obecnej korekty, N – wprost), eat:G
+                if a.hasPrefix("extend:"), let v = Int(a.dropFirst(7)) {
+                    eng.advance()
+                    if eng.extendStep(v) != 0 { self.emitPlanChanged(eng) }
+                } else if a.hasPrefix("bias:") {
+                    let arg = String(a.dropFirst(5))
+                    let plus = arg.hasPrefix("+")
+                    guard let v = Int(plus ? String(arg.dropFirst()) : arg) else { return }
+                    eng.setBias(plus || v < 0 ? eng.bias + v : v)
+                    self.emitPlanChanged(eng)
+                } else if a.hasPrefix("eat:") {
+                    eng.fueled("eat")
+                }
+                // route:* i page:* działają z licznikiem Garmin (gałąź wyżej); w treningu z telefonu – brak
             }
         }
+    }
+
+    /// Plan zmieniony w trakcie jazdy (głos): ekran dostaje aktualne kroki, a punkt przywracania – zapis. engineQueue.
+    private func emitPlanChanged(_ eng: WorkoutEngine) {
+        guard let data = try? JSONEncoder().encode(eng.script.steps),
+              let steps = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+        notifyListeners("planChanged", data: ["steps": steps, "bias": eng.bias])
+    }
+
+    /// Polecenia głosowe rozpoznawane od razu w telefonie (bez serwera): korekty planu, nawigacja, ekrany licznika.
+    /// `t` – tekst bez polskich znaków, małymi literami. Zwraca akcję (jak w odpowiedzi trenera) i krótkie potwierdzenie.
+    static func voiceCommand(_ t: String) -> (action: String, say: String)? {
+        func has(_ ws: String...) -> Bool { ws.contains { t.contains($0) } }
+        if has("jak w planie", "przywroc cel", "normalny cel", "cel z planu", "cele z planu") { return ("bias:0", "Cele jak w planie.") }
+        if has("czy ", "?", "ile ", "jak ") { return nil }        // pytanie, nie polecenie
+        // liczba z tekstu: cyfry albo słowa (pół, półtorej, jedna… dziesięć, piętnaście, dwadzieścia)
+        func amount() -> Double? {
+            if let r = t.range(of: "[0-9]+([.,][0-9]+)?", options: .regularExpression) {
+                return Double(t[r].replacingOccurrences(of: ",", with: "."))
+            }
+            let words: [(String, Double)] = [("poltorej", 1.5), ("pol ", 0.5), ("jedna", 1), ("jeden", 1), ("jedno", 1), ("dwie", 2), ("dwa ", 2),
+                ("trzy", 3), ("cztery", 4), ("piec", 5), ("szesc", 6), ("siedem", 7), ("osiem", 8), ("dziewiec", 9), ("dziesiec", 10),
+                ("pietnascie", 15), ("dwadziescia", 20)]
+            return words.first { t.contains($0.0) }?.1
+        }
+        let mins = (amount() ?? 1)
+        // --- jeszcze jeden interwał (przed „dodaj …”)
+        if has("jeszcze jeden interwal", "jeszcze jedna seri", "jeszcze jedno powtorz", "dodaj interwal", "dodatkowy interwal", "dorzuc interwal", "powtorz interwal", "jeszcze raz interwal") {
+            return ("repeat", "Dodaję jeszcze jeden interwał.")
+        }
+        // --- dłużej / krócej
+        if has("dodaj", "przedluz", "wydluz", "skroc") && has("minut", "sekund", " min", "krok", "przerw", "interwal") {
+            let sec = Int((has("sekund") && !has("minut") ? mins : mins * 60).rounded())
+            guard sec > 0 else { return nil }
+            let shorter = has("skroc")
+            let txt = sec % 60 == 0 ? (sec == 60 ? "minutę" : "\(sec / 60) min") : "\(sec) s"
+            return ("extend:\(shorter ? -sec : sec)", shorter ? "Skracam o \(txt)." : "Dodaję \(txt).")
+        }
+        // --- cele mocy
+        if has("mocniej", "podnies", "zwieksz", "wyzej cel", "trudniej", "wiecej wat") && !has("tetno") {
+            let p = Int((amount() ?? 5).rounded())
+            return ("bias:+\(p)", "Cel w górę o \(p) procent.")
+        }
+        if has("lzej", "obniz", "zmniejsz", "nizej cel", "latwiej", "mniej wat", "slabiej") && !has("tetno") {
+            let p = Int((amount() ?? 5).rounded())
+            return ("bias:-\(p)", "Cel w dół o \(p) procent.")
+        }
+        // --- nawigacja (licznik Garmin liczy nową trasę profilem roweru)
+        if has("do startu", "do domu", "wracam do domu", "zabierz mnie do", "powrot do startu", "droge do domu") { return ("route:start", "Wyznaczam trasę do startu.") }
+        if has("wroc na trase", "powrot na trase", "zgubilem sie", "zgubilam sie", "prowadz na trase", "z powrotem na trase") { return ("route:rejoin", "Wyznaczam powrót na trasę.") }
+        // --- ekrany licznika
+        if has("pokaz", "przelacz na", "ekran") {
+            let pages: [(String, String, String)] = [("map", "mapa", "mapę"), ("tras", "trasa", "trasę"), ("wykres", "wykres", "wykres"), ("paliw", "paliwo", "paliwo"),
+                ("podjazd", "podjazd", "podjazd"), ("wysil", "wysilek", "wysiłek"), ("rezerw", "wysilek", "rezerwę"), ("trening", "trening", "trening"), ("okrazen", "okrazenia", "okrążenia")]
+            if let pg = pages.first(where: { t.contains($0.0) }) { return ("page:\(pg.1)", "Pokazuję \(pg.2).") }
+        }
+        if has("nowe okrazenie", "zaznacz okrazenie", "zaznacz lap", "nowy lap") { return ("lap", "Okrążenie.") }
+        return nil
     }
 
     /// Stan jazdy + dystans (na engineQueue).
@@ -1150,10 +1231,22 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let typeName = ["warmup": "Rozgrzewka", "interval": "Interwał", "recovery": "Przerwa", "steady": "Równe tempo", "cooldown": "Schłodzenie"]
 
-        // --- jedzenie i picie
+        // --- jedzenie i picie (żel 25 g, baton 40 g – licznik liczy bilans węglowodanów)
         if has("zjadlem", "zjadlam", "zjadl ", "zjedzone", "mam zel", "zjadlem zel") {
-            fuel("eat")
+            if has("baton") { coachAction("eat:40") } else if engineQueue.sync(execute: { self.engine == nil }) { coachAction("eat:25") } else { fuel("eat") }
             play(lead("ateOk"), "Zapisane – zjedzone."); return true
+        }
+        // --- korekty planu, nawigacja i ekrany licznika (od razu, bez serwera)
+        if let cmd = Self.voiceCommand(t) {
+            let phoneLeads = engineQueue.sync { self.engine != nil }
+            if !phoneLeads && !GarminLink.shared.isStreaming && (cmd.action.hasPrefix("route:") || cmd.action.hasPrefix("page:")) {
+                play([], "To polecenie działa z licznikiem Garmin."); return true
+            }
+            if phoneLeads && (cmd.action.hasPrefix("route:") || cmd.action.hasPrefix("page:")) {
+                play([], "Nową trasę wyznaczam z licznikiem Garmin – w telefonie wgraj trasę w planerze."); return true
+            }
+            coachAction(cmd.action)
+            play([], cmd.say); return true
         }
         if has("wypilem", "wypilam", "pilem", "pije ") {
             fuel("drink")

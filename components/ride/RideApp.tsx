@@ -83,7 +83,11 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, on
       if (c) { setScript(c.script); setStartedAt(new Date(c.startedAt)); }
     }
     setScreen('live');
-  }, [ride.active, ride.mirror?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ride.active, ride.mirror]); // eslint-disable-line react-hooks/exhaustive-deps
+  // plan zmieniony głosem w trakcie jazdy z telefonu („dodaj minutę”, „mocniej o 5%”, „jeszcze jeden interwał”)
+  useEffect(() => {
+    if (ride.active && ride.planEdit && !ride.mirror) setScript((sc) => (sc ? { ...sc, steps: ride.planEdit!.steps } : sc));
+  }, [ride.planEdit]); // eslint-disable-line react-hooks/exhaustive-deps
   // koniec jazdy na liczniku: z ekranu na żywo wracamy na start (tam karta z wysyłką jazdy do VeloIQ)
   useEffect(() => {
     if (!ride.active && !ride.summary && screen === 'live') setScreen('home');

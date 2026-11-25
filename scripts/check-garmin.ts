@@ -10,6 +10,7 @@ import { planDayToScript } from '../lib/ride/plan-to-script';
 import type { PlanDayRow } from '../lib/planned-day';
 import { buildCourse, courseMeta, CourseError, decodeParts, MAX_POINTS, PART_POINTS } from '../lib/garmin/course';
 import { pickLocalDuplicates } from '../lib/ride/dedupe';
+import { cleanAction } from '../lib/ride/coach-actions';
 
 let n = 0;
 const ok = (name: string, fn: () => void) => { fn(); n++; console.log(`ok  ${name}`); };
@@ -177,6 +178,22 @@ ok('ta sama jazda z telefonu i z licznika: jedna zostaje', () => {
   assert.deepEqual(pickLocalDuplicates([late, edge]).map((x) => [x.drop.id, x.keep.id]), [['p2', 'g']]);
   // różne dni / brak nakładania – nic
   assert.equal(pickLocalDuplicates([phone, other]).length, 0);
+});
+
+ok('akcje Enzo: tylko znane polecenia, bezpieczne zakresy', () => {
+  assert.equal(cleanAction('next'), 'next');
+  assert.equal(cleanAction('extend:120'), 'extend:120');
+  assert.equal(cleanAction('extend:-60'), 'extend:-60');
+  assert.equal(cleanAction('extend:99999'), null);
+  assert.equal(cleanAction('extend:9999'), 'extend:1800');
+  assert.equal(cleanAction('bias:+5'), 'bias:+5');
+  assert.equal(cleanAction('bias:-40'), 'bias:-25');
+  assert.equal(cleanAction('bias:0'), 'bias:0');
+  assert.equal(cleanAction('eat:25'), 'eat:25');
+  assert.equal(cleanAction('route:start'), 'route:start');
+  assert.equal(cleanAction('page:mapa'), 'page:mapa');
+  assert.equal(cleanAction('rm -rf'), null);
+  assert.equal(cleanAction(null), null);
 });
 
 console.log(`\n${n} testów OK`);
