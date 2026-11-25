@@ -943,6 +943,7 @@ class Ride {
         }
         var say = Util.str(data.get("say"), "Nowa trasa gotowa.");
         link.event({ "t" => "cue", "k" => "navReroute", "kind" => "nav", "x" => say, "v" => { "say" => say } });
+        if (data.get("keep") == true) { showBanner(say, "nav", 8); tone("msg"); return; }   // punkt jest na obecnej trasie
         _reroute = true;
         onCourseMeta(200, data);
     }

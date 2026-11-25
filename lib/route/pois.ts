@@ -5,8 +5,7 @@ import { dist, type PoiKind, type RideRoute, type RoutePoi } from '@/lib/ride/gp
 /** Serwery Overpass po kolei (pierwszy z OVERPASS_URL); kolejny, gdy poprzedni odmówi albo nie odpowie. */
 export const OVERPASS_URLS = () => [
   ...(process.env.OVERPASS_URL ? [process.env.OVERPASS_URL] : []),
-  'https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
 ];
 /** overpass-api.de odrzuca (406) zapytania, które nie wyglądają na zwykłego klienta OSM: potrzebny opisowy
  *  User-Agent, Referer i szerokie Accept (samo „application/json” kończy się 406). Ponawianie po 406 grozi banem,
@@ -96,25 +95,59 @@ export function poisFromOverpass(r: RideRoute, elements: unknown[]): RoutePoi[] 
   return kept.slice().sort((a, b) => PRIORITY[a.kind] - PRIORITY[b.kind] || a.d - b.d).slice(0, MAX_POIS).sort((a, b) => a.d - b.d);
 }
 
-export async function fetchPois(r: RideRoute, fetcher: typeof fetch = fetch, timeoutMs = 25000): Promise<RoutePoi[]> {
-  const body = `data=${encodeURIComponent(overpassQuery(samplePath(r)))}`;
-  let lastErr: unknown = null;
-  for (const url of OVERPASS_URLS()) {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), timeoutMs);
-    try {
-      const res = await fetcher(url, {
-        method: 'POST', signal: ctl.signal, body,
-        headers: OVERPASS_HEADERS,
-      });
-      if (!res.ok) throw new Error(`overpass ${res.status} (${new URL(url).host})`);
-      const j = (await res.json()) as { elements?: unknown[] };
-      return poisFromOverpass(r, j.elements ?? []);
-    } catch (e) {
-      lastErr = e;
-    } finally { clearTimeout(timer); }
-  }
-  throw lastErr instanceof Error ? lastErr : new Error('overpass');
+type OverpassEl = { type?: string; id?: number; lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> };
+
+/** Zapytanie do publicznych serwerów Overpass „z asekuracją”: zaczyna od pierwszego, a gdy ten po `hedgeMs` nie odpowie
+ *  (albo od razu odmówi), dokłada kolejny; wygrywa pierwsza poprawna odpowiedź, reszta jest przerywana.
+ *  Bez zalewania serwerów – kolejny dochodzi dopiero, gdy poprzedni milczy albo odmówił. */
+export async function overpassFetch(query: string, budgetMs = 25000, fetcher: typeof fetch = fetch, hedgeMs = 5000): Promise<OverpassEl[]> {
+  const urls = OVERPASS_URLS();
+  const body = `data=${encodeURIComponent(query)}`;
+  const ctls: AbortController[] = [];
+  const errors: string[] = [];
+  return new Promise<OverpassEl[]>((resolve, reject) => {
+    let done = false, next = 0, running = 0;
+    let hedge: ReturnType<typeof setTimeout> | null = null;
+    const finish = (v: OverpassEl[] | null, err?: Error) => {
+      if (done) return;
+      done = true;
+      if (hedge) clearTimeout(hedge);
+      clearTimeout(overall);
+      ctls.forEach((c) => c.abort());
+      if (v) resolve(v); else reject(err ?? new Error('overpass'));
+    };
+    const overall = setTimeout(() => finish(null, new Error(`overpass: brak odpowiedzi w ${Math.round(budgetMs / 1000)} s (${errors.join(', ') || 'timeout'})`)), budgetMs);
+    const launch = () => {
+      if (done || next >= urls.length) return;
+      const url = urls[next++];
+      const ctl = new AbortController();
+      ctls.push(ctl);
+      running++;
+      if (hedge) clearTimeout(hedge);
+      hedge = setTimeout(launch, hedgeMs);
+      (async () => {
+        try {
+          const res = await fetcher(url, { method: 'POST', signal: ctl.signal, body, headers: OVERPASS_HEADERS });
+          if (!res.ok) throw new Error(`${new URL(url).host} ${res.status}`);
+          const j = (await res.json()) as { elements?: OverpassEl[]; remark?: string };
+          if (!Array.isArray(j.elements) || (j.remark && /error|timed out|out of memory/i.test(j.remark))) throw new Error(`${new URL(url).host}: ${j.remark ?? 'zła odpowiedź'}`);
+          finish(j.elements);
+        } catch (e) {
+          if (done) return;
+          errors.push(e instanceof Error ? e.message : String(e));
+          running--;
+          if (next < urls.length) launch();
+          else if (running === 0) finish(null, new Error(`overpass: ${errors.join(', ')}`));
+        }
+      })();
+    };
+    launch();
+  });
+}
+
+export async function fetchPois(r: RideRoute, fetcher: typeof fetch = fetch, timeoutMs = 30000): Promise<RoutePoi[]> {
+  const els = await overpassFetch(overpassQuery(samplePath(r)), timeoutMs, fetcher);
+  return poisFromOverpass(r, els);
 }
 
 const KIND_QUERY: Record<string, string> = {
@@ -123,25 +156,16 @@ const KIND_QUERY: Record<string, string> = {
 };
 
 /** Najbliższy punkt danego rodzaju (w linii prostej, do 8 km) – „prowadź do najbliższej kawiarni”. */
-export async function nearestPoi(pos: { lat: number; lon: number }, kind: string, fetcher: typeof fetch = fetch): Promise<{ lat: number; lon: number; name: string } | null> {
+export async function nearestPoi(pos: { lat: number; lon: number }, kind: string, fetcher: typeof fetch = fetch, budgetMs = 20000): Promise<{ lat: number; lon: number; name: string } | null> {
   const sel = KIND_QUERY[kind] ?? KIND_QUERY.cafe;
-  const q = `[out:json][timeout:20];node(around:8000,${pos.lat.toFixed(5)},${pos.lon.toFixed(5)})${sel};out body 60;`;
-  for (const url of OVERPASS_URLS()) {
-    try {
-      const res = await fetcher(url, {
-        method: 'POST', body: `data=${encodeURIComponent(q)}`, signal: AbortSignal.timeout(20000),
-        headers: OVERPASS_HEADERS,
-      });
-      if (!res.ok) continue;
-      const els = ((await res.json()) as { elements?: { lat?: number; lon?: number; tags?: Record<string, string> }[] }).elements ?? [];
-      let best: { lat: number; lon: number; name: string } | null = null, bd = Infinity;
-      for (const e of els) {
-        if (typeof e.lat !== 'number' || typeof e.lon !== 'number') continue;
-        const d = dist({ lat: pos.lat, lon: pos.lon, ele: null }, { lat: e.lat, lon: e.lon, ele: null });
-        if (d < bd) { bd = d; best = { lat: e.lat, lon: e.lon, name: (e.tags?.name ?? POI_LABEL[(kind in POI_LABEL ? kind : 'cafe') as PoiKind]).slice(0, 40) }; }
-      }
-      return best;
-    } catch { /* kolejny serwer */ }
+  const q = `[out:json][timeout:20];nwr(around:8000,${pos.lat.toFixed(5)},${pos.lon.toFixed(5)})${sel};out center 80;`;
+  const els = await overpassFetch(q, budgetMs, fetcher);
+  let best: { lat: number; lon: number; name: string } | null = null, bd = Infinity;
+  for (const e of els) {
+    const lat = e.lat ?? e.center?.lat, lon = e.lon ?? e.center?.lon;
+    if (typeof lat !== 'number' || typeof lon !== 'number') continue;
+    const d = dist({ lat: pos.lat, lon: pos.lon, ele: null }, { lat, lon, ele: null });
+    if (d < bd) { bd = d; best = { lat, lon, name: (e.tags?.name ?? POI_LABEL[(kind in POI_LABEL ? kind : 'cafe') as PoiKind]).slice(0, 40) }; }
   }
-  return null;
+  return best;
 }

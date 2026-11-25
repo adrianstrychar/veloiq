@@ -46,7 +46,7 @@ class RideScreen {
         if (Cfg.pgFuel) { out.add(Pg.FUEL); }
         out.add(Pg.LAPS);
         out.add(Pg.ENZO);
-        if (r.nav != null && Cfg.pgClimb && r.nav.course.climbs.size() > 0) { out.add(Pg.CLIMB); }
+        if (r.nav != null && r.nav.enabled && Cfg.pgClimb && r.nav.course.climbs.size() > 0) { out.add(Pg.CLIMB); }
         if (r.nav != null) { out.add(Pg.NAV); }
         return out;
     }

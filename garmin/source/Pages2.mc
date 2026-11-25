@@ -269,14 +269,15 @@ module Pages2 {
         var gap = need - r.choEat;
         var advice = "";
         var ac = Th.good;
-        if (sec < 1800) { advice = "pierwsze 30 min: pij, jedzenie potem"; ac = Th.dim; }
+        if (sec < 1800) { advice = "pierwsze 30 min: tylko picie"; ac = Th.dim; }
         else if (gap >= 20) { advice = "zjedz teraz ~" + (gap > 40 ? 40 : Util.r5(gap)) + " g"; ac = Th.warn; }
         else { advice = "na bieżąco (cel 75 g/h)"; }
         Ui.text(dc, pad, y, tf, "cel do teraz", Ui.L, Th.dim);
         Ui.text(dc, w - pad, y, tf, "" + need + " g", Ui.R, Th.fg);
         y += tH + 2;
-        Ui.text(dc, w / 2, y, Graphics.FONT_SMALL, advice, Ui.C, ac);
-        y += dc.getFontHeight(Graphics.FONT_SMALL) + 2;
+        var af = Ui.fit(dc, advice, w - 2 * pad, 99, [Graphics.FONT_SMALL, Graphics.FONT_TINY, Graphics.FONT_XTINY]);
+        Ui.text(dc, w / 2, y, af, advice, Ui.C, ac);
+        y += dc.getFontHeight(af) + 2;
         Ui.text(dc, w / 2, y, xt, "jedzenie " + Util.clock(sec - e.lastEat) + " temu  ·  picie " + Util.clock(sec - e.lastDrink) + " temu", Ui.C, Th.dim);
         y += xtH + 6;
 

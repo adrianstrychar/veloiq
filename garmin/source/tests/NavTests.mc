@@ -204,10 +204,12 @@ function testNavRide(logger as Test.Logger) as Boolean {
     // pola danych nawigacji
     logger.debug("pola: " + Fields.value(34, r) + " | " + Fields.value(35, r) + " | " + Fields.value(36, r) + " | " + Fields.value(37, r));
     ok = ok && Fields.value(34, r).equals("0.0") && Fields.value(35, r).equals("--");
+    logger.debug("ok przed wyłączeniem=" + ok);
     // wyłączenie w trakcie jazdy
     r.setNav(false);
     scr.page = scr.indexOf(Pg.NAV); scr.draw(g);
-    ok = ok && scr.indexOf(Pg.NAV) == -1 && scr.indexOf(Pg.CLIMB) == -1;
+    logger.debug("po wyłączeniu: strony=" + scr.pages().toString() + " climbNow=" + r.climbNow() + " route=" + r.coachState().get("route"));
+    ok = ok && scr.indexOf(Pg.NAV) == scr.pageCount() - 1 && scr.indexOf(Pg.CLIMB) == -1;   // TRASA zostaje (włączenie z menu), PODJAZD znika
     ok = ok && r.climbNow() == null && r.coachState().get("route") == null;
     r.finish(false);
     r.reset();

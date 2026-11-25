@@ -310,6 +310,13 @@ function testPlanEditsAndFuel(logger as Test.Logger) as Boolean {
     ok = ok && r.choEat == 50 && r.drinks == 1 && r.choBurn > 3.0 && r.choBurn < 25.0 && r.pTrace.size() == 9;
     var st = r.coachState();
     ok = ok && st.get("carbsEatenG") == 50;
+    // „prowadź do kawiarni”, a kawiarnia jest na trasie: serwer odpowiada keep – trasa zostaje, jest tylko komunikat
+    var crs = r.course;
+    r.onReroute(200, { "keep" => true, "say" => "Schronisko – na trasie za 1.2 kilometra." });
+    ok = ok && r.course == crs && r.banner != null && (r.banner as String).find("Schronisko") != null;
+    // odmowa serwera: komunikat błędu, trasa bez zmian
+    r.onReroute(404, { "message" => "W pobliżu nic takiego nie znalazłem." });
+    ok = ok && r.course == crs && r.banner != null && (r.banner as String).find("nic takiego") != null;
     var stats = System.getSystemStats();
     logger.debug("pamięć: użyta " + stats.usedMemory + " z " + stats.totalMemory + " B, wolne " + stats.freeMemory + " B");
     r.finish(false);

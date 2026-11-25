@@ -8,7 +8,7 @@ import { brouterProfile, brouterUrl, hintsToCues, parseBrouter, routingError, su
 import { destination, loopRadius, loopWaypoints, planRoutes, similarity, surfacePct, toPlanned, type PlannedRoute } from '../lib/route/plan';
 import { estimateSeconds, speedFor } from '../lib/route/estimate';
 import { surfaceOf, parseTags } from '../lib/route/surface';
-import { fetchPois, nearestPoi, kindOf, overpassQuery, poisFromOverpass, samplePath } from '../lib/route/pois';
+import { fetchPois, nearestPoi, overpassFetch, OVERPASS_URLS, kindOf, overpassQuery, poisFromOverpass, samplePath } from '../lib/route/pois';
 import { photonUrl, placesFromPhoton } from '../lib/route/geocode';
 import { buildCourse, courseMeta, decodeParts } from '../lib/garmin/course';
 import { rejoinIndex, spliceCourse } from '../lib/route/reroute';
@@ -162,6 +162,33 @@ async function offline() {
     assert.ok(similarity(loop[0].route, loop[0].route) > 0.99);
   });
 
+  await ok('Overpass z asekuracją: odmowa → następny, milczący → dokładamy kolejny, wygrywa pierwsza dobra odpowiedź', async () => {
+    const urls = OVERPASS_URLS();
+    const calls: string[] = [];
+    const aborted: string[] = [];
+    const fake = ((url: string, init: RequestInit) => {
+      calls.push(new URL(url).host);
+      const i = urls.indexOf(url);
+      if (i === 0) return Promise.resolve(new Response('<html>406</html>', { status: 406 }));
+      if (i === 1) return new Promise((_, rej) => init.signal?.addEventListener('abort', () => { aborted.push(new URL(url).host); rej(new Error('abort')); }));
+      return new Promise((res) => setTimeout(() => res(new Response(JSON.stringify({ elements: [{ type: 'node', id: 1, lat: 50.78, lon: 15.75, tags: { amenity: 'cafe', name: 'Testowa' } }] }))), 30));
+    }) as unknown as typeof fetch;
+    const t0 = Date.now();
+    const els = await overpassFetch('[out:json];node(1);out;', 5000, fake, 80);
+    assert.equal(els.length, 1);
+    assert.deepEqual(calls, urls.slice(0, 3).map((u) => new URL(u).host));
+    assert.ok(aborted.length === 1 && Date.now() - t0 < 1000);
+    // wszystkie odmawiają → błąd z listą przyczyn, bez czekania na limit
+    const deny = (() => Promise.resolve(new Response('x', { status: 429 }))) as unknown as typeof fetch;
+    await assert.rejects(overpassFetch('q', 5000, deny, 80), /429/);
+    // najbliższy punkt: way z „center”, wybór najbliższego
+    const near = (() => Promise.resolve(new Response(JSON.stringify({ elements: [
+      { type: 'node', lat: 50.80, lon: 15.75, tags: { name: 'Daleko' } },
+      { type: 'way', center: { lat: 50.776, lon: 15.756 }, tags: { name: 'Blisko' } },
+    ] })))) as unknown as typeof fetch;
+    const p = await nearestPoi({ lat: 50.7753, lon: 15.755 }, 'cafe', near);
+    assert.equal(p?.name, 'Blisko');
+  });
   await ok('„Przed tobą”: zapytanie Overpass, rodzaje, rzut na trasę, bez dubli', () => {
     const p = toPlanned(parseBrouter(fake), 'Test', 'road', rider);
     const path = samplePath(p.route);

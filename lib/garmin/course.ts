@@ -38,6 +38,10 @@ export interface StoredCourse {
   pois?: (number | string)[][];
   prof?: string;
   savedAt: string;
+  /** Objazd w trakcie jazdy („prowadź do kawiarni”, „do startu”): główna trasa i postęp na niej (m) w chwili zjazdu –
+   *  „wróć na trasę” wraca na nią, a nie na objazd. */
+  base?: StoredCourse;
+  baseProg?: number;
 }
 
 export class CourseError extends Error {}
