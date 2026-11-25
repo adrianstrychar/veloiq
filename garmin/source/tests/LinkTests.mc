@@ -122,6 +122,10 @@ function testUploadConfirmation(logger as Test.Logger) as Boolean {
     Cfg.put("token", "t"); Cfg.load();
     var r = getRide();
     var up = r.up;
+    // bez dźwięku i wibracji: w symulatorze bez ekranu wibracja zawiesza przebieg testów (limit czasu)
+    var cb = up.onDone;
+    var calls = [0];
+    up.onDone = null;
     up.enqueue(1795600000, { "dur" => 3600 }, {}, ["AAAA", "BBBB"], ["CCCC"]);
     up.kick();                                              // begin (odpowiedź symulujemy niżej)
     up.onStep(200, { "ok" => true });                       // begin OK → paczki
@@ -135,6 +139,7 @@ function testUploadConfirmation(logger as Test.Logger) as Boolean {
     // ekran podsumowania i startowy z potwierdzeniem rysują się bez błędu
     var g = Smoke.dc();
     new HomeScreen().draw(g);
+    up.onDone = cb;
     Smoke.cleanup();
-    return ok;
+    return ok && calls[0] == 0;
 }
