@@ -113,7 +113,7 @@ class HomeScreen {
         // --- komunikat / stan wysyłki
         var line = note;
         if (line == null && r.up.pending() > 0) { line = r.up.status.length() > 0 ? r.up.status : "Jazda czeka na wysyłkę"; }
-        if (line == null && r.up.status.length() > 0) { line = r.up.status; }
+        if (line == null && r.up.status.length() > 0 && (r.up.doneKey == null || r.up.recentDone())) { line = r.up.status; }
         if (line == null && Cfg.phoneLink && !r.link.active && System.getDeviceSettings().phoneConnected) { line = "Otwórz VeloIQ w telefonie"; }
         if (line == null && r.courseNote != null) { line = r.courseNote; }
         if (line == null && r.course != null && !Cfg.indoor) {

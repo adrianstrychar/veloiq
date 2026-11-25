@@ -131,7 +131,8 @@ class Uploader {
     function kick() as Void {
         if (_running || !Cfg.paired()) { return; }
         var q = Application.Storage.getValue("upq");
-        if (q == null || q.size() == 0) { status = ""; return; }
+        // pusta kolejka: potwierdzenie „Jazda w VeloIQ” zostaje na ekranie (wcześniej znikało od razu po wysyłce)
+        if (q == null || q.size() == 0) { if (doneKey == null) { status = ""; } return; }
         _key = q[0];
         _meta = Application.Storage.getValue("up_" + _key.format("%d"));
         if (_meta == null) { drop(); kick(); return; }
@@ -222,6 +223,11 @@ class Uploader {
         notify();
         if (onDone != null) { onDone.invoke(); }
         kick();   // następna z kolejki
+    }
+
+    //! Ostatnia jazda trafiła do VeloIQ w ciągu 6 h (potwierdzenie na ekranie startowym).
+    function recentDone() as Boolean {
+        return doneKey != null && System.getTimer() - doneAt < 6 * 3600 * 1000;
     }
 
     //! Ile sekund do następnej próby wysyłki (0 = teraz albo trwa).

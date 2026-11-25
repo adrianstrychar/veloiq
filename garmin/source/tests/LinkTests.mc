@@ -10,17 +10,23 @@ import Toybox.Test;
 
 (:test)
 class FakeLink extends PhoneLink {
-    var out;
+    var out;      // wysłane wiadomości
+    var lst;      // ich słuchacze (potwierdzenia w teście ręcznie)
     function initialize() {
         PhoneLink.initialize();
         out = [];
+        lst = [];
     }
     // bez rejestracji w Connect IQ – inaczej test odpiąłby most aplikacji
     function start() as Void { _on = true; }
     function stop() as Void { _on = false; }
     function phoneUp() as Boolean { return true; }
-    function xmit(msg) as Void { out.add(msg); }
-    //! Typ ostatnio wysłanej wiadomości („live”, „state”, „cue”…).
+    function xmit(msg, listener) as Void { out.add(msg); lst.add(listener); }
+    //! Potwierdzenie (ok) albo błąd ostatnio wysłanej wiadomości.
+    function ack(ok as Boolean) as Void {
+        var x = lst[lst.size() - 1];
+        if (ok) { x.onComplete(); } else { x.onError(); }
+    }
     function lastType() as String {
         if (out.size() == 0) { return "-"; }
         return out[out.size() - 1].get("t").toString();
@@ -40,7 +46,7 @@ function testLinkLiveNotStarved(logger as Test.Logger) as Boolean {
     // kolejne potwierdzenia: live musi pójść co najmniej co drugą wiadomość
     var types = "";
     for (var j = 0; j < 8; j++) {
-        l.sent(true);
+        l.ack(true);
         if (j == 2) { l.live([2, 210, 151, 91, 300, 0, 0, 9, 180, 220, 0]); }
         types = types + l.lastType() + ",";
     }
@@ -52,24 +58,48 @@ function testLinkLiveNotStarved(logger as Test.Logger) as Boolean {
 }
 
 (:test)
+function testLinkNoAckDoesNotStall(logger as Test.Logger) as Boolean {
+    // iPhone często nie potwierdza wysyłki: most nie może czekać – po 0,9 s idzie następna, po 3 s miejsce wraca
+    Cfg.put("link", true); Cfg.load();
+    var l = new FakeLink();
+    l.start();
+    l.live([1, 200, 150, 90, 300, 0, 0, 10, 180, 220, 0]);
+    var ok = l.out.size() == 1 && l.inFlight() == 1;
+    l.live([2, 201, 150, 90, 300, 0, 0, 9, 180, 220, 0]);   // za wcześnie (bez potwierdzenia) – czeka
+    ok = ok && l.out.size() == 1;
+    l.ageForTest(1000);
+    l.tick();                                                // po sekundzie: następna mimo braku potwierdzenia
+    ok = ok && l.out.size() == 2 && l.inFlight() == 2;
+    l.event({ "t" => "cue", "k" => "x" });
+    l.ageForTest(1000); l.tick();
+    ok = ok && l.out.size() == 3 && l.inFlight() == 3 && l.lastType().equals("cue");
+    l.live([3, 202, 150, 90, 300, 0, 0, 8, 180, 220, 0]);
+    l.ageForTest(1500); l.tick();                            // 3 w drodze – limit; najstarsza ma już > 3 s → zwolniona
+    logger.debug("w drodze=" + l.inFlight() + " wysłane=" + l.out.size() + " bez potw.=" + l.lostN);
+    ok = ok && l.out.size() == 4 && l.lostN >= 1 && l.lastType().equals("live");
+    l.stop();
+    return ok;
+}
+
+(:test)
 function testLinkRetriesEvents(logger as Test.Logger) as Boolean {
     Cfg.put("link", true); Cfg.load();
     var l = new FakeLink();
     l.start();
     l.event({ "t" => "state", "s" => "start" });
-    l.sent(false);                                          // nie doszło → wraca na początek kolejki
+    l.ack(false);                                           // nie doszło → wraca na początek kolejki
     var ok = l.queued() == 1 && l.failN == 1;
     l.retryNow();
     ok = ok && l.out.size() == 2 && l.lastType().equals("state");
-    l.sent(false); l.retryNow();                            // 2. ponowienie
+    l.ack(false); l.retryNow();                             // 2. ponowienie
     ok = ok && l.out.size() == 3;
-    l.sent(false); l.retryNow();                            // po 3 próbach odpada (bez zapętlenia)
+    l.ack(false); l.retryNow();                             // po 3 próbach odpada (bez zapętlenia)
     ok = ok && l.out.size() == 3 && l.queued() == 0;
     // nieudana próbka live nie wraca (następna sekunda i tak przyjdzie)
     l.live([1, 200, 150, 90, 300, 0, 0, 10, 180, 220, 0]);
     l.retryNow();
     var n = l.out.size();
-    l.sent(false); l.retryNow();
+    l.ack(false); l.retryNow();
     ok = ok && l.out.size() == n && l.queued() == 0;
     logger.debug("wysłane=" + l.out.size() + " błędy=" + l.failN + " opis=" + l.describe());
     l.stop();
