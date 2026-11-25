@@ -246,7 +246,7 @@ async function offline() {
   });
 
   await ok('geokoder: adres zapytania i etykiety miejsc', () => {
-    assert.ok(photonUrl('Szklarska', KARPACZ).includes('lat=50.7753'));
+    assert.ok(photonUrl('Szklarska', KARPACZ).includes('lat=50.7753') && photonUrl('x').includes('lang=default'));
     const pl = placesFromPhoton({ features: [{ geometry: { coordinates: [15.52, 50.83] }, properties: { name: 'Szklarska Poręba', state: 'województwo dolnośląskie', country: 'Polska' } }] });
     assert.equal(pl[0].label, 'Szklarska Poręba · województwo dolnośląskie');
   });
@@ -306,6 +306,7 @@ async function live() {
   await soft('LIVE geokoder „Szklarska Poręba”', async () => {
     const r = await fetch(photonUrl('Szklarska Poręba', KARPACZ), { headers: PHOTON_HEADERS, signal: AbortSignal.timeout(15000) }).catch((e) => { throw new Error(`photon: ${e}`); });
     const body = await r.text();
+    assert.ok(r.status < 400 || r.status >= 500, `Photon odrzucił zapytanie: ${r.status} ${body.slice(0, 160)}`);
     if (!r.ok) throw new Error(`photon ${r.status}: ${body.slice(0, 120)}`);
     const pl = placesFromPhoton(JSON.parse(body));
     if (pl.length === 0) throw new Error(`photon: pusta odpowiedź ${body.slice(0, 160)}`);
@@ -316,6 +317,7 @@ async function live() {
   await soft('LIVE geokoder w dopełniaczu „Szklarskiej Poręby” / „Jeleniej Góry”', async () => {
     for (const [q, lat, lon] of [['Szklarskiej Poręby', 50.83, 15.52], ['Jeleniej Góry', 50.90, 15.73]] as const) {
       const r = await fetch(photonUrl(q, KARPACZ, 3), { headers: PHOTON_HEADERS, signal: AbortSignal.timeout(15000) }).catch((e) => { throw new Error(`photon: ${e}`); });
+      assert.ok(r.status < 400 || r.status >= 500, `Photon odrzucił zapytanie: ${r.status}`);
       if (!r.ok) throw new Error(`photon ${r.status}`);
       const pl = placesFromPhoton(await r.json());
       console.log(`    ${q} → ${pl.slice(0, 2).map((p) => `${p.label} (${p.lat.toFixed(3)}, ${p.lon.toFixed(3)})`).join(' | ') || 'brak'}`);

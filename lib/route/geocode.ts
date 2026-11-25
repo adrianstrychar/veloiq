@@ -7,7 +7,8 @@ export const PHOTON_HEADERS: Record<string, string> = { 'User-Agent': 'VeloIQ/1.
 export interface Place { name: string; label: string; lat: number; lon: number }
 
 export function photonUrl(q: string, near?: { lat: number; lon: number } | null, limit = 6): string {
-  const p = new URLSearchParams({ q, limit: String(limit), lang: 'pl' });
+  // „pl” Photon już nie przyjmuje (400: wspiera default/de/en/fr); „default” = nazwy lokalne z OSM, w Polsce po polsku
+  const p = new URLSearchParams({ q, limit: String(limit), lang: 'default' });
   if (near) { p.set('lat', near.lat.toFixed(4)); p.set('lon', near.lon.toFixed(4)); }
   return `${PHOTON_URL()}?${p.toString()}`;
 }
