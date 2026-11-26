@@ -1,6 +1,6 @@
 'use client';
 
-// Mapa trasy (Leaflet + CARTO Dark Matter), jednokolorowa linia z animacją "draw-on"
+// Mapa trasy (Leaflet + ciemny podkład z components/map/BaseTiles), jednokolorowa linia z animacją "draw-on"
 // (rysowanie od startu do mety ~4 s). WYŁĄCZNIE przez dynamic import z ssr:false (Leaflet
 // dotyka window przy imporcie) — stąd default export.
 //
@@ -10,11 +10,12 @@
 // animujemy SEKWENCYJNIE po skumulowanej długości pikselowej → jedno pióro o stałej prędkości
 // płynie start→meta, przeskakując luki GPS. Koszt/klatkę stały, niezależny od liczby punktów.
 import { useEffect, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, Polyline, useMap } from 'react-leaflet';
 import { latLngBounds, type Polyline as LPolyline } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { C } from '@/lib/theme';
 import type { StreamsJson } from '@/lib/strava/streams';
+import BaseTiles from '@/components/map/BaseTiles';
 
 const MAP_HEIGHT = 280;      // ≥260 px na iPhone Safari (spec PR2)
 const DRAW_MS = 4000;        // czas rysowania CAŁEJ trasy (sumarycznie przez wszystkie odcinki)
@@ -114,12 +115,7 @@ export default function RideMap({ streams }: { streams: StreamsJson }) {
         attributionControl={true}
         scrollWheelZoom={false}          /* scroll strony na mobile nie porywa zoomu mapy */
       >
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          subdomains="abcd"
-          maxZoom={19}
-        />
+        <BaseTiles style="dark" />
         {lines.map((run, i) => (
           <Polyline
             key={i}

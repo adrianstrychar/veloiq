@@ -7,6 +7,7 @@ import { VoiceSettings } from './VoiceSettings';
 import { RouteCard } from './RouteCard';
 import type { RideRoute } from '@/lib/ride/gpx';
 import type { RacePacing } from '@/lib/ride/race-pacing';
+import { GarminPanel, type GarminDevice } from './GarminPanel';
 
 interface Props {
   ride: Ride;
@@ -27,60 +28,60 @@ interface Props {
   raceOn?: boolean;
   onRaceOn?: (v: boolean) => void;
   onRaceRide?: () => void;
+  /** Liczniki Garmin na koncie (z serwera) – wtedy „Jedź” jest ekranem licznika, a jazda z telefonu schowana niżej. */
+  garminDevices?: GarminDevice[];
 }
 
-export function HomeScreen({ ride, plan, planLabel, dateLabel, settings, onSettings, onStart, onFree, onSensors, route, onRoute, garminRoute, race, raceOn, onRaceOn, onRaceRide }: Props) {
+export function HomeScreen({ ride, plan, planLabel, dateLabel, settings, onSettings, onStart, onFree, onSensors, route, onRoute, garminRoute, race, raceOn, onRaceOn, onRaceRide, garminDevices }: Props) {
   const st = plan ? scriptStats(plan) : null;
   const power = ride.sensors.power;
   const hr = ride.sensors.hr;
   const ready = !!power?.connected;
-  return (
-    <div className={s.screen}>
-      <header className={s.stack}>
-        <span className={s.eyebrow}>{dateLabel}</span>
-        <h1 className={s.title}>Trening dziś</h1>
-      </header>
+  // jeździsz z licznikiem Garmin: najpierw licznik (stan + jeden krok), jazda z czujnikami telefonu – na dole, zwinięta
+  const garmin = (garminDevices?.length ?? 0) > 0 || (ride.native && !!ride.garminLink.paired);
 
-      {ride.recoverable && (
-        <section className={s.cardAmber}>
-          <span className={s.strong}>Przerwany trening: {ride.recoverable.name}</span>
-          <span className={s.small}>Zapisane {hmmss(ride.recoverable.elapsed ?? 0)}. Możesz wznowić od tego miejsca.</span>
-          <div className={s.grid2}>
-            <button type="button" className={s.btnAmber} onClick={ride.resumeRecovered}>Wznów</button>
-            <button type="button" className={s.btnGhost} onClick={ride.discardRecovered}>Odrzuć</button>
-          </div>
-        </section>
-      )}
-
-      {plan && st ? (
-        <section className={s.card}>
-          <div className={s.row} style={{ alignItems: 'flex-start' }}>
-            <div className={s.stack}>
-              {planLabel && <span className={s.eyebrowCyan}>{planLabel}</span>}
-              <span className={s.title} style={{ fontSize: 28 }}>{plan.name}</span>
-            </div>
-            {settings.autoStart && <span className={s.small} style={{ border: '1px solid var(--line)', borderRadius: 999, padding: '4px 10px' }}>Elastyczny</span>}
-          </div>
-          <Profile script={plan} />
-          <div className={s.grid4}>
-            <div className={s.stack}><span className={s.metricLabel}>Czas</span><span className={s.statValue}>{hmmss(st.total)}</span></div>
-            <div className={s.stack}><span className={s.metricLabel}>Cel</span><span className={s.statValue}>{st.target}</span></div>
-            <div className={s.stack}><span className={s.metricLabel}>TSS</span><span className={s.statValue}>{st.tss}</span></div>
-            <div className={s.stack}><span className={s.metricLabel}>FTP</span><span className={s.statValue}>{plan.ftp} W</span></div>
-          </div>
-          <p className={s.body} style={{ fontSize: 14 }}>
-            {settings.autoStart
-              ? 'Interwały startują, kiedy Ty ruszysz. Głos zapowie każdą serię minutę wcześniej i podsumuje ją po końcu.'
-              : 'Interwały idą z zegarem. Głos zapowie start i podsumuje każdą serię.'}
-          </p>
-        </section>
+  const raceCard = race && (garmin || settings.outdoor) && (
+    <section className={s.card} aria-label="Tryb startowy">
+      <span className={s.eyebrowCyan}>Tryb startowy</span>
+      <span className={s.strong} style={{ fontSize: 18 }}>
+        {race.name} · {new Date(race.date + 'T12:00:00').toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })}
+      </span>
+      {route ? (
+        <>
+          <label className={s.toggleRow}>
+            <span className={s.stack} style={{ gap: 2 }}>
+              <span style={{ fontSize: 15 }}>Prowadź według strategii</span>
+              <span className={s.small}>
+                Enzo poda cel mocy na {route.climbs.length} {route.climbs.length === 1 ? 'podjeździe' : 'podjazdach'} trasy „{route.name}”
+                {race.phases.length ? ' – ze strategii startu.' : ' – z Twojego FTP (strategia jeszcze niegotowa).'}
+              </span>
+            </span>
+            <input type="checkbox" className={s.checkbox} checked={!!raceOn} onChange={() => onRaceOn?.(!raceOn)} />
+          </label>
+          {raceOn && route.raceId && route.raceId !== race.raceId && (
+            <span className={s.small} style={{ color: 'var(--amber)' }}>Uwaga: wczytana trasa nie pochodzi z tego startu.</span>
+          )}
+          {raceOn && !garmin && <button type="button" className={s.btnPrimary} onClick={onRaceRide}><IconPlay size={16} />Jedź trasę startu z Enzo</button>}
+          {raceOn && garmin && <span className={s.small}>Wyślij trasę na licznik poniżej – cele mocy pojadą razem z nią.</span>}
+        </>
       ) : (
-        <section className={s.card}>
-          <span className={s.strong}>Na dziś nie ma treningu w planie</span>
-          <span className={s.small}>Możesz jechać swobodnie – nagram jazdę i sam wykryję mocne wysiłki.</span>
-        </section>
+        <span className={s.small}>Wgraj poniżej plik GPX trasy startu – Enzo zapowie każdy podjazd i poda, ile watów trzymać.</span>
       )}
+    </section>
+  );
 
+  const voice = (
+    <details className={s.card} style={{ gap: 0 }}>
+      <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 600, listStyle: 'none', display: 'flex', justifyContent: 'space-between' }}>
+        Głos lektora<span className={s.small}>zmień ›</span>
+      </summary>
+      <div style={{ paddingTop: 12 }}><VoiceSettings ride={ride} /></div>
+    </details>
+  );
+
+  // jazda prowadzona przez telefon: czujniki Bluetooth telefonu, trenażer / GPS, start w telefonie
+  const phoneRide = (
+    <>
       <section className={s.grid2} aria-label="Czujniki">
         <button type="button" className={s.metric} onClick={onSensors} style={{ textAlign: 'left', cursor: 'pointer', color: 'var(--text)', font: 'inherit' }}>
           <span className={s.metricLabel} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ color: 'var(--cyan)' }}><IconBolt /></span>Moc</span>
@@ -100,58 +101,101 @@ export function HomeScreen({ ride, plan, planLabel, dateLabel, settings, onSetti
             className={settings.outdoor === o.v ? s.segBtnOn : s.segBtn} onClick={() => onSettings({ ...settings, outdoor: o.v })}>{o.l}</button>
         ))}
       </div>
+    </>
+  );
 
-      {settings.outdoor && race && (
-        <section className={s.card} aria-label="Tryb startowy">
-          <span className={s.eyebrowCyan}>Tryb startowy</span>
-          <span className={s.strong} style={{ fontSize: 18 }}>
-            {race.name} · {new Date(race.date + 'T12:00:00').toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })}
-          </span>
-          {route ? (
-            <>
-              <label className={s.toggleRow}>
-                <span className={s.stack} style={{ gap: 2 }}>
-                  <span style={{ fontSize: 15 }}>Prowadź według strategii</span>
-                  <span className={s.small}>
-                    Enzo poda cel mocy na {route.climbs.length} {route.climbs.length === 1 ? 'podjeździe' : 'podjazdach'} trasy „{route.name}”
-                    {race.phases.length ? ' – ze strategii startu.' : ' – z Twojego FTP (strategia jeszcze niegotowa).'}
-                  </span>
-                </span>
-                <input type="checkbox" className={s.checkbox} checked={!!raceOn} onChange={() => onRaceOn?.(!raceOn)} />
-              </label>
-              {raceOn && route.raceId && route.raceId !== race.raceId && (
-                <span className={s.small} style={{ color: 'var(--amber)' }}>Uwaga: wczytana trasa nie pochodzi z tego startu.</span>
-              )}
-              {raceOn && <button type="button" className={s.btnPrimary} onClick={onRaceRide}><IconPlay size={16} />Jedź trasę startu z Enzo</button>}
-            </>
-          ) : (
-            <span className={s.small}>Wgraj poniżej plik GPX trasy startu – Enzo zapowie każdy podjazd i poda, ile watów trzymać.</span>
-          )}
+  const startButtons = (
+    <div className={s.footer} style={garmin ? { marginTop: 4 } : undefined}>
+      {!ride.native && <span className={s.small} style={{ textAlign: 'center' }}>Przeglądarka: czujniki i jazda są symulowane.</span>}
+      {plan && (
+        <button type="button" className={garmin ? s.btnGhost : s.btnPrimary} onClick={onStart} disabled={ride.native && !ready}>
+          <IconPlay />{ride.native && !ready ? 'Połącz pomiar mocy' : garmin ? 'Rozpocznij trening w telefonie' : 'Rozpocznij trening'}
+        </button>
+      )}
+      <button type="button" className={plan || garmin ? s.btnGhost : s.btnPrimary} onClick={onFree}>Jazda swobodna (bez planu)</button>
+    </div>
+  );
+
+  return (
+    <div className={s.screen}>
+      <header className={s.stack}>
+        <span className={s.eyebrow}>{dateLabel}</span>
+        <h1 className={s.title}>Trening dziś</h1>
+      </header>
+
+      {ride.recoverable && (
+        <section className={s.cardAmber}>
+          <span className={s.strong}>Przerwany trening: {ride.recoverable.name}</span>
+          <span className={s.small}>Zapisane {hmmss(ride.recoverable.elapsed ?? 0)}. Możesz wznowić od tego miejsca.</span>
+          <div className={s.grid2}>
+            <button type="button" className={s.btnAmber} onClick={ride.resumeRecovered}>Wznów</button>
+            <button type="button" className={s.btnGhost} onClick={ride.discardRecovered}>Odrzuć</button>
+          </div>
         </section>
       )}
 
-      {settings.outdoor
-        ? <RouteCard route={route} onRoute={onRoute} garminRoute={garminRoute} />
-        : route && <span className={s.small}>Trasa „{route.name}” działa tylko na zewnątrz (GPS).</span>}
+      {garmin && <GarminPanel ride={ride} devices={garminDevices} />}
 
-      <details className={s.card} style={{ gap: 0 }}>
-        <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 600, listStyle: 'none', display: 'flex', justifyContent: 'space-between' }}>
-          Głos lektora<span className={s.small}>zmień ›</span>
-        </summary>
-        <div style={{ paddingTop: 12 }}><VoiceSettings ride={ride} /></div>
-      </details>
+      {plan && st ? (
+        <section className={s.card}>
+          <div className={s.row} style={{ alignItems: 'flex-start' }}>
+            <div className={s.stack}>
+              {planLabel && <span className={s.eyebrowCyan}>{planLabel}</span>}
+              <span className={s.title} style={{ fontSize: 28 }}>{plan.name}</span>
+            </div>
+            {settings.autoStart && <span className={s.small} style={{ border: '1px solid var(--line)', borderRadius: 999, padding: '4px 10px' }}>Elastyczny</span>}
+          </div>
+          <Profile script={plan} />
+          <div className={s.grid4}>
+            <div className={s.stack}><span className={s.metricLabel}>Czas</span><span className={s.statValue}>{hmmss(st.total)}</span></div>
+            <div className={s.stack}><span className={s.metricLabel}>Cel</span><span className={s.statValue}>{st.target}</span></div>
+            <div className={s.stack}><span className={s.metricLabel}>TSS</span><span className={s.statValue}>{st.tss}</span></div>
+            <div className={s.stack}><span className={s.metricLabel}>FTP</span><span className={s.statValue}>{plan.ftp} W</span></div>
+          </div>
+          <p className={s.body} style={{ fontSize: 14 }}>
+            {garmin
+              ? 'Ten trening czeka na liczniku – START TRENINGU na Edge. Interwały ruszają, kiedy Ty ruszysz, a Enzo zapowie każdą serię.'
+              : settings.autoStart
+                ? 'Interwały startują, kiedy Ty ruszysz. Głos zapowie każdą serię minutę wcześniej i podsumuje ją po końcu.'
+                : 'Interwały idą z zegarem. Głos zapowie start i podsumuje każdą serię.'}
+          </p>
+        </section>
+      ) : (
+        <section className={s.card}>
+          <span className={s.strong}>Na dziś nie ma treningu w planie</span>
+          <span className={s.small}>{garmin ? 'Jedź swobodnie z licznikiem (START na Edge) – mocne wysiłki i lapy zapiszą się same.' : 'Możesz jechać swobodnie – nagram jazdę i sam wykryję mocne wysiłki.'}</span>
+        </section>
+      )}
 
-      {ride.error && <div className={s.banner} role="alert">{ride.error}</div>}
-
-      <div className={s.footer}>
-        {!ride.native && <span className={s.small} style={{ textAlign: 'center' }}>Przeglądarka: czujniki i jazda są symulowane.</span>}
-        {plan && (
-          <button type="button" className={s.btnPrimary} onClick={onStart} disabled={ride.native && !ready}>
-            <IconPlay />{ride.native && !ready ? 'Połącz pomiar mocy' : 'Rozpocznij trening'}
-          </button>
-        )}
-        <button type="button" className={plan ? s.btnGhost : s.btnPrimary} onClick={onFree}>Jazda swobodna (bez planu)</button>
-      </div>
+      {garmin ? (
+        <>
+          {raceCard}
+          <RouteCard route={route} onRoute={onRoute} garminRoute={garminRoute} />
+          {voice}
+          {ride.error && <div className={s.banner} role="alert">{ride.error}</div>}
+          <details className={s.card} style={{ gap: 0 }}>
+            <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 600, listStyle: 'none', display: 'flex', justifyContent: 'space-between' }}>
+              Jazda bez licznika<span className={s.small}>czujniki w telefonie ›</span>
+            </summary>
+            <div className={s.stack} style={{ paddingTop: 12, gap: 12 }}>
+              {phoneRide}
+              {startButtons}
+            </div>
+          </details>
+        </>
+      ) : (
+        <>
+          {phoneRide}
+          {raceCard}
+          {settings.outdoor
+            ? <RouteCard route={route} onRoute={onRoute} garminRoute={garminRoute} />
+            : route && <span className={s.small}>Trasa „{route.name}” działa tylko na zewnątrz (GPS).</span>}
+          {voice}
+          {ride.native && <GarminPanel ride={ride} devices={garminDevices} compact />}
+          {ride.error && <div className={s.banner} role="alert">{ride.error}</div>}
+          {startButtons}
+        </>
+      )}
     </div>
   );
 }

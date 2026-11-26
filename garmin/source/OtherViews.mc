@@ -64,10 +64,32 @@ class SummaryScreen {
             y += 4;
         }
 
-        var st = r.up.status;
-        if (st.length() == 0) { st = Cfg.paired() ? (m.n < 60 ? "Za krótka jazda, nie wysyłam" : "Wysyłka do VeloIQ...") : "Sparuj z VeloIQ, żeby wysłać jazdę"; }
-        if (r.up.lastError.length() > 0) { st = st + " (" + r.up.lastError + ")"; }
-        Ui.text(dc, w / 2, h - btnH - pad - lh - 2, xt, Util.ellipsis(st, 40), Ui.C, Th.accent);
+        // --- wysyłka do VeloIQ: wyraźny stan (zielony pasek = jazda jest w VeloIQ, pasek postępu w trakcie)
+        var up = r.up;
+        var sy = h - btnH - pad - lh - 4;
+        var bw = w - 2 * pad;
+        var isDone = up.doneKey != null && up.doneKey == r.startEpoch;
+        if (isDone) {
+            Ui.fillRect(dc, pad, sy - 1, bw, lh + 4, Th.good);
+            var txt = "JAZDA W VELOIQ";
+            var tw = dc.getTextWidthInPixels(txt, xt);
+            Ui.check(dc, w / 2 - tw / 2 - lh, sy + lh / 6, lh * 2 / 3, Th.bg);
+            Ui.text(dc, w / 2 + lh / 3, sy, xt, txt, Ui.C, Th.bg);
+        } else if (up.running()) {
+            Ui.fillRect(dc, pad, sy - 1, bw, lh + 4, Th.card);
+            if (up.progN > 0) { Ui.fillRect(dc, pad, sy - 1, bw * up.progI / up.progN, lh + 4, Th.accent); }
+            Ui.text(dc, w / 2, sy, xt, "Wysyłam do VeloIQ " + up.progI + "/" + up.progN, Ui.C, Th.fg);
+        } else {
+            var st = up.status;
+            if (!Cfg.paired()) { st = "Połącz konto VeloIQ – jazda poczeka"; }
+            else if (m.n < 60) { st = "Za krótka jazda, nie wysyłam"; }
+            else if (up.pending() > 0) {
+                st = up.lastError.length() > 0 ? up.lastError : "Jazda czeka na wysyłkę";
+                var wait = up.retryIn();
+                if (wait > 0) { st = st + " · ponowię za " + wait + " s"; }
+            } else if (st.length() == 0) { st = "Wysyłka do VeloIQ..."; }
+            Ui.text(dc, w / 2, sy, xt, Util.ellipsis(st, 40), Ui.C, up.lastError.length() > 0 ? Th.warn : Th.accent);
+        }
 
         var by = h - btnH - pad / 2;
         Ui.button(dc, pad, by, w - 2 * pad, btnH, "GOTOWE", Th.accent, Th.onAccent);
@@ -94,107 +116,43 @@ class SummaryScreen {
     function menu() as Void { done(); }
 }
 
-//! Parowanie licznika z kontem VeloIQ: licznik pokazuje kod, zawodnik wpisuje go w aplikacji.
+//! Połączenie licznika z kontem VeloIQ (ręcznie, z MENU): kod do wpisania w aplikacji. Logika w Pairing –
+//! ta sama co przy łączeniu samym przez telefon; gdy aplikacja VeloIQ w telefonie jest otwarta, potwierdzi kod sama.
 class PairView extends WatchUi.View {
-    var code = null;
-    var status as String = "Łączę z VeloIQ...";
-    var failed as Boolean = false;
-    hidden var _device = null;
-    hidden var _secret = null;
     hidden var _timer = null;
-    hidden var _scr;
-    hidden var _polls as Number = 0;
-    hidden var _done as Boolean = false;
+    hidden var _closing as Boolean = false;
+    hidden var _shown as Boolean = false;
 
     function initialize(scr) {
         View.initialize();
-        _scr = scr;
     }
 
     function onShow() as Void {
-        if (code == null && !_done) { begin(); }
+        _shown = true;
+        // trwające łączenie przez telefon: ten sam kod, teraz także na ekranie
+        if (!Cfg.paired()) { getRide().pairing.start(false); }
     }
 
     function onHide() as Void {
-        stopTimer();
-    }
-
-    hidden function stopTimer() as Void {
+        _shown = false;
         if (_timer != null) { _timer.stop(); _timer = null; }
     }
 
-    function begin() as Void {
-        failed = false;
-        status = "Łączę z VeloIQ...";
-        code = null;
-        _polls = 0;
-        var ds = System.getDeviceSettings();
-        getRide().api.post("/api/garmin/pair", { "model" => ds.partNumber, "app" => Cfg.VERSION }, method(:onBegin));
-        WatchUi.requestUpdate();
+    //! Ponowna próba po błędzie albo wygaśnięciu kodu.
+    function retry() as Void {
+        var p = getRide().pairing;
+        if (!p.active) { p.start(false); }
     }
 
-    function onBegin(http as Number, data) as Void {
-        if (http != 200 || data == null || data.get("code") == null) {
-            failed = true;
-            status = Api.errorText(http);
-            WatchUi.requestUpdate();
-            return;
-        }
-        code = data.get("code").toString();
-        _device = data.get("device");
-        _secret = data.get("secret");
-        status = "Czekam na wpisanie kodu";
-        stopTimer();
-        _timer = new Timer.Timer();
-        _timer.start(method(:poll), 4000, true);
-        WatchUi.requestUpdate();
-    }
-
-    function poll() as Void {
-        if (_done || _device == null) { return; }
-        _polls++;
-        if (_polls > 150) {        // 10 minut
-            stopTimer();
-            failed = true;
-            code = null;
-            status = "Kod wygasł";
-            WatchUi.requestUpdate();
-            return;
-        }
-        getRide().api.get("/api/garmin/pair", { "device" => _device, "secret" => _secret }, method(:onPoll));
-    }
-
-    function onPoll(http as Number, data) as Void {
-        if (_done) { return; }
-        if (http != 200 || data == null) { return; }     // chwilowy brak łącza – próbujemy dalej
-        var st = Util.str(data.get("status"), "");
-        if (st.equals("ok") && data.get("token") != null) {
-            _done = true;
-            stopTimer();
-            Cfg.put("token", data.get("token").toString());
-            Cfg.put("athlete", Util.str(data.get("name"), ""));
-            Cfg.load();
-            status = "Sparowano!";
-            code = null;
-            getRide().tone("good");
-            getRide().sync(_scr);
-            _timer = new Timer.Timer();
-            _timer.start(method(:close), 1500, false);
-        } else if (st.equals("expired")) {
-            stopTimer();
-            failed = true;
-            code = null;
-            status = "Kod wygasł";
-        }
-        WatchUi.requestUpdate();
-    }
+    function failed() as Boolean { return getRide().pairing.failed && !getRide().pairing.active; }
 
     function close() as Void {
-        stopTimer();
+        if (_timer != null) { _timer.stop(); _timer = null; }
         WatchUi.popView(WatchUi.SLIDE_RIGHT);
     }
 
     function onUpdate(dc as Graphics.Dc) as Void {
+        var p = getRide().pairing;
         var w = dc.getWidth();
         var h = dc.getHeight();
         var pad = w / 20;
@@ -202,19 +160,33 @@ class PairView extends WatchUi.View {
         dc.setColor(Th.fg, Th.bg);
         dc.clear();
         var y = h / 30;
-        Ui.text(dc, w / 2, y, Graphics.FONT_SMALL, "Parowanie z VeloIQ", Ui.C, Th.accent);
+        Ui.text(dc, w / 2, y, Graphics.FONT_SMALL, "Połącz z kontem VeloIQ", Ui.C, Th.accent);
         y += dc.getFontHeight(Graphics.FONT_SMALL) + pad;
-        var info = "W aplikacji VeloIQ otwórz Jedź, potem Czujniki, kartę Garmin Edge i wpisz kod:";
-        y = Ui.lines(dc, Ui.wrap(dc, info, xt, w - 2 * pad), w / 2, y, xt, Th.fg, 5) + pad;
-        if (code != null) {
-            var shown = code.length() == 6 ? code.substring(0, 3) + " " + code.substring(3, 6) : code;
+        var done = Cfg.paired();
+        var info = done ? "Licznik pobiera plan i będzie sam wysyłał jazdy do VeloIQ."
+            : "Otwarta aplikacja VeloIQ w telefonie połączy konto sama. Albo wpisz kod w VeloIQ: Jedź, Licznik Garmin Edge, Ustawienia licznika, Wpisz kod.";
+        y = Ui.lines(dc, Ui.wrap(dc, info, xt, w - 2 * pad), w / 2, y, xt, Th.fg, 6) + pad;
+        if (!done && p.code != null) {
+            // dwie trójki cyfr osobno – czcionka cyfr nie ma znaku spacji
             var ch = h / 5;
-            Ui.card(dc, pad, y, w - 2 * pad, ch, Th.card);
-            Ui.value(dc, w / 2, y + ch / 2, w - 4 * pad, ch - 8, shown, Th.accent);
+            var cw = w - 2 * pad;
+            Ui.card(dc, pad, y, cw, ch, Th.card);
+            if (p.code.length() == 6) {
+                Ui.value(dc, pad + cw * 27 / 100, y + ch / 2, cw * 42 / 100, ch - 8, p.code.substring(0, 3), Th.accent);
+                Ui.value(dc, pad + cw * 73 / 100, y + ch / 2, cw * 42 / 100, ch - 8, p.code.substring(3, 6), Th.accent);
+            } else {
+                Ui.value(dc, w / 2, y + ch / 2, cw - 2 * pad, ch - 8, p.code, Th.accent);
+            }
             y += ch + pad;
         }
-        Ui.lines(dc, Ui.wrap(dc, status, Graphics.FONT_TINY, w - 2 * pad), w / 2, y, Graphics.FONT_TINY, failed ? Th.bad : Th.good, 3);
-        Ui.text(dc, w / 2, h - dc.getFontHeight(xt) - 4, xt, failed ? "START: spróbuj ponownie" : "Wstecz: anuluj", Ui.C, Th.dim);
+        var st = done ? (Cfg.athlete.length() > 0 ? "Połączono: " + Cfg.athlete : "Połączono!") : p.status;
+        Ui.lines(dc, Ui.wrap(dc, st, Graphics.FONT_TINY, w - 2 * pad), w / 2, y, Graphics.FONT_TINY, failed() ? Th.bad : Th.good, 3);
+        Ui.text(dc, w / 2, h - dc.getFontHeight(xt) - 4, xt, failed() ? "START: spróbuj ponownie" : "Wstecz: zamknij", Ui.C, Th.dim);
+        if (done && !_closing && _shown) {
+            _closing = true;
+            _timer = new Timer.Timer();
+            _timer.start(method(:close), 2000, false);
+        }
     }
 }
 
@@ -227,13 +199,13 @@ class PairDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onTap(evt as WatchUi.ClickEvent) as Boolean {
-        if (_v.failed) { _v.begin(); }
+        if (_v.failed()) { _v.retry(); }
         return true;
     }
 
     function onKey(evt as WatchUi.KeyEvent) as Boolean {
         var k = evt.getKey();
-        if ((k == WatchUi.KEY_START || k == WatchUi.KEY_ENTER) && _v.failed) { _v.begin(); return true; }
+        if ((k == WatchUi.KEY_START || k == WatchUi.KEY_ENTER) && _v.failed()) { _v.retry(); return true; }
         return false;
     }
 

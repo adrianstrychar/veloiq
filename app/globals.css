@@ -79,3 +79,8 @@ button, a, nav, [role="button"], label { -webkit-user-select: none; user-select:
     transform: rotate(360deg);
   }
 }
+
+/* Podkład OpenStreetMap przyciemniony (gdy brak klucza CARTO): odwrócenie + obrót barw zachowuje kolory wody i lasów */
+.leaflet-layer.map-dark, .map-dark {
+  filter: invert(100%) hue-rotate(180deg) brightness(92%) contrast(88%) saturate(70%);
+}

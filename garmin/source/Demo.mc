@@ -1,6 +1,7 @@
 import Toybox.Application;
 import Toybox.Lang;
 import Toybox.System;
+import Toybox.WatchUi;
 
 // Tryb demonstracyjny do zrzutów ekranu w symulatorze (CI: garmin/ci/screens.sh, monkey.demo.jungle).
 // W zwykłym buildzie moduł jest pusty – adnotacja (:demo) jest wykluczona w monkey.jungle.
@@ -15,6 +16,8 @@ module Demo {
 module Demo {
     var stage as Number = 0;
     var wait as Number = 3;
+    var _pairShown as Boolean = false;
+    var _codeShown as Boolean = false;
     var t as Number = 0;
 
     function plan() {
@@ -34,6 +37,8 @@ module Demo {
         Cfg.put("token", "demo"); Cfg.put("athlete", "Adrian"); Cfg.put("ftp", 305); Cfg.put("hrmax", 189);
         Cfg.put("autoPause", false); Cfg.put("tones", false); Cfg.put("link", false);
         Cfg.put("apiBase", "https://localhost");     // demo nie rozmawia z prawdziwym serwerem
+        // zrzuty wszystkich stron, także domyślnie wyłączonych
+        Cfg.put("pgEffort", true); Cfg.put("pgFuel", true); Cfg.put("pgEnzo", true);
         Cfg.load();
         r.plan = plan();
     }
@@ -71,6 +76,29 @@ module Demo {
         var s = stage;
         stage++;
         if (s == 0) { r.hub.power = 0; r.hub.hr = 68; shot("01-start"); }
+        // licznik bez konta: łączenie samo przez telefon, potem ekran z kodem (MENU → Połącz z kontem)
+        else if (s == 1 && !_pairShown) {
+            _pairShown = true;
+            stage = 1;
+            Cfg.put("token", ""); Cfg.load();
+            r.pairing.active = true; r.pairing.auto = true; r.pairing.status = "Łączę konto przez telefon...";
+            shot("01a-bez-konta");
+        }
+        else if (s == 1 && _pairShown && !_codeShown) {
+            _codeShown = true;
+            stage = 1;
+            r.pairing.code = "482913"; r.pairing.status = "Czekam na wpisanie kodu";
+            var v = new PairView(null);
+            WatchUi.pushView(v, new PairDelegate(v), WatchUi.SLIDE_IMMEDIATE);
+            shot("01b-kod");
+        }
+        else if (s == 1 && _codeShown && Cfg.token.length() == 0) {
+            stage = 1;
+            WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
+            r.pairing.cancel(); r.pairing.status = "";
+            Cfg.put("token", "demo"); Cfg.load();
+            wait = 1;
+        }
         else if (s == 1) { r.plan = plan(); r.startRide(false); ff(r, 95, 176, 121, 88); r.uiPage = Pg.MAIN; shot("02-rozgrzewka"); }
         else if (s == 2) { ff(r, 146, 180, 124, 88); shot("03-zapowiedz"); }
         else if (s == 3) { ff(r, 66, 182, 126, 88); ff(r, 9, 306, 139, 93); shot("04-start-interwalu"); }
@@ -90,28 +118,29 @@ module Demo {
         else if (s == 16) { r.uiPage = Pg.EFFORT; shot("13b-wysilek"); }
         else if (s == 17) { r.fuel(25); r.fuel(25); r.fuel(0); r.banner = null; r.uiPage = Pg.FUEL; shot("13c-paliwo"); }
         else if (s == 18) { r.finish(true); shot("14-podsumowanie"); }
-        else if (s == 19) {
+        else if (s == 19) { r.up.doneKey = r.startEpoch; r.up.status = "Jazda w VeloIQ 20:24"; shot("14a-wyslane"); }
+        else if (s == 20) {
             r.reset();
             Cfg.put("theme", 1); Cfg.put("ftp", 305); Cfg.load(); Th.apply(1);
             r.plan = null; r.startRide(true);
             ff(r, 300, 185, 128, 86);
             wait = 0;
         }
-        else if (s == 20) { ff(r, 150, 318, 165, 94); r.uiPage = Pg.MAIN; shot("15-swobodna-jasny"); }
-        else if (s == 21) { r.uiPage = Pg.LAPS; shot("16-swobodna-okrazenia"); }
-        else if (s == 22) {
+        else if (s == 21) { ff(r, 150, 318, 165, 94); r.uiPage = Pg.MAIN; shot("15-swobodna-jasny"); }
+        else if (s == 22) { r.uiPage = Pg.LAPS; shot("16-swobodna-okrazenia"); }
+        else if (s == 23) {
             // na koniec kilkanaście sekund PRAWDZIWEJ ścieżki: zegar 1 Hz, czujniki symulatora, auto-pauza, dane z Activity.Info
             r.finish(false); r.reset(); Th.apply(0);
             Cfg.put("theme", 0); Cfg.put("autoPause", true); Cfg.load();
             wait = 2;       // nowa sesja FIT dopiero w następnym wywołaniu zegara
         }
-        else if (s == 23) { r.plan = plan(); r.startRide(false); wait = 14; }
-        else if (s == 24) {
+        else if (s == 24) { r.plan = plan(); r.startRide(false); wait = 14; }
+        else if (s == 25) {
             System.println("REAL s=" + (r.eng == null ? -1 : r.eng.s) + " state=" + r.state + " simulated=" + r.hub.simulated);
             r.uiPage = Pg.MAIN; shot("17-prawdziwe-czujniki");
         }
         // --- nawigacja po trasie GPX: jazda swobodna po pętli demonstracyjnej z podjazdem i celem mocy ze strategii
-        else if (s == 25) {
+        else if (s == 26) {
             r.finish(false); r.reset();
             Cfg.put("autoPause", false); Cfg.put("autoLapMode", 0); Cfg.load();
             DemoCourse.install();
@@ -120,13 +149,24 @@ module Demo {
             r.hub.power = 0; r.hub.hr = 71;
             shot("18-start-z-trasa");
         }
-        else if (s == 26) { r.startRide(true); drive(r, 100, 205, 134, 89); wait = 1; }     // strona ustawiana po starcie (start wraca na TRENING)
-        else if (s == 27) { r.banner = null; r.uiPage = Pg.NAV; r.uiZoom = 1; shot("19-trasa-skret"); }
-        else if (s == 28) { drive(r, 18, 240, 141, 88); r.uiPage = Pg.MAIN; shot("20-teraz-w-prawo"); }
-        else if (s == 29) { drive(r, 72, 291, 158, 84); r.banner = null; shot("21-podjazd-cel"); }
-        else if (s == 30) { r.banner = null; r.uiPage = Pg.CLIMB; shot("21a-podjazd"); }
-        else if (s == 31) { r.uiPage = Pg.NAV; r.uiZoom = 4; shot("22-trasa-cala"); }
-        else if (s == 32) { drive(r, 76, 289, 163, 83); r.uiZoom = 0; shot("23-trasa-w-lewo"); }
-        else if (s == 33) { r.finish(false); r.reset(); System.println("SHOT END"); }
+        else if (s == 27) { r.startRide(true); drive(r, 100, 205, 134, 89); wait = 1; }     // strona ustawiana po starcie (start wraca na TRENING)
+        else if (s == 28) { r.banner = null; r.uiPage = Pg.NAV; r.uiZoom = 1; shot("19-trasa-skret"); }
+        else if (s == 29) { drive(r, 18, 240, 141, 88); r.uiPage = Pg.MAIN; shot("20-teraz-w-prawo"); }
+        else if (s == 30) { drive(r, 72, 291, 158, 84); r.banner = null; shot("21-podjazd-cel"); }
+        else if (s == 31) { r.banner = null; r.uiPage = Pg.CLIMB; shot("21a-podjazd"); }
+        else if (s == 32) { r.uiPage = Pg.NAV; r.uiZoom = 4; shot("22-trasa-cala"); }
+        else if (s == 33) { drive(r, 76, 289, 163, 83); r.uiZoom = 0; shot("23-trasa-w-lewo"); }
+        // okno systemu (powiadomienie z telefonu) zasłaniało ekran – podpowiedź raz na jazdę
+        else if (s == 34) { r.uiPage = Pg.MAIN; r.banner = null; r.coveredBySystem(23); shot("23a-zasloniete"); }
+        // menu: jazda → Enzo → Prowadź do
+        else if (s == 35) {
+            r.banner = null;
+            var root = (Application.getApp() as VeloIQApp).root as RootView;
+            WatchUi.pushView(Menus.ride(root.rideScr), new RideMenuDelegate(root.rideScr), WatchUi.SLIDE_IMMEDIATE);
+            shot("24-menu-jazdy");
+        }
+        else if (s == 36) { WatchUi.switchToView(Menus.enzo(), new EnzoMenuDelegate(), WatchUi.SLIDE_IMMEDIATE); shot("25-menu-enzo"); }
+        else if (s == 37) { WatchUi.switchToView(Menus.goTo(), new GoMenuDelegate(), WatchUi.SLIDE_IMMEDIATE); shot("26-prowadz-do"); }
+        else if (s == 38) { WatchUi.popView(WatchUi.SLIDE_IMMEDIATE); r.finish(false); r.reset(); System.println("SHOT END"); }
     }
 }

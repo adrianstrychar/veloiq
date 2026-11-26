@@ -4,7 +4,6 @@ import s from './ride.module.css';
 import type { Ride } from './useRide';
 import { BackHeader, IconBolt, IconHeart, IconInfo, StatusDot } from './parts';
 import { FlicCard } from './FlicCard';
-import { GarminCard } from './GarminCard';
 
 export function SensorsScreen({ ride, onBack }: { ride: Ride; onBack: () => void }) {
   // skanuj od razu po wejściu, zatrzymaj po wyjściu
@@ -72,8 +71,6 @@ export function SensorsScreen({ ride, onBack }: { ride: Ride; onBack: () => void
 
       <FlicCard ride={ride} />
 
-      <GarminCard ride={ride} />
-
       <h2 className={s.h2}>W pobliżu</h2>
       <div className={s.list} role="list">
         {candidates.length === 0 && <div className={s.small} style={{ padding: '14px 16px' }}>Szukam… Pedały LOOK pokażą się po zakręceniu korbą.</div>}
@@ -102,7 +99,7 @@ export function SensorsScreen({ ride, onBack }: { ride: Ride; onBack: () => void
 
       <aside className={s.cue} style={{ marginTop: 'auto' }}>
         <span className={s.cueIcon}><IconInfo /></span>
-        <span className={s.body} style={{ fontSize: 14 }}>Jedziesz z Edge? Ustaw w nim pedały i pas na <strong className={s.strong}>ANT+</strong>. Bluetooth zostaje wolny dla telefonu i oba urządzenia widzą dane naraz.</span>
+        <span className={s.body} style={{ fontSize: 14 }}>Jedziesz z licznikiem Garmin Edge? Tu nic nie łącz – czujniki zostają w liczniku (ANT+), a stan licznika jest na ekranie <strong className={s.strong}>Jedź</strong>.</span>
       </aside>
       <button type="button" className={s.btnGhost} onClick={ride.scan}>Szukaj ponownie</button>
     </div>

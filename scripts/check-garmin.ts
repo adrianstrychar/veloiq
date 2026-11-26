@@ -11,6 +11,7 @@ import type { PlanDayRow } from '../lib/planned-day';
 import { buildCourse, courseMeta, CourseError, decodeParts, MAX_POINTS, PART_POINTS } from '../lib/garmin/course';
 import { pickLocalDuplicates } from '../lib/ride/dedupe';
 import { cleanAction } from '../lib/ride/coach-actions';
+import { garminStep } from '../lib/ride/garmin-step';
 
 let n = 0;
 const ok = (name: string, fn: () => void) => { fn(); n++; console.log(`ok  ${name}`); };
@@ -198,6 +199,42 @@ ok('akcje Enzo: tylko znane polecenia, bezpieczne zakresy', () => {
   assert.equal(cleanAction('route:place:<b>Jelenia</b>'), 'route:place:bJeleniab');
   assert.equal(cleanAction('route:place:x'), null);
   assert.equal(cleanAction(null), null);
+});
+
+ok('karta licznika: jeden stan → jeden krok (od zera do „wciśnij START”)', () => {
+  const base = { available: true };
+  const step = (link: Record<string, unknown>, devices = 0, account: Parameters<typeof garminStep>[0]['account'] = null, native = true) =>
+    garminStep({ native, link: { ...base, ...link } as never, devices, account });
+  // nic nie ustawione: jedna czynność – wybór licznika w Garmin Connect
+  assert.equal(step({ paired: false }).key, 'setup');
+  assert.equal(step({ paired: false }).action?.run, 'choose');
+  // konto już połączone kodem, telefon jeszcze nie wybrał licznika
+  assert.equal(step({ paired: false }, 1).key, 'choose');
+  // licznik wybrany: poza zasięgiem → otwórz aplikację → brak aplikacji
+  assert.equal(step({ paired: true, connected: false }, 1).key, 'offline');
+  assert.equal(step({ paired: true, connected: true, streaming: false }, 1).action?.run, 'openApp');
+  assert.equal(step({ paired: true, connected: true, streaming: false, appInstalled: false }, 1).key, 'install');
+  // aplikacja na liczniku nadaje, licznik bez konta (0.4.0): łączenie trwa samo, bez przycisku
+  const linking = step({ paired: true, connected: true, streaming: true, edgeAccount: false, pairCode: '482913' });
+  assert.equal(linking.key, 'account');
+  assert.equal(linking.action, undefined);
+  // błąd potwierdzenia: jedna czynność – spróbuj ponownie
+  const err = step({ paired: true, connected: true, streaming: true, edgeAccount: false }, 0, { state: 'error', text: 'Za dużo prób.', at: 0 });
+  assert.equal(err.action?.run, 'pair');
+  assert.equal(err.text, 'Za dużo prób.');
+  // stary kod w stanie (zdarzenia łączą się …g, …d), ale licznik już ma konto → gotowe
+  assert.equal(step({ paired: true, connected: true, streaming: true, edgeAccount: true, pairCode: '482913' }, 1).key, 'ready');
+  // połączone: gotowe; jazda trwa
+  assert.equal(step({ paired: true, connected: true, streaming: true, edgeAccount: true }, 1).key, 'ready');
+  assert.equal(step({ paired: true, connected: true, streaming: true, edgeAccount: true }, 0).key, 'ready');
+  assert.equal(step({ paired: true, connected: true, streaming: true, recording: true }, 1).key, 'riding');
+  // starsza aplikacja na liczniku (bez informacji o koncie) i brak liczników na koncie: kod ręcznie
+  assert.equal(step({ paired: true, connected: true, streaming: true }, 0).action?.run, 'code');
+  assert.equal(step({ paired: true, connected: true, streaming: true }, 1).key, 'ready');
+  // przeglądarka / stara aplikacja bez SDK
+  assert.equal(step({}, 0, null, false).action?.run, 'code');
+  assert.equal(step({}, 2, null, false).action, undefined);
+  assert.equal(garminStep({ native: true, link: { available: false }, devices: 0, account: null }).key, 'old');
 });
 
 console.log(`\n${n} testów OK`);

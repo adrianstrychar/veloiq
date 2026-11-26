@@ -30,11 +30,14 @@ module Smoke {
         return w;
     }
 
+    //! Wszystkie strony – także te domyślnie wyłączone (WYSIŁEK, PALIWO, ENZO).
     function drawAll(scr as RideScreen, g as Graphics.Dc) as Void {
+        Cfg.pgEffort = true; Cfg.pgFuel = true; Cfg.pgEnzo = true; Cfg.pgF2 = true;
         for (var p = 0; p < scr.pageCount(); p++) {
             scr.page = p;
             scr.draw(g);
         }
+        Cfg.load();
     }
 
     function cleanup() as Void {
@@ -60,11 +63,12 @@ function testSmokeHome(logger as Test.Logger) as Boolean {
     home.draw(g);                       // jasny motyw
     Th.apply(0);
     // menu budują się bez błędów
-    Menus.home(); Menus.settings(); Menus.pause(); Menus.questions(); Menus.workouts(); Menus.fields(0); Menus.fields(1); Menus.fieldChoice();
+    Menus.home(); Menus.settings(); Menus.screens(); Menus.pause(); Menus.questions(); Menus.workouts(); Menus.fields(0); Menus.fields(1); Menus.fieldChoice();
     var pv = new PairView(home);
     pv.onUpdate(g);
-    pv.code = "482913";
+    getRide().pairing.code = "482913";
     pv.onUpdate(g);
+    getRide().pairing.cancel();
     var fv = new FtpView();
     fv.change(5);
     fv.onUpdate(g);
@@ -101,7 +105,7 @@ function testSmokePlanRide(logger as Test.Logger) as Boolean {
         // wszystkie strony co kilka sekund; z banerem częściej, ale tylko stronę główną (symulator rysuje wolno)
         if (i % 10 == 0) { Smoke.drawAll(scr, g); }
         else if (r.banner != null && i % 3 == 0) { scr.page = (i / 3) % scr.pageCount(); scr.draw(g); }
-        if (i == 140) { Menus.ride(scr); }
+        if (i == 140) { Menus.ride(scr); Menus.enzo(); Menus.goTo(); }
         if (i == 200) { r.showEnzo("Bravissimo! Trzymasz 302 waty, dokładnie w celu. Jeszcze dwie minuty, forca!"); Smoke.drawAll(scr, g); r.dismissEnzo(); }
         if (i == 300) { r.pause(); Smoke.drawAll(scr, g); scr.tap(100, 300); r.resume(); }
     }
@@ -310,6 +314,10 @@ function testPlanEditsAndFuel(logger as Test.Logger) as Boolean {
     ok = ok && r.choEat == 50 && r.drinks == 1 && r.choBurn > 3.0 && r.choBurn < 25.0 && r.pTrace.size() == 9;
     var st = r.coachState();
     ok = ok && st.get("carbsEatenG") == 50;
+    // menu ENZO wysyła te same komendy co głos: baton, picie, ekran
+    Menus.enzo();
+    r.onPhoneCommand("eat:40"); r.onPhoneCommand("drink"); r.onPhoneCommand("page:paliwo");
+    ok = ok && r.choEat == 90 && r.drinks == 2 && r.uiPage == Pg.FUEL;
     // „prowadź do kawiarni”, a kawiarnia jest na trasie: serwer odpowiada keep – trasa zostaje, jest tylko komunikat
     var crs = r.course;
     r.onReroute(200, { "keep" => true, "say" => "Schronisko – na trasie za 1.2 kilometra." });

@@ -35,13 +35,25 @@ Objazdy (start, miejsce, punkt) zapamiętują główną trasę: „wróć na tra
 
 | Kierunek | Wiadomość |
 |---|---|
-| Edge → telefon | `{t:"live", v:[s, moc, tętno, kadencja, prędkość×10, faza, krok, zostało, cel↓, cel↑, pauza, moc 3 s, średnia kroku, falstart, przeciąganie, dystans m, sekundy kroku]}` – co sekundę w trakcie jazdy (co 5 s, gdy telefon milczy), przed startem co 2 s (`s = -1`); `-1` = brak czujnika |
+| Edge → telefon | `{t:"live", v:[s, moc, tętno, kadencja, prędkość×10, faza, krok, zostało, cel↓, cel↑, pauza, moc 3 s, średnia kroku, falstart, przeciąganie, dystans m, sekundy kroku]}` – co sekundę w trakcie jazdy (także zanim telefon się przywita), przed startem co 2 s, gdy telefon słucha, inaczej co 5 s (`s = -1`); `-1` = brak czujnika |
 | | `{t:"state", s:"start", k, w, id, ftp, free, in, st:[[typ, czas, moc↓, moc↑, kad↓, kad↑, nazwa]…], el, p, sync?}` – plan dla trybu lustra |
-| | `{t:"st", st:{stan jazdy}}` – co 30 s i na `cmd:"state"`; `{t:"hi", v, rec}` – odpowiedź na `hello` |
+| | `{t:"st", st:{stan jazdy}}` – co 30 s i na `cmd:"state"`; `{t:"hi", v, rec, acct, who}` – odpowiedź na `hello` (`acct` 1/0 = licznik ma konto VeloIQ, `who` = imię; od 0.4.0) |
 | | `{t:"cue", k, kind, x, v}` – komunikat silnika albo nawigacji (`kind:"nav"`) |
 | | `{t:"talk", st:{stan jazdy}, q?, tk?, b?}` – przycisk ENZO; `q` = gotowe pytanie (raport), `tk`/`b` = token rozmowy i adres serwera |
-| | `{t:"state", s:"start\|pause\|resume\|end", …}` |
-| telefon → Edge | `{cmd:…}`: next, pause, resume, cancel, lap, eat, drink, talk, report, sync, state, resync, repeat, extend:N, bias:N, eat:G, route:start, route:rejoin, page:ID · `{say:"odpowiedź Enzo"}` · `{hello:1}` · `{hb:1}` (co 10 s – telefon słucha) |
+| | `{t:"state", s:"start\|pause\|resume\|end", …}` · `{t:"up", k, ok:1}` – jazda wysłana do VeloIQ |
+| | `{t:"pair", c:"482913"}` – licznik bez konta prosi o połączenie: zalogowana aplikacja potwierdza kod sama (`/api/garmin/pair/confirm`), licznik odbiera token (0.4.0+) |
+| telefon → Edge | `{cmd:…}`: next, pause, resume, cancel, lap, eat, drink, talk, report, sync, state, resync, pair, repeat, extend:N, bias:N, eat:G, route:start, route:rejoin, page:ID · `{say:"odpowiedź Enzo"}` · `{hello:1}` · `{hb:1}` (co 10 s – telefon słucha) |
+
+**Kolejka na liczniku** (`PhoneLink.mc`): najwyżej 3 wiadomości w drodze; kolejna nie czeka na potwierdzenie
+poprzedniej dłużej niż 0,9 s, a wiadomość bez potwierdzenia po 3 s zwalnia miejsce. iPhone potwierdza wysyłkę
+(`onComplete`) często po kilku sekundach albo wcale – czekanie na potwierdzenie dławiło most do jednej wiadomości
+na 20 s. Zdarzenia mają pierwszeństwo, ale próbka `live` idzie co najmniej co drugą wiadomość; nieudane zdarzenie
+(np. start jazdy) wraca do kolejki (3 próby), ponowienia po błędzie co 1–5 s.
+
+**Powitanie z telefonu**: pierwsze `hello` tuż po połączeniu zwykle dostaje `Failure_DeviceNotAvailable`, dlatego
+telefon ponawia je bez limitu (co 4 s, potem co 10 s), aż licznik potwierdzi, a każda wiadomość z licznika też je
+wyzwala. Diagnostyka w telefonie: „powitanie: OK / ponawiam” i co 30 s liczba próbek z licznika z mocą i tętnem.
+Na liczniku: Ustawienia → „Most: …” (wysłane / błędy / bez potwierdzenia).
 
 `hello` włącza nadawanie na liczniku bez wchodzenia w ustawienia. Token rozmowy (`tk`) licznik dostaje z
 `/api/garmin/sync` (ważny 36 h) – dzięki niemu pytania do trenera działają także wtedy, gdy jazda nie była
@@ -55,14 +67,15 @@ uruchamiana w telefonie.
 | `mobile/ios-src/RideEngine/GarminLink.swift` | SDK Garmina: wybór licznika, stan połączenia, wiadomości |
 | `mobile/ios-src/RideEngine/RideEnginePlugin.swift` (sekcja „Licznik Garmin Edge”) | głos, rozmowa, dane czujników, mikrofon |
 | `mobile/setup-ios.sh` | pakiet Swift `connectiq-companion-app-sdk-ios`, schemat `veloiq://`, `gcm-ciq` w Info.plist |
-| `components/ride/GarminCard.tsx` | ekran Czujniki: wybór licznika, stan mostu, podgląd odczytów |
+| `components/ride/GarminPanel.tsx`, `lib/ride/garmin-step.ts` | ekran Jedź: stan licznika jednym zdaniem i jedna czynność, łączenie konta, ustawienia licznika i diagnostyka |
 
 ## Pierwsze uruchomienie
 
-1. Na liczniku: aplikacja VeloIQ wgrana i sparowana z kontem (kod z ekranu licznika).
-2. W telefonie: **Jedź → Czujniki → Licznik Garmin Edge → Wybierz licznik w Garmin Connect** – otworzy się
-   Garmin Connect, zaznacz Edge i wróć do VeloIQ. Przy okazji aplikacja zapyta o mikrofon i rozpoznawanie mowy.
-3. Otwórz VeloIQ na liczniku. Karta w telefonie powinna pokazać „Licznik nadaje” i odczyty czujników.
+1. Na liczniku: aplikacja VeloIQ wgrana (Connect IQ).
+2. W telefonie: **Jedź → Licznik Garmin Edge → Wybierz licznik** – otworzy się Garmin Connect, zaznacz Edge
+   i wróć do VeloIQ. Przy okazji aplikacja zapyta o mikrofon i rozpoznawanie mowy.
+3. Otwórz VeloIQ na liczniku. Konto łączy się samo (licznik 0.4.0+), a karta w telefonie pokazuje
+   „Gotowe – wciśnij START na liczniku” i odczyty czujników.
 4. **Mikrofon:** iOS nie pozwala włączyć mikrofonu, gdy aplikacja jest w tle. Dlatego telefon włącza go w chwili,
    gdy VeloIQ jest na ekranie, a licznik nadaje – i trzyma do końca jazdy na liczniku (albo 10 minut po utracie
    połączenia). W praktyce: przed jazdą otwórz VeloIQ w telefonie przy włączonej aplikacji na liczniku, potem
@@ -79,3 +92,17 @@ uruchamiana w telefonie.
     bywają niewidoczne i potrzebna jest wersja beta w sklepie Connect IQ;
   - opóźnienia i gubienie wiadomości przy 1 Hz, zachowanie w tle przy zablokowanym telefonie;
   - mikrofon trzymany od otwarcia aplikacji do końca jazdy (zużycie baterii, przełączanie tras audio).
+
+## Konto licznika bez przepisywania kodu (0.4.0)
+
+1. Telefon przywita się z licznikiem (`hello`). Licznik bez konta (`acct:0` w `hi`) prosi serwer o kod
+   (`POST /api/garmin/pair`) i wysyła go mostem: `{t:"pair", c}`.
+2. iOS trzyma kod w stanie mostu (`pairCode`, do 9 min albo do `hi` z `acct:1`) – strona WWW mogła się jeszcze nie
+   załadować, gdy kod przyszedł.
+3. `useRide` widzi nowy `pairCode` i raz go potwierdza (`POST /api/garmin/pair/confirm`, sesja zalogowanego).
+4. Licznik co 4 s pyta `GET /api/garmin/pair` → token, imię; sygnał, „Połączono: <imię>”, synchronizacja planu,
+   `hi` z `acct:1` (telefon czyści kod).
+
+Przez telefon najwyżej 3 próby na uruchomienie aplikacji na liczniku (np. telefon zalogowany na inne konto);
+ręcznie zawsze: MENU → Połącz z kontem VeloIQ (ten sam kod też idzie mostem). Karta „Licznik Garmin Edge” na
+ekranie Jedź pokazuje „Łączę licznik z kontem…”, a przy błędzie – „Spróbuj ponownie” (`cmd:"pair"`).

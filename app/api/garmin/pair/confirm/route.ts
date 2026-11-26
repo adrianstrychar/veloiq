@@ -31,9 +31,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'not_found', message: 'Nie znam takiego kodu. Sprawdź cyfry na liczniku – kod jest ważny 10 minut.' }, { status: 404 });
   }
 
-  const { count: have } = await admin.from('garmin_devices').select('id', { count: 'exact', head: true }).eq('user_id', user.id).is('revoked_at', null);
-  if ((have ?? 0) >= MAX_DEVICES) {
-    return NextResponse.json({ ok: false, error: 'too_many_devices', message: 'Masz już 5 połączonych liczników – odłącz któryś.' }, { status: 409 });
+  // limit liczników: zamiast ślepej uliczki („odłącz któryś”) odłączamy najdawniej używany – ponowna instalacja
+  // aplikacji na liczniku gubi token, więc stare wpisy tego samego licznika i tak już nie działają
+  const { data: active } = await admin.from('garmin_devices').select('id, last_seen_at, created_at')
+    .eq('user_id', user.id).is('revoked_at', null);
+  const list = (active ?? []) as { id: string; last_seen_at: string | null; created_at: string }[];
+  if (list.length >= MAX_DEVICES) {
+    const seen = (d: { last_seen_at: string | null; created_at: string }) => Date.parse(d.last_seen_at ?? d.created_at) || 0;
+    const drop = list.sort((a, b) => seen(a) - seen(b)).slice(0, list.length - MAX_DEVICES + 1).map((d) => d.id);
+    await admin.from('garmin_devices').update({ revoked_at: new Date().toISOString() }).in('id', drop).eq('user_id', user.id);
   }
 
   const token = newToken();

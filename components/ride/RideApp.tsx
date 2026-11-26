@@ -16,7 +16,8 @@ import { hmmss } from './parts';
 import { loadSavedRoute } from './RouteCard';
 import type { RideRoute } from '@/lib/ride/gpx';
 import { applyRaceTargets, type RacePacing } from '@/lib/ride/race-pacing';
-import { GarminRideDone } from './GarminRideDone';
+import { GarminLastUpload, GarminRideDone } from './GarminRideDone';
+import type { GarminDevice } from './GarminPanel';
 
 type Screen = 'home' | 'sensors' | 'pre' | 'live' | 'summary';
 
@@ -32,6 +33,8 @@ export interface RideAppProps {
   onExportStrava?: (rideId?: string) => Promise<{ url?: string; pending?: boolean; already?: boolean }>;
   /** Najbliższy start ze strategią – tryb startowy (cele mocy na podjazdach trasy GPX). */
   racePacing?: RacePacing;
+  /** Liczniki Garmin na koncie (z serwera). */
+  garminDevices?: GarminDevice[];
 }
 
 const SETTINGS_KEY = 'veloiq.ride.settings';
@@ -46,7 +49,7 @@ const readCurrent = (): { script: WorkoutScript | null; startedAt: string } | nu
 const writeCurrent = (c: { script: WorkoutScript | null; startedAt: string } | null) => { try { if (c) localStorage.setItem(CURRENT_KEY, JSON.stringify(c)); else localStorage.removeItem(CURRENT_KEY); } catch { /* brak storage */ } };
 const writePending = (p: Pending | null) => { try { if (p) localStorage.setItem(PENDING_KEY, JSON.stringify(p)); else localStorage.removeItem(PENDING_KEY); } catch { /* brak storage */ } };
 
-export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, onExportStrava, racePacing }: RideAppProps) {
+export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, onExportStrava, racePacing, garminDevices }: RideAppProps) {
   const ride = useRideContext(); // wspólny stan z layoutu (mini-pasek, nawigacja)
   const [screen, setScreen] = useState<Screen>('home');
   const [settings, setSettings] = useState<RideSettings>(DEFAULT_SETTINGS);
@@ -161,14 +164,15 @@ export function RideApp({ plan, planLabel, ftp, onSave, onAskCoach, briefing, on
         </div>
       </section>
     )}
-    {ride.mirrorDone && <GarminRideDone ride={ride} onExportStrava={onExportStrava} />}
+    {ride.mirrorDone ? <GarminRideDone ride={ride} onExportStrava={onExportStrava} /> : ride.native && <GarminLastUpload bump={ride.uploadBump} />}
     <HomeScreen ride={ride} plan={plan} planLabel={planLabel} dateLabel={dateLabel[0].toUpperCase() + dateLabel.slice(1)}
       settings={settings} onSettings={updateSettings}
       onStart={() => setScreen('pre')} onFree={() => start(freeRideScript(ftp))} onSensors={() => setScreen('sensors')}
       route={route} onRoute={setRoute}
       garminRoute={raceOn && racePacing && route ? applyRaceTargets(route, racePacing.phases, ftp) : route}
       race={racePacing} raceOn={raceOn} onRaceOn={setRaceOn}
-      onRaceRide={() => racePacing && start({ ...freeRideScript(ftp), name: racePacing.name })} />
+      onRaceRide={() => racePacing && start({ ...freeRideScript(ftp), name: racePacing.name })}
+      garminDevices={garminDevices} />
     </>
   );
 

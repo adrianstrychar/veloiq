@@ -88,12 +88,16 @@ export interface GarminLinkStatus {
   paired?: boolean;          // wybrano licznik w Garmin Connect
   name?: string;
   connected?: boolean;       // licznik w zasięgu telefonu
+  greeted?: boolean;         // licznik potwierdził „hello” (wie, że telefon słucha)
   appInstalled?: boolean;    // aplikacja VeloIQ jest na liczniku (brak pola = jeszcze nie wiadomo)
   streaming?: boolean;       // licznik nadaje dane (aplikacja VeloIQ na liczniku jest otwarta)
   recording?: boolean;       // licznik nagrywa jazdę
   power?: number; hr?: number; cadence?: number;
   ride?: 'start' | 'pause' | 'resume' | 'end' | 'idle';
   edgeVersion?: string;      // wersja aplikacji VeloIQ na liczniku (odpowiedź na „hello”)
+  edgeAccount?: boolean;     // licznik ma konto VeloIQ (0.4.0+; brak pola = stara wersja / jeszcze nie wiadomo)
+  edgeAthlete?: string;      // imię z konta na liczniku
+  pairCode?: string;         // licznik bez konta prosi o połączenie – aplikacja potwierdza kod sama
   lastMessageAgo?: number;   // s od ostatniej wiadomości z licznika
   log?: string[];            // dziennik mostu (diagnostyka na ekranie Czujniki)
 }
@@ -198,12 +202,14 @@ export interface RideEnginePlugin {
   garminForget(): Promise<GarminLinkStatus>;
   garminOpenApp(): Promise<void>;
   /** Polecenie dla aplikacji na liczniku: "resync" – pobierz trasę z VeloIQ teraz (także w trakcie jazdy). */
-  garminCommand(o: { cmd: 'resync' }): Promise<void>;
+  garminCommand(o: { cmd: 'resync' | 'pair' }): Promise<void>;
   /** Bieżąca jazda z licznika (po otwarciu / powrocie aplikacji) + prośba do licznika o pełny stan. */
   garminSync(): Promise<GarminLinkStatus & { mirror?: GarminRide }>;
   addListener(event: 'garmin', cb: (d: GarminLinkStatus) => void): Promise<PluginListenerHandle>;
   /** Start / koniec jazdy na liczniku (tryb lustra). W trakcie: zwykłe zdarzenia 'live', 'cue', 'paused', 'resumed'. */
   addListener(event: 'garminRide', cb: (d: GarminRide) => void): Promise<PluginListenerHandle>;
+  /** Licznik wysłał jazdę do VeloIQ (key = start jazdy, epoch s). */
+  addListener(event: 'garminUpload', cb: (d: { key: number; ok: boolean }) => void): Promise<PluginListenerHandle>;
   /** Plan zmieniony głosem w trakcie jazdy z telefonu (dłuższy krok, cele ±%, dodatkowy interwał). */
   addListener(event: 'planChanged', cb: (d: { steps: WorkoutScript['steps']; bias: number }) => void): Promise<PluginListenerHandle>;
   removeAllListeners(): Promise<void>;

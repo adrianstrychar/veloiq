@@ -17,9 +17,11 @@ export interface DeviceAuth { userId: string; deviceId: string }
 export async function verifyDevice(admin: SupabaseClient, authorization: string | null | undefined): Promise<DeviceAuth | null> {
   const token = authorization?.replace(/^Bearer\s+/i, '').trim();
   if (!token || !token.startsWith('vqg_') || token.length > 200) return null;
-  const { data } = await admin.from('garmin_devices')
+  const { data, error } = await admin.from('garmin_devices')
     .select('id, user_id, revoked_at, last_seen_at')
     .eq('token_hash', sha256(token)).maybeSingle();
+  // błąd bazy ≠ zły token: 500 zamiast 401 – licznik po 401 zapomina konto i łączy się od nowa
+  if (error) throw new Error(`garmin_devices: ${error.message}`);
   if (!data || data.revoked_at) return null;
   // „ostatnio widziany” najwyżej raz na 10 minut – bez zapisu przy każdym zapytaniu
   const seen = data.last_seen_at ? Date.parse(data.last_seen_at as string) : 0;

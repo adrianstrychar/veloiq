@@ -67,9 +67,16 @@ export function useRide() {
   const [mirror, setMirror] = useState<GarminRide | null>(null);
   const [mirrorDone, setMirrorDone] = useState<GarminRide | null>(null);
   const [liveAt, setLiveAt] = useState(0);
+  // licznik dał znać, że jazda jest w VeloIQ (karta ostatniej jazdy odświeża się od razu)
+  const [uploadBump, setUploadBump] = useState(0);
+  const [mirrorAt, setMirrorAt] = useState(0);   // kiedy telefon dołączył do jazdy z licznika
   // plan zmieniony głosem w trakcie jazdy z telefonu – ekran pokazuje aktualne kroki
   const [planEdit, setPlanEdit] = useState<{ steps: WorkoutScript['steps']; bias: number } | null>(null);
   const mirrorKey = useRef<number | null>(null);
+  // konto na liczniku: licznik bez konta przysyła kod, a zalogowana aplikacja potwierdza go sama (bez przepisywania)
+  const [garminAccount, setGarminAccount] = useState<{ state: 'linking' | 'ok' | 'error'; text: string; at: number } | null>(null);
+  const pairTried = useRef<string | null>(null);
+  const [pairRetry, setPairRetry] = useState(0);
   const cueId = useRef(0);
   const lastElapsed = useRef(0);
 
@@ -83,6 +90,7 @@ export function useRide() {
       setPaused(d.paused === 1);
       setAutoPaused(d.paused === 2);
       if (fresh) {
+        setMirrorAt(Date.now());
         setCues([]); setPlanDone(null); setSummary(null); setMirrorDone(null); setRoute(null); setNav(null);
         if (!d.sync) setLive(null);
         // rozmowa z Enzo: token z sesji aplikacji (licznik ma też własny z synchronizacji)
@@ -128,6 +136,7 @@ export function useRide() {
     handles.push(engine.addListener('garmin', (d) => setGarminLink((g) => ({ ...g, ...d, available: d.available !== false }))));
     handles.push(engine.addListener('garminRide', onGarminRide));
     handles.push(engine.addListener('planChanged', (d) => setPlanEdit(d)));
+    handles.push(engine.addListener('garminUpload', () => setUploadBump((n) => n + 1)));
     engine.garminStatus().then(setGarminLink).catch(() => setGarminLink({ available: false }));
     // jazda z licznika, która trwała, zanim otworzyła się ta strona (albo gdy aplikacja była w tle)
     const syncMirror = () => {
@@ -148,6 +157,27 @@ export function useRide() {
     engine.getSavedSensors().then((s) => { if (s.hrId || s.powerId) engine.connect(s); }).catch(() => {});
     return () => { handles.forEach((h) => h.then((x) => x.remove())); document.removeEventListener('visibilitychange', onVisible); };
   }, [engine, onGarminRide]);
+
+  useEffect(() => {
+    const code = garminLink.pairCode;
+    if (!code || pairTried.current === code) return;
+    pairTried.current = code;
+    setGarminAccount({ state: 'linking', text: 'Łączę licznik z Twoim kontem VeloIQ…', at: Date.now() });
+    fetch('/api/garmin/pair/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) })
+      .then(async (r) => {
+        const j = (await r.json().catch(() => ({}))) as { ok?: boolean; name?: string; message?: string; error?: string };
+        if (r.ok && j.ok) setGarminAccount({ state: 'ok', text: `${j.name ?? 'Licznik'} połączony z kontem – pobiera plan na dziś.`, at: Date.now() });
+        else if (r.status === 401) setGarminAccount({ state: 'error', text: 'Zaloguj się w aplikacji, a połączę licznik z kontem.', at: Date.now() });
+        else setGarminAccount({ state: 'error', text: j.message ?? 'Nie udało się połączyć licznika z kontem.', at: Date.now() });
+        // kod użyty albo nieważny: następny przyjdzie z licznika (po ponownym powitaniu)
+      })
+      .catch(() => {
+        // bez internetu – ten sam kod jeszcze raz za 15 s (kod jest ważny 10 minut)
+        pairTried.current = null;
+        setGarminAccount({ state: 'error', text: 'Brak internetu – połączę licznik z kontem, gdy wróci.', at: Date.now() });
+        setTimeout(() => setPairRetry((n) => n + 1), 15_000);
+      });
+  }, [garminLink.pairCode, pairRetry]);
 
   const run = useCallback(async (fn: () => Promise<unknown>) => {
     try { setError(null); await fn(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -203,8 +233,11 @@ export function useRide() {
     garminOpenApp: () => run(() => engine.garminOpenApp()),
     /** Licznik pobiera trasę z VeloIQ od razu (gdy most działa) – bez czekania na synchronizację. */
     garminResync: () => engine.garminCommand({ cmd: 'resync' }).catch(() => undefined),
+    /** Licznik bez konta: poproś go o nowy kod (aplikacja potwierdzi go sama). */
+    garminPairNow: () => { pairTried.current = null; setGarminAccount(null); return engine.garminCommand({ cmd: 'pair' }).catch(() => undefined); },
+    garminAccount,
     /** Jazda z licznika (tryb lustra) – null, gdy jazdę prowadzi telefon albo nic nie trwa. */
-    mirror, mirrorDone, liveAt, planEdit,
+    mirror, mirrorDone, liveAt, mirrorAt, planEdit, uploadBump,
     clearMirrorDone: () => setMirrorDone(null),
     pause: () => run(async () => { await engine.pause(); setPaused(true); }),
     resume: () => run(async () => { await engine.resume(); setPaused(false); setAutoPaused(false); }),

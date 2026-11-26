@@ -11,12 +11,16 @@ class Api {
     hidden var _queue;
     hidden var _busy as Boolean = false;
     hidden var _cb = null;
+    hidden var _sentToken as String = "";   // token, z którym poszło bieżące zapytanie
 
     function initialize() {
         _queue = [];
     }
 
     function busy() as Boolean { return _busy || _queue.size() > 0; }
+
+    //! Testy: czysty stan (bez zapytań z poprzednich testów, na które odpowiedź jeszcze nie przyszła).
+    function resetForTest() as Void { _queue = []; _busy = false; _cb = null; _sentToken = ""; }
 
     //! cb: Method(code as Number, data) – data to słownik z JSON albo null.
     function get(path as String, params, cb) as Void {
@@ -40,6 +44,7 @@ class Api {
             headers.put("Content-Type", Communications.REQUEST_CONTENT_TYPE_JSON);
         }
         if (Cfg.token.length() > 0) { headers.put("Authorization", "Bearer " + Cfg.token); }
+        _sentToken = Cfg.token;
         Communications.makeWebRequest(Cfg.apiBase + r[1], r[2], {
             :method => r[0],
             :headers => headers,
@@ -51,6 +56,12 @@ class Api {
         _busy = false;
         var cb = _cb;
         _cb = null;
+        // 401 na aktualnym tokenie: licznik odłączony w aplikacji (albo wypadł z limitu liczników) – zapominamy
+        // konto, a otwarta aplikacja VeloIQ w telefonie połączy je od nowa sama (jazdy w kolejce czekają)
+        if (code == 401 && _sentToken.length() > 0 && _sentToken.equals(Cfg.token)) {
+            Cfg.unpair();
+            getRide().onUnpaired();
+        }
         if (cb != null) {
             cb.invoke(code, (data instanceof Dictionary) ? data : null);
         }
@@ -59,7 +70,7 @@ class Api {
 
     //! Krótki opis błędu do pokazania na ekranie.
     static function errorText(code as Number) as String {
-        if (code == 401) { return "Sparuj ponownie z VeloIQ"; }
+        if (code == 401) { return "Połącz ponownie z kontem VeloIQ"; }
         if (code == Communications.BLE_CONNECTION_UNAVAILABLE || code == -2 || code == -3) { return "Brak połączenia z telefonem"; }
         if (code == Communications.NETWORK_REQUEST_TIMED_OUT) { return "Serwer nie odpowiada"; }
         if (code < 0) { return "Brak internetu (" + code + ")"; }
@@ -82,6 +93,12 @@ class Uploader {
     hidden var _count as Number = -1;    // ile jazd w kolejce (pamięć podręczna – bez czytania Storage co sekundę)
     var status as String = "";
     var lastError as String = "";
+    // potwierdzenie dla zawodnika: która jazda jest już w VeloIQ i kiedy; postęp bieżącej wysyłki
+    var doneKey = null;
+    var doneAt as Number = 0;
+    var progI as Number = 0;
+    var progN as Number = 0;
+    var onDone = null;                 // wywołanie po udanej wysyłce (dźwięk, wibracja, baner)
 
     function initialize(api as Api) {
         _api = api;
@@ -125,7 +142,8 @@ class Uploader {
     function kick() as Void {
         if (_running || !Cfg.paired()) { return; }
         var q = Application.Storage.getValue("upq");
-        if (q == null || q.size() == 0) { status = ""; return; }
+        // pusta kolejka: potwierdzenie „Jazda w VeloIQ” zostaje na ekranie (wcześniej znikało od razu po wysyłce)
+        if (q == null || q.size() == 0) { if (doneKey == null) { status = ""; } return; }
         _key = q[0];
         _meta = Application.Storage.getValue("up_" + _key.format("%d"));
         if (_meta == null) { drop(); kick(); return; }
@@ -145,6 +163,8 @@ class Uploader {
         var ng = _meta["ng"];
         if (st == 0) {
             status = "Wysyłam jazdę...";
+            progI = 0;
+            progN = ns + ng + 2;
             var x = Application.Storage.getValue("up_" + k + "_x");
             _api.post("/api/garmin/ride", { "op" => "begin", "key" => _key, "summary" => _meta["sum"], "extra" => x, "ns" => ns, "ng" => ng }, method(:onStep));
         } else if (st == 1) {
@@ -159,6 +179,8 @@ class Uploader {
             var seq = i < ns ? i : i - ns;
             var data = Application.Storage.getValue("up_" + k + "_" + kind + seq);
             status = "Wysyłam " + (i + 1) + "/" + (ns + ng);
+            progI = i + 1;
+            progN = ns + ng + 2;
             _api.post("/api/garmin/ride", { "op" => "chunk", "key" => _key, "kind" => kind, "seq" => seq, "data" => (data == null ? "" : data) }, method(:onStep));
         } else {
             status = "Kończę wysyłkę...";
@@ -185,11 +207,7 @@ class Uploader {
         if (st == 0) {
             // serwer ma już tę jazdę (odpowiedź na wcześniejsze „finish” nie dotarła) → nic więcej nie wysyłamy
             if (data.get("done") == true) {
-                drop();
-                _running = false;
-                status = "Jazda w VeloIQ";
-                notify();
-                kick();
+                succeeded();
                 return;
             }
             _meta["st"] = 1;
@@ -197,15 +215,37 @@ class Uploader {
         } else if (st == 1) {
             _meta["i"] = _meta["i"] + 1;
         } else {
-            drop();
-            _running = false;
-            status = "Jazda w VeloIQ";
-            notify();
-            kick();   // następna z kolejki
+            succeeded();
             return;
         }
         Application.Storage.setValue("up_" + k, _meta);
         step();
+    }
+
+    //! Jazda jest w VeloIQ: potwierdzenie na ekranie (z godziną), dźwięk i następna z kolejki.
+    hidden function succeeded() as Void {
+        doneKey = _key;
+        doneAt = System.getTimer();
+        drop();
+        _running = false;
+        lastError = "";
+        status = "Jazda w VeloIQ " + Ui.clockNow();
+        progI = progN;
+        notify();
+        if (onDone != null) { onDone.invoke(); }
+        kick();   // następna z kolejki
+    }
+
+    //! Ostatnia jazda trafiła do VeloIQ w ciągu 6 h (potwierdzenie na ekranie startowym).
+    function recentDone() as Boolean {
+        return doneKey != null && System.getTimer() - doneAt < 6 * 3600 * 1000;
+    }
+
+    //! Ile sekund do następnej próby wysyłki (0 = teraz albo trwa).
+    function retryIn() as Number {
+        if (_running) { return 0; }
+        var d = (_retryAt - System.getTimer()) / 1000;
+        return d > 0 ? d : 0;
     }
 
     //! Usuwa pierwszą jazdę z kolejki razem z jej paczkami.

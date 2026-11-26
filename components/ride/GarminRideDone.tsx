@@ -42,8 +42,10 @@ export function GarminRideDone({ ride, onExportStrava }: {
   }, [d?.key, skip]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!d) return null;
+  // zamknięta karta = ta jazda potwierdzona; karta „ostatnia jazda z licznika” jej już nie powtórzy
+  const closeCard = () => { try { localStorage.setItem(SEEN_KEY, String(d.key)); } catch { /* brak storage */ } ride.clearMirrorDone(); };
   const facts = [d.durationSec ? hmmss(d.durationSec) : null, d.np ? `NP ${d.np} W` : d.avgPower ? `śr. ${d.avgPower} W` : null].filter(Boolean).join(' · ');
-  const close = <button type="button" className={s.btnGhost} onClick={ride.clearMirrorDone}>Zamknij</button>;
+  const close = <button type="button" className={s.btnGhost} onClick={closeCard}>Zamknij</button>;
 
   if (d.saved === 0) {
     return (
@@ -101,10 +103,69 @@ export function GarminRideDone({ ride, onExportStrava }: {
               {strava.msg}{strava.url && <> <a href={strava.url} target="_blank" rel="noreferrer" style={{ color: 'var(--cyan)' }}>Otwórz</a></>}
             </span>
           )}
-          {onExportStrava && !done.stravaId && strava.st !== 'ok' && <button type="button" className={s.btnGhost} onClick={ride.clearMirrorDone} style={{ height: 40 }}>Zamknij</button>}
+          {onExportStrava && !done.stravaId && strava.st !== 'ok' && <button type="button" className={s.btnGhost} onClick={closeCard} style={{ height: 40 }}>Zamknij</button>}
         </>
       )}
       {!done && close}
+    </section>
+  );
+}
+
+type Latest = { state: 'none' } | { state: 'uploading'; key: number; got: number; total: number } | { state: 'done'; key: number; rideId: string; stravaId?: number };
+const SEEN_KEY = 'veloiq.garmin.lastSeenUpload';
+const SHOW_DONE_FOR_S = 3 * 3600;
+
+/** Ostatnia jazda z licznika według serwera – potwierdzenie „jest w VeloIQ ✓” niezależnie od mostu Bluetooth
+ *  (gdy koniec jazdy nie dotarł do telefonu, karta trybu lustra by się nie pokazała). `bump` – sygnał z licznika
+ *  („wysłane”) albo powrót aplikacji: odśwież teraz. */
+export function GarminLastUpload({ bump }: { bump: number }) {
+  const [up, setUp] = useState<Latest | null>(null);
+  const [hidden, setHidden] = useState<number | null>(null);
+  useEffect(() => {
+    try { setHidden(Number(localStorage.getItem(SEEN_KEY)) || 0); } catch { setHidden(0); }
+  }, []);
+  useEffect(() => {
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const until = Date.now() + 3 * 60_000;
+    const poll = async () => {
+      try {
+        const r = await fetch('/api/garmin/ride/status?latest=1', { cache: 'no-store' });
+        if (r.ok) {
+          const j = (await r.json()) as Latest;
+          if (stop) return;
+          setUp(j);
+          if (j.state !== 'uploading') return;      // gotowe albo nic – bez dalszego odpytywania
+        }
+      } catch { /* bez sieci – kolejna próba */ }
+      if (!stop && Date.now() < until) timer = setTimeout(poll, POLL_MS);
+    };
+    void poll();
+    const onVisible = () => { if (document.visibilityState === 'visible') void poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { stop = true; if (timer) clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, [bump]);
+
+  if (!up || up.state === 'none' || hidden == null || up.key <= hidden) return null;
+  const at = new Date(up.key * 1000).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+  if (up.state === 'done' && Date.now() / 1000 - up.key > SHOW_DONE_FOR_S) return null;
+  const dismiss = () => { try { localStorage.setItem(SEEN_KEY, String(up.key)); } catch { /* brak storage */ } setHidden(up.key); };
+  if (up.state === 'uploading') {
+    return (
+      <section className={s.cardAmber} style={{ marginBottom: 12 }} aria-live="polite" aria-label="Wysyłka jazdy z licznika">
+        <span className={s.strong}>Licznik wysyła jazdę z {at}…</span>
+        <span className={s.small}>Paczki: {up.got} / {up.total}. Zostaw na liczniku otwartą aplikację VeloIQ, aż pokaże „Jazda w VeloIQ”.</span>
+      </section>
+    );
+  }
+  return (
+    <section className={s.cardCyan} style={{ marginBottom: 12 }} aria-live="polite" aria-label="Jazda z licznika w VeloIQ">
+      <span className={s.strong}>Jazda z licznika ({at}) jest w VeloIQ ✓</span>
+      <span className={s.small}>Analiza, plan, forma i FTP są już przeliczone.{up.stravaId ? ' Jazda jest też na Stravie.' : ''}</span>
+      <div className={s.grid2}>
+        <Link href="/dashboard" className={s.btnGhost} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>Zobacz jazdę</Link>
+        <button type="button" className={s.btnGhost} onClick={dismiss}>Zamknij</button>
+      </div>
     </section>
   );
 }

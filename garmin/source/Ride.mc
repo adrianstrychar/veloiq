@@ -25,6 +25,7 @@ class Ride {
     var api as Api;
     var up as Uploader;
     var link as PhoneLink;
+    var pairing as Pairing;
 
     var course = null;          // trasa GPX z VeloIQ (Course) albo null
     var nav = null;             // nawigacja bieżącej jazdy (Nav) albo null
@@ -108,6 +109,14 @@ class Ride {
     hidden var _rpTimer = null;
     hidden var _replaying as Boolean = false;
     hidden var _distBase as Float = 0.0;
+    hidden var _vSpeed as Float = 0.0;     // wirtualna prędkość na trenażerze (m/s)
+    hidden var _vDist as Float = 0.0;      // wirtualny dystans tej jazdy (m)
+    hidden var _vDistOn as Boolean = false;
+    //! Tryb „na zewnątrz”, a przez minutę kręcisz bez GPS i bez czujnika prędkości = trenażer: prędkość i dystans
+    //! z mocy do końca jazdy (zapomniany przełącznik trybu nie kończy się zerową prędkością).
+    var autoIndoor as Boolean = false;
+    hidden var _noGpsPow as Number = 0;
+    hidden var _gpsThisRide as Boolean = false;   // po pierwszym GPS w tej jeździe nie zgadujemy (tunel ≠ trenażer)
     hidden var _ascBase as Number = 0;
     hidden var _ckS as Number = 0;      // pierwszy blok próbek, który trzeba (ponownie) zapisać
     hidden var _ckG as Number = 0;
@@ -117,6 +126,7 @@ class Ride {
     var uiPage as Number = -1;  // prośba o przełączenie strony ekranu jazdy – identyfikator Pg (głos, tryb demo)
     var uiZoom as Number = -1;  // jw. – skala mapy na stronie TRASA
     var saved as Boolean = false;
+    var quiet as Boolean = false;      // testy: bez wibracji (symulator bez ekranu zawiesza się na Attention.vibrate)
     hidden var _timer = null;
     hidden var _tickNo as Number = 0;
 
@@ -126,8 +136,17 @@ class Ride {
         api = new Api();
         up = new Uploader(api);
         link = new PhoneLink();
+        pairing = new Pairing();
         cues = [];
         link.owner = self;
+        up.onDone = method(:onUploaded);
+    }
+
+    //! Jazda dotarła do VeloIQ: wyraźny sygnał (dźwięk + wibracja), a telefon dostaje potwierdzenie do karty jazdy.
+    function onUploaded() as Void {
+        tone("save");
+        if (!quiet && (Attention has :vibrate)) { Attention.vibrate([new Attention.VibeProfile(60, 250)]); }
+        link.event({ "t" => "up", "k" => up.doneKey, "ok" => 1 });
     }
 
     function boot() as Void {
@@ -326,6 +345,7 @@ class Ride {
     function startRide(free as Boolean) as Boolean {
         if (state != RideState.IDLE && state != RideState.DONE) { return false; }
         if (interrupted != null || resumePct >= 0) { return false; }     // najpierw decyzja o przerwanej jeździe
+        coveredN = 0;
         if (free || plan == null) {
             var w = new Workout();
             w.ftp = Cfg.ftp;
@@ -361,6 +381,8 @@ class Ride {
     hidden function initRide() as Void {
         dist = 0.0; ascent = 0; speed = null;
         _distBase = 0.0; _ascBase = 0;
+        _vSpeed = 0.0; _vDist = 0.0; _vDistOn = false;
+        autoIndoor = false; _noGpsPow = 0; _gpsThisRide = false;
         lapNo = 1; lapStartS = 0; lapSumP = 0; lapN = 0; lapSumHr = 0; lapHrN = 0; lapMaxP = 0; lapStartDist = 0.0; prevLap = null;
         _lapTarget = wk.isFree() ? 0 : (wk.steps[0].lo + wk.steps[0].hi) / 2;
         _lapType = wk.isFree() ? StepType.FREE : wk.steps[0].type;
@@ -402,6 +424,16 @@ class Ride {
 
     function active() as Boolean {
         return state == RideState.RECORDING || state == RideState.PAUSED || state == RideState.AUTOPAUSED;
+    }
+
+    //! Ekran jazdy był zasłonięty przez okno systemu (np. powiadomienie z telefonu, które na Edge wisi do
+    //! zamknięcia ręką – aplikacja nie może wtedy rysować ani go zamknąć). Raz na jazdę: skąd to i jak wyłączyć.
+    var coveredN as Number = 0;
+    function coveredBySystem(sec as Number) as Void {
+        coveredN++;
+        if (coveredN > 1) { return; }
+        showBanner("Ekran zasłonięty " + sec + " s, jazda szła dalej.\nWyłącz powiadomienia z telefonu w ustawieniach licznika.", "info", 12);
+        WatchUi.requestUpdate();
     }
 
     //! Kończy jazdę. save = false → odrzuć (bez zapisu FIT i bez wysyłki).
@@ -458,16 +490,21 @@ class Ride {
         if (state == RideState.RECORDING || state == RideState.AUTOPAUSED) {
             var ai = hub.simulated ? null : Activity.getActivityInfo();
             if (ai != null) {
-                if (ai.elapsedDistance != null) { dist = _distBase + ai.elapsedDistance; }
+                // dystans z czujnika / GPS – chyba że trenażer wykryty sam liczy już dystans z mocy (późny GPS w budynku)
+                if (ai.elapsedDistance != null && ai.elapsedDistance > 0 && !(autoIndoor && _vDistOn)) { dist = _distBase + ai.elapsedDistance; _vDistOn = false; }
                 if (ai.totalAscent != null) { ascent = _ascBase + ai.totalAscent; }
                 speed = ai.currentSpeed != null ? ai.currentSpeed : hub.speed;
             } else {
                 speed = hub.speed;
             }
+            // trenażer bez czujnika prędkości: prędkość i dystans z mocy (jak w Zwift) – płasko, bez wiatru
+            if (!Cfg.indoor && !autoIndoor && !hub.simulated && state == RideState.RECORDING) { detectTrainer(); }
+            if ((Cfg.indoor || autoIndoor) && !hub.simulated && (speed == null || speed <= 0.1)) { virtualSpeedTick(); }
             if (!hub.simulated) { autoPauseTick(); }
         }
         if (state == RideState.RECORDING && !hub.simulated) { rideTick(); }
         link.tick();
+        pairing.tick();
         // pauza (ręczna albo postój): telefon dalej widzi jazdę – inaczej po 5 s uznałby, że most zerwany
         if ((state == RideState.PAUSED || state == RideState.AUTOPAUSED) && eng != null && !hub.simulated && Cfg.phoneLink) {
             link.live(liveVec(state == RideState.PAUSED ? 1 : 2));
@@ -481,12 +518,55 @@ class Ride {
         // telefon: podgląd czujników przed startem (ekran Czujniki w aplikacji pokazuje, że most działa);
         // bez telefonu co 10 s (wystarczy, żeby aplikacja w telefonie się odezwała), nie w trakcie wysyłki jazdy
         if (state == RideState.IDLE && Cfg.phoneLink && !hub.simulated && !up.running()
-            && _tickNo % (link.active ? 2 : 10) == 0) {
+            && _tickNo % (link.active ? 2 : 5) == 0) {
             link.live([-1, hub.power == null ? -1 : hub.power, hub.hr == null ? 0 : hub.hr, hub.cad == null ? -1 : hub.cad,
                 hub.speed == null ? -1 : Util.round(hub.speed * 36), Phase.FREE, 0, 0, 0, 0, 0]);
         }
         Demo.tick(self);
         WatchUi.requestUpdate();
+    }
+
+    hidden function detectTrainer() as Void {
+        if (hub.hasGps()) { _gpsThisRide = true; }
+        if (_gpsThisRide || (speed != null && speed > 0.1)) { _noGpsPow = 0; return; }
+        if (hub.power == null || hub.power < 30) { return; }
+        _noGpsPow++;
+        if (_noGpsPow >= 60) {
+            autoIndoor = true;
+            showBanner("Brak GPS, a kręcisz – trenażer?\nPrędkość i dystans liczę z mocy.", "info", 8);
+            tone("msg");
+        }
+    }
+
+    //! Wirtualna prędkość na trenażerze bez czujnika prędkości: z mocy, masy zawodnika (+8 kg roweru), pozycji na
+    //! klamkomanetkach (CdA 0,32 m²) i oporu toczenia 0,004 na płaskim. Dystans rośnie o tę prędkość co sekundę
+    //! (tylko w trakcie nagrywania, nie na pauzie).
+    hidden function virtualSpeedTick() as Void {
+        var p = hub.power;
+        var v = (p == null || p <= 0) ? 0.0 : Ride.speedFromPower(p.toFloat(), Cfg.weightKg + 8.0);
+        // łagodne wygaszanie, gdy przestajesz kręcić (koło trenażera jeszcze się kręci)
+        if (v <= 0.0 && _vSpeed > 0.0) { v = _vSpeed * 0.85; if (v < 0.5) { v = 0.0; } }
+        _vSpeed = v;
+        speed = v;
+        if (state == RideState.RECORDING && (_vDistOn || dist <= _distBase + 1.0)) {
+            _vDistOn = true;
+            _vDist += v;
+            dist = _distBase + _vDist;
+        }
+    }
+
+    //! Prędkość (m/s) z mocy na płaskim: 0,97·P = ½·ρ·CdA·v³ + Crr·m·g·v (bisekcja, ρ = 1,2 kg/m³).
+    static function speedFromPower(p as Float, mass as Float) as Float {
+        var pw = p * 0.97;
+        var a = 0.5 * 1.2 * 0.32;
+        var b = 0.004 * mass * 9.81;
+        var lo = 0.0;
+        var hi = 30.0;
+        for (var i = 0; i < 30; i++) {
+            var mid = (lo + hi) / 2.0;
+            if (a * mid * mid * mid + b * mid > pw) { hi = mid; } else { lo = mid; }
+        }
+        return (lo + hi) / 2.0;
     }
 
     //! Auto-pauza jazdy jak w telefonie: zero mocy i kadencji, a na zewnątrz dodatkowo prędkość < 3 km/h
@@ -572,8 +652,9 @@ class Ride {
         navTick();
         if (eng.s % 60 == 59) { checkpoint(); }
 
-        // telefon: dane na żywo – co sekundę, gdy aplikacja w telefonie odpowiada; bez niej co 5 s (żeby ją „obudzić”)
-        if (link != null && Cfg.phoneLink && (link.active || eng.s % 5 == 0)) {
+        // telefon: dane na żywo co sekundę – także zanim aplikacja w telefonie się odezwie (jej „hello” mogło
+        // przepaść, a telefon i tak odbiera); bez telefonu wysyłka sama zwalnia (ponowienia co 1–5 s)
+        if (link != null && Cfg.phoneLink) {
             link.live(liveVec(0));
         }
     }
@@ -609,9 +690,21 @@ class Ride {
         WatchUi.requestUpdate();
     }
 
+    //! Strona na życzenie (głos, menu): wyłączona w „Ekranach jazdy” – zawodnik chce ją widzieć, więc ją włączamy.
     function showPageById(name as String) as Void {
         var id = Pg.byName(name);
-        if (id >= 0) { uiPage = id; WatchUi.requestUpdate(); }
+        if (id < 0) { return; }
+        var k = null;
+        var on = true;
+        if (id == Pg.CHART) { k = "pgChart"; on = Cfg.pgChart; }
+        else if (id == Pg.EFFORT) { k = "pgEffort"; on = Cfg.pgEffort; }
+        else if (id == Pg.F2) { k = "pgF2"; on = Cfg.pgF2; }
+        else if (id == Pg.FUEL) { k = "pgFuel"; on = Cfg.pgFuel; }
+        else if (id == Pg.ENZO) { k = "pgEnzo"; on = Cfg.pgEnzo; }
+        else if (id == Pg.CLIMB) { k = "pgClimb"; on = Cfg.pgClimb; }
+        if (!on && k != null) { Cfg.save(k, true); }
+        uiPage = id;
+        WatchUi.requestUpdate();
     }
 
     hidden function flushSample(force as Boolean) as Void {
@@ -1039,7 +1132,7 @@ class Ride {
     }
 
     function tone(name as String) as Void {
-        if (!Cfg.tones || !(Attention has :playTone)) { return; }
+        if (quiet || !Cfg.tones || !(Attention has :playTone)) { return; }
         var t = Attention.TONE_MSG;
         if (name.equals("start")) { t = Attention.TONE_START; }
         else if (name.equals("stop")) { t = Attention.TONE_STOP; }
@@ -1187,8 +1280,32 @@ class Ride {
 
     function onPhoneHello(first as Boolean) as Void {
         if (first) { showBanner("Telefon połączony\nEnzo mówi w słuchawkach", "enzo", 6); }
-        link.event({ "t" => "hi", "v" => Cfg.VERSION, "rec" => (active() ? 1 : 0) });
+        link.event(hiMsg());
         if (active()) { link.event(startMsg(true)); }
+        // licznik bez konta VeloIQ: kod prosto do zalogowanej aplikacji w telefonie – bez przepisywania
+        if (!Cfg.paired()) { pairing.start(true); }
+    }
+
+    //! Odpowiedź na powitanie telefonu: wersja aplikacji, czy trwa jazda, czy licznik ma konto VeloIQ.
+    function hiMsg() {
+        return { "t" => "hi", "v" => Cfg.VERSION, "rec" => (active() ? 1 : 0), "acct" => (Cfg.paired() ? 1 : 0), "who" => Cfg.athlete };
+    }
+
+    //! Serwer nie zna już tokenu (licznik odłączony w aplikacji): telefon dowie się, że konta nie ma, i – gdy
+    //! aplikacja VeloIQ słucha – od razu dostanie kod do potwierdzenia.
+    function onUnpaired() as Void {
+        link.event(hiMsg());
+        if (link.active) { pairing.start(true); }
+        WatchUi.requestUpdate();
+    }
+
+    //! Licznik połączony z kontem (przez telefon albo kodem): sygnał, plan z VeloIQ, telefon wie, że konto jest.
+    function onPaired() as Void {
+        tone("good");
+        if (!quiet && (Attention has :vibrate)) { Attention.vibrate([new Attention.VibeProfile(50, 200)]); }
+        link.event(hiMsg());
+        sync(null);
+        WatchUi.requestUpdate();
     }
 
     //! Sekunda jazdy dla telefonu. pauseFlag: 0 jazda, 1 pauza ręczna, 2 postój (auto-pauza).
@@ -1233,6 +1350,7 @@ class Ride {
         else if (cmd.find("eat:") == 0) { fuel(Util.clamp(Util.int(cmd.substring(4, cmd.length()).toNumber(), 25), 5, 120)); }
         else if (cmd.equals("talk")) { if (eng != null) { talkToPhone(); } }
         else if (cmd.equals("report")) { if (eng != null) { askPhone("raport"); } }
+        else if (cmd.equals("pair")) { pairing.retry(); }
         else if (cmd.equals("sync")) { link.event(active() ? startMsg(true) : { "t" => "state", "s" => "idle" }); }
         else if (cmd.equals("resync")) { courseNow(); }
         else if (cmd.equals("route:start")) { reroute("start"); }
