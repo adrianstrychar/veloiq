@@ -231,3 +231,45 @@ function testAutoPairingGivesUp(logger as Test.Logger) as Boolean {
     Smoke.cleanup();
     return ok;
 }
+
+(:test)
+function testRevokedToken(logger as Test.Logger) as Boolean {
+    // licznik odłączony w aplikacji: 401 na aktualnym tokenie → licznik zapomina konto; gdy telefon słucha,
+    // od razu prosi o nowy kod (konto łączy się samo), a jazdy w kolejce czekają
+    Smoke.cleanup();
+    Cfg.put("token", "tok-x"); Cfg.put("link", true); Cfg.put("apiBase", "https://localhost"); Cfg.load();
+    var r = getRide();
+    r.quiet = true;
+    var oldLink = r.link;
+    var l = new FakeLink();
+    l.start();
+    l.owner = r;
+    r.link = l;
+    r.pairing = new Pairing();
+    r.api.resetForTest();
+    r.api.get("/api/garmin/sync", null, null);
+    r.api.onResp(401, null);
+    for (var i = 0; i < 3; i++) { l.ack(true); l.ageForTest(1000); l.tick(); }
+    var hi = l.sent("hi");
+    var ok = !Cfg.paired() && hi != null && hi.get("acct") == 0 && !r.pairing.active;
+    // telefon słucha: po 401 od razu łączenie przez telefon
+    Cfg.put("token", "tok-y"); Cfg.load();
+    l.active = true;
+    r.api.resetForTest();
+    r.api.get("/api/garmin/sync", null, null);
+    r.api.onResp(401, null);
+    logger.debug("paired=" + Cfg.paired() + " pairing=" + r.pairing.active + " auto=" + r.pairing.auto);
+    ok = ok && !Cfg.paired() && r.pairing.active && r.pairing.auto;
+    // inny błąd (np. 500) nie odłącza
+    r.pairing.cancel();
+    Cfg.put("token", "tok-z"); Cfg.load();
+    r.api.resetForTest();
+    r.api.get("/api/garmin/sync", null, null);
+    r.api.onResp(500, null);
+    ok = ok && Cfg.paired();
+    l.stop();
+    r.link = oldLink;
+    r.quiet = false;
+    Smoke.cleanup();
+    return ok;
+}

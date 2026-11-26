@@ -80,7 +80,7 @@ export default function PrivacyPage() {
           <h2 style={h2}>Jak długo i Twoje prawa</h2>
           <p style={p}>
             Dane przechowujemy, dopóki masz konto. Możesz w każdej chwili poprosić o wgląd w dane, ich poprawienie, przeniesienie
-            albo usunięcie konta wraz z danymi – napisz na {CONTACT}. Licznik możesz odłączyć w aplikacji (Jedź → Czujniki → Licznik Garmin Edge → Odłącz),
+            albo usunięcie konta wraz z danymi – napisz na {CONTACT}. Licznik możesz odłączyć w aplikacji (Jedź → Licznik Garmin Edge → Ustawienia licznika → Odłącz),
             a połączenia ze Stravą i WHOOP – w ustawieniach. Masz też prawo złożyć skargę do Prezesa Urzędu Ochrony Danych Osobowych.
           </p>
         </section>

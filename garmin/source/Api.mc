@@ -11,12 +11,17 @@ class Api {
     hidden var _queue;
     hidden var _busy as Boolean = false;
     hidden var _cb = null;
+    hidden var _sentToken as String = "";   // token, z którym poszło bieżące zapytanie
 
     function initialize() {
         _queue = [];
     }
 
     function busy() as Boolean { return _busy || _queue.size() > 0; }
+
+    //! Testy: czysty stan (bez zapytań z poprzednich testów, na które odpowiedź jeszcze nie przyszła).
+    (:test)
+    function resetForTest() as Void { _queue = []; _busy = false; _cb = null; _sentToken = ""; }
 
     //! cb: Method(code as Number, data) – data to słownik z JSON albo null.
     function get(path as String, params, cb) as Void {
@@ -40,6 +45,7 @@ class Api {
             headers.put("Content-Type", Communications.REQUEST_CONTENT_TYPE_JSON);
         }
         if (Cfg.token.length() > 0) { headers.put("Authorization", "Bearer " + Cfg.token); }
+        _sentToken = Cfg.token;
         Communications.makeWebRequest(Cfg.apiBase + r[1], r[2], {
             :method => r[0],
             :headers => headers,
@@ -51,6 +57,12 @@ class Api {
         _busy = false;
         var cb = _cb;
         _cb = null;
+        // 401 na aktualnym tokenie: licznik odłączony w aplikacji (albo wypadł z limitu liczników) – zapominamy
+        // konto, a otwarta aplikacja VeloIQ w telefonie połączy je od nowa sama (jazdy w kolejce czekają)
+        if (code == 401 && _sentToken.length() > 0 && _sentToken.equals(Cfg.token)) {
+            Cfg.unpair();
+            getRide().onUnpaired();
+        }
         if (cb != null) {
             cb.invoke(code, (data instanceof Dictionary) ? data : null);
         }
@@ -59,7 +71,7 @@ class Api {
 
     //! Krótki opis błędu do pokazania na ekranie.
     static function errorText(code as Number) as String {
-        if (code == 401) { return "Sparuj ponownie z VeloIQ"; }
+        if (code == 401) { return "Połącz ponownie z kontem VeloIQ"; }
         if (code == Communications.BLE_CONNECTION_UNAVAILABLE || code == -2 || code == -3) { return "Brak połączenia z telefonem"; }
         if (code == Communications.NETWORK_REQUEST_TIMED_OUT) { return "Serwer nie odpowiada"; }
         if (code < 0) { return "Brak internetu (" + code + ")"; }

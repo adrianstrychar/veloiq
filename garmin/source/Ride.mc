@@ -432,7 +432,7 @@ class Ride {
     function coveredBySystem(sec as Number) as Void {
         coveredN++;
         if (coveredN > 1) { return; }
-        showBanner("Ekran zasłonięty " + sec + " s, jazda szła dalej.\nPowiadomienia z telefonu wyłączysz w ustawieniach licznika.", "info", 12);
+        showBanner("Ekran zasłonięty " + sec + " s, jazda szła dalej.\nWyłącz powiadomienia z telefonu w ustawieniach licznika.", "info", 12);
         WatchUi.requestUpdate();
     }
 
@@ -1289,6 +1289,14 @@ class Ride {
     //! Odpowiedź na powitanie telefonu: wersja aplikacji, czy trwa jazda, czy licznik ma konto VeloIQ.
     function hiMsg() {
         return { "t" => "hi", "v" => Cfg.VERSION, "rec" => (active() ? 1 : 0), "acct" => (Cfg.paired() ? 1 : 0), "who" => Cfg.athlete };
+    }
+
+    //! Serwer nie zna już tokenu (licznik odłączony w aplikacji): telefon dowie się, że konta nie ma, i – gdy
+    //! aplikacja VeloIQ słucha – od razu dostanie kod do potwierdzenia.
+    function onUnpaired() as Void {
+        link.event(hiMsg());
+        if (link.active) { pairing.start(true); }
+        WatchUi.requestUpdate();
     }
 
     //! Licznik połączony z kontem (przez telefon albo kodem): sygnał, plan z VeloIQ, telefon wie, że konto jest.

@@ -110,7 +110,7 @@ final class GarminLink: NSObject {
     private(set) var pairCode: String?
     private var pairCodeAt = Date.distantPast
 
-    // MARK: - Dziennik mostu (ekran Czujniki → „Diagnostyka”): ostatnie zdarzenia, żeby było widać, gdzie się rwie.
+    // MARK: - Dziennik mostu (Jedź → Licznik Garmin Edge → Ustawienia licznika → „Diagnostyka”): ostatnie zdarzenia, żeby było widać, gdzie się rwie.
     private var log: [String] = []
     private var lastLogged: [String: Date] = [:]
     private static let clock: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f }()

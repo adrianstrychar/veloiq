@@ -81,7 +81,7 @@ class SummaryScreen {
             Ui.text(dc, w / 2, sy, xt, "Wysyłam do VeloIQ " + up.progI + "/" + up.progN, Ui.C, Th.fg);
         } else {
             var st = up.status;
-            if (!Cfg.paired()) { st = "Sparuj z VeloIQ, żeby wysłać jazdę"; }
+            if (!Cfg.paired()) { st = "Połącz konto VeloIQ – jazda poczeka"; }
             else if (m.n < 60) { st = "Za krótka jazda, nie wysyłam"; }
             else if (up.pending() > 0) {
                 st = up.lastError.length() > 0 ? up.lastError : "Jazda czeka na wysyłkę";
@@ -167,10 +167,16 @@ class PairView extends WatchUi.View {
             : "Otwarta aplikacja VeloIQ w telefonie połączy konto sama. Albo wpisz kod w aplikacji: Jedź, karta Garmin Edge, Wpisz kod.";
         y = Ui.lines(dc, Ui.wrap(dc, info, xt, w - 2 * pad), w / 2, y, xt, Th.fg, 6) + pad;
         if (!done && p.code != null) {
-            var shown = p.code.length() == 6 ? p.code.substring(0, 3) + " " + p.code.substring(3, 6) : p.code;
+            // dwie trójki cyfr osobno – czcionka cyfr nie ma znaku spacji
             var ch = h / 5;
-            Ui.card(dc, pad, y, w - 2 * pad, ch, Th.card);
-            Ui.value(dc, w / 2, y + ch / 2, w - 4 * pad, ch - 8, shown, Th.accent);
+            var cw = w - 2 * pad;
+            Ui.card(dc, pad, y, cw, ch, Th.card);
+            if (p.code.length() == 6) {
+                Ui.value(dc, pad + cw * 27 / 100, y + ch / 2, cw * 42 / 100, ch - 8, p.code.substring(0, 3), Th.accent);
+                Ui.value(dc, pad + cw * 73 / 100, y + ch / 2, cw * 42 / 100, ch - 8, p.code.substring(3, 6), Th.accent);
+            } else {
+                Ui.value(dc, w / 2, y + ch / 2, cw - 2 * pad, ch - 8, p.code, Th.accent);
+            }
             y += ch + pad;
         }
         var st = done ? (Cfg.athlete.length() > 0 ? "Połączono: " + Cfg.athlete : "Połączono!") : p.status;

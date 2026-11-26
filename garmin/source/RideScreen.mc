@@ -788,9 +788,9 @@ class RideScreen {
                 if (ls.size() * dc.getFontHeight(f) <= room - 2 * pad) { break; }
             }
             bh = ls.size() * dc.getFontHeight(f) + 2 * pad;
-            if (bh > room) { bh = room; }
+            // długi komunikat (rzadko): baner rośnie w górę ponad rząd danych zamiast ucinać tekst
+            if (bh > maxH) { bh = maxH; }
             by = h - bh - pad / 2;
-            if (by < _dataBottom + 4) { by = _dataBottom + 4; bh = h - pad / 2 - by; }
             hits.add(["banner", pad, by, bw, bh]);
         }
         dc.setColor(col, col);

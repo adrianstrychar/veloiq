@@ -67,14 +67,15 @@ uruchamiana w telefonie.
 | `mobile/ios-src/RideEngine/GarminLink.swift` | SDK Garmina: wybór licznika, stan połączenia, wiadomości |
 | `mobile/ios-src/RideEngine/RideEnginePlugin.swift` (sekcja „Licznik Garmin Edge”) | głos, rozmowa, dane czujników, mikrofon |
 | `mobile/setup-ios.sh` | pakiet Swift `connectiq-companion-app-sdk-ios`, schemat `veloiq://`, `gcm-ciq` w Info.plist |
-| `components/ride/GarminCard.tsx` | ekran Czujniki: wybór licznika, stan mostu, podgląd odczytów |
+| `components/ride/GarminPanel.tsx`, `lib/ride/garmin-step.ts` | ekran Jedź: stan licznika jednym zdaniem i jedna czynność, łączenie konta, ustawienia licznika i diagnostyka |
 
 ## Pierwsze uruchomienie
 
-1. Na liczniku: aplikacja VeloIQ wgrana i sparowana z kontem (kod z ekranu licznika).
-2. W telefonie: **Jedź → Czujniki → Licznik Garmin Edge → Wybierz licznik w Garmin Connect** – otworzy się
-   Garmin Connect, zaznacz Edge i wróć do VeloIQ. Przy okazji aplikacja zapyta o mikrofon i rozpoznawanie mowy.
-3. Otwórz VeloIQ na liczniku. Karta w telefonie powinna pokazać „Licznik nadaje” i odczyty czujników.
+1. Na liczniku: aplikacja VeloIQ wgrana (Connect IQ).
+2. W telefonie: **Jedź → Licznik Garmin Edge → Wybierz licznik** – otworzy się Garmin Connect, zaznacz Edge
+   i wróć do VeloIQ. Przy okazji aplikacja zapyta o mikrofon i rozpoznawanie mowy.
+3. Otwórz VeloIQ na liczniku. Konto łączy się samo (licznik 0.4.0+), a karta w telefonie pokazuje
+   „Gotowe – wciśnij START na liczniku” i odczyty czujników.
 4. **Mikrofon:** iOS nie pozwala włączyć mikrofonu, gdy aplikacja jest w tle. Dlatego telefon włącza go w chwili,
    gdy VeloIQ jest na ekranie, a licznik nadaje – i trzyma do końca jazdy na liczniku (albo 10 minut po utracie
    połączenia). W praktyce: przed jazdą otwórz VeloIQ w telefonie przy włączonej aplikacji na liczniku, potem
