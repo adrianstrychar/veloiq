@@ -95,6 +95,9 @@ export interface GarminLinkStatus {
   power?: number; hr?: number; cadence?: number;
   ride?: 'start' | 'pause' | 'resume' | 'end' | 'idle';
   edgeVersion?: string;      // wersja aplikacji VeloIQ na liczniku (odpowiedź na „hello”)
+  edgeAccount?: boolean;     // licznik ma konto VeloIQ (0.4.0+; brak pola = stara wersja / jeszcze nie wiadomo)
+  edgeAthlete?: string;      // imię z konta na liczniku
+  pairCode?: string;         // licznik bez konta prosi o połączenie – aplikacja potwierdza kod sama
   lastMessageAgo?: number;   // s od ostatniej wiadomości z licznika
   log?: string[];            // dziennik mostu (diagnostyka na ekranie Czujniki)
 }
@@ -199,7 +202,7 @@ export interface RideEnginePlugin {
   garminForget(): Promise<GarminLinkStatus>;
   garminOpenApp(): Promise<void>;
   /** Polecenie dla aplikacji na liczniku: "resync" – pobierz trasę z VeloIQ teraz (także w trakcie jazdy). */
-  garminCommand(o: { cmd: 'resync' }): Promise<void>;
+  garminCommand(o: { cmd: 'resync' | 'pair' }): Promise<void>;
   /** Bieżąca jazda z licznika (po otwarciu / powrocie aplikacji) + prośba do licznika o pełny stan. */
   garminSync(): Promise<GarminLinkStatus & { mirror?: GarminRide }>;
   addListener(event: 'garmin', cb: (d: GarminLinkStatus) => void): Promise<PluginListenerHandle>;

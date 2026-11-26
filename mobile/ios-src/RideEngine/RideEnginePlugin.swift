@@ -743,7 +743,8 @@ public class RideEnginePlugin: CAPPlugin, CAPBridgedPlugin {
     /// Polecenie z ekranu dla aplikacji na liczniku – tylko z listy dozwolonych.
     @objc func garminCommand(_ call: CAPPluginCall) {
         let cmd = call.getString("cmd") ?? ""
-        guard ["resync"].contains(cmd) else { return call.reject("unknown command") }
+        // resync – trasa z VeloIQ od razu; pair – licznik bez konta: poproś o kod (telefon potwierdzi go sam)
+        guard ["resync", "pair"].contains(cmd) else { return call.reject("unknown command") }
         DispatchQueue.main.async { GarminLink.shared.sendCommand(cmd); call.resolve() }
     }
     @objc func garminOpenApp(_ call: CAPPluginCall) {

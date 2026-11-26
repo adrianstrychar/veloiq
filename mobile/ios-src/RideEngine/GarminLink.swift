@@ -102,6 +102,13 @@ final class GarminLink: NSObject {
     private var lastHello = Date.distantPast
     private var lastSync = Date.distantPast
     private(set) var edgeVersion: String?
+    /// Licznik ma konto VeloIQ (z „hi”, od wersji 0.4.0; nil = stara wersja albo jeszcze nie wiadomo) i imię zawodnika.
+    private(set) var edgeAccount: Bool?
+    private(set) var edgeAthlete: String?
+    /// Kod łączenia konta od licznika (0.4.0+): zalogowana aplikacja potwierdza go sama (useRide → /api/garmin/pair/confirm).
+    /// Trzymany, aż licznik powie, że ma konto – strona WWW mogła się jeszcze nie załadować, gdy kod przyszedł.
+    private(set) var pairCode: String?
+    private var pairCodeAt = Date.distantPast
 
     // MARK: - Dziennik mostu (ekran Czujniki → „Diagnostyka”): ostatnie zdarzenia, żeby było widać, gdzie się rwie.
     private var log: [String] = []
@@ -128,6 +135,9 @@ final class GarminLink: NSObject {
             d["recording"] = l.second >= 0
         }
         if let v = edgeVersion { d["edgeVersion"] = v }
+        if let a = edgeAccount { d["edgeAccount"] = a }
+        if let n = edgeAthlete, !n.isEmpty { d["edgeAthlete"] = n }
+        if let c = pairCode, Date().timeIntervalSince(pairCodeAt) < 540 { d["pairCode"] = c }   // kod żyje 10 min
         if lastMessageAt != .distantPast { d["lastMessageAgo"] = Int(Date().timeIntervalSince(lastMessageAt)) }
         d["log"] = Array(log.suffix(16))
         return d
@@ -232,6 +242,7 @@ final class GarminLink: NSObject {
         if let a = app { ConnectIQ.sharedInstance().unregister(forAppMessages: a, delegate: self) }
         if let d = device { ConnectIQ.sharedInstance().unregister(forDeviceEvents: d, delegate: self) }
         device = nil; app = nil; connected = false; appInstalled = nil; edgeVersion = nil; helloOK = false
+        edgeAccount = nil; edgeAthlete = nil; pairCode = nil
         lastLive = nil; lastMessageAt = .distantPast
         UserDefaults.standard.removeObject(forKey: Self.deviceKey)
         note("licznik usunięty")
@@ -428,7 +439,18 @@ final class GarminLink: NSObject {
             if let st = d["st"] as? [String: Any] { onCoachState?(st) }
         case "hi":
             edgeVersion = (d["v"] as? String) ?? edgeVersion
-            note("licznik odpowiada: VeloIQ \(edgeVersion ?? "?")")
+            if let a = d["acct"] as? NSNumber {
+                edgeAccount = a.intValue == 1
+                edgeAthlete = d["who"] as? String
+                if edgeAccount == true { pairCode = nil }
+            }
+            note("licznik odpowiada: VeloIQ \(edgeVersion ?? "?")\(edgeAccount == false ? " · bez konta" : "")")
+            emitStatus()
+        case "pair":
+            // licznik bez konta prosi o połączenie: kod do potwierdzenia przez zalogowaną aplikację
+            guard let c = d["c"] as? String, c.count >= 4, c.count <= 12 else { return }
+            if c != pairCode { note("licznik prosi o połączenie konta") }
+            pairCode = c; pairCodeAt = Date(); edgeAccount = false
             emitStatus()
         default:
             break

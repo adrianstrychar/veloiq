@@ -9,8 +9,9 @@ import { saveRide } from '@/lib/ride/save-ride';
 import { isNativeRide } from '@/lib/ride/ride-client';
 import type { RideBriefing, WorkoutScript } from '@/lib/ride/workout-script';
 import type { RacePacing } from '@/lib/ride/race-pacing';
+import type { GarminDevice } from '@/components/ride/GarminPanel';
 
-export function TreningClient({ plan, planLabel, ftp, firstName, briefing, racePacing }: { plan: WorkoutScript | null; planLabel?: string; ftp: number; firstName?: string; briefing?: RideBriefing; racePacing?: RacePacing }) {
+export function TreningClient({ plan, planLabel, ftp, firstName, briefing, racePacing, garminDevices }: { plan: WorkoutScript | null; planLabel?: string; ftp: number; firstName?: string; briefing?: RideBriefing; racePacing?: RacePacing; garminDevices?: GarminDevice[] }) {
   const router = useRouter();
   const ride = useRideContext();
   // imię dla Dyrektora (rzadko, w kluczowych momentach)
@@ -25,6 +26,7 @@ export function TreningClient({ plan, planLabel, ftp, firstName, briefing, raceP
       ftp={ftp}
       briefing={briefing}
       racePacing={racePacing}
+      garminDevices={garminDevices}
       onSave={async (summary, samples, script, settings, startedAt) => {
         const saved = await saveRide(sb, {
           summary, samples, script, startedAt, outdoor: settings.outdoor, ftp,

@@ -7,6 +7,8 @@ import { TreningClient } from './TreningClient';
 import { buildBriefing } from '@/lib/ride/briefing';
 import { parsePacing, type RacePacing } from '@/lib/ride/race-pacing';
 import { shiftISO } from '@/lib/timezone';
+import { deviceName } from '@/lib/garmin/auth';
+import type { GarminDevice } from '@/components/ride/GarminPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +29,11 @@ export default async function TreningPage() {
   const dow = ((new Date(today + 'T12:00:00Z').getUTCDay() + 6) % 7) + 1; // 1=Pn … 7=Nd
 
   // plan dnia i odprawa równolegle (wcześniej po kolei – „Jedź” długo nie reagował)
+  // liczniki Garmin na koncie: „Jedź” od razu pokazuje kartę licznika (bez mignięcia ekranu czujników telefonu)
+  const devicesP = user
+    ? supabase.from('garmin_devices').select('id, model, app_version, created_at, last_seen_at').is('revoked_at', null)
+        .order('created_at', { ascending: false }).then((r) => r, () => ({ data: null }))
+    : Promise.resolve({ data: null });
   const [planRes, briefing, raceRes] = athlete?.id
     ? await Promise.all([
         supabase.from('weekly_plans').select('plan_json').eq('athlete_id', athlete.id).eq('week_start', mondayOfISO(today)).maybeSingle(),
@@ -51,5 +58,7 @@ export default async function TreningPage() {
   const planLabel = day && script ? [day.type, `${day.dur_min} min`, day.tss ? `TSS ${day.tss}` : null].filter(Boolean).join(' · ') : undefined;
 
   const firstName = String((athlete?.name as string | null) ?? '').trim().split(/\s+/)[0] || undefined;
-  return <TreningClient plan={script} planLabel={planLabel} ftp={ftp} firstName={firstName} briefing={briefing} racePacing={racePacing} />;
+  const devRows = ((await devicesP).data ?? []) as { id: string; model: string | null; app_version: string | null; created_at: string; last_seen_at: string | null }[];
+  const garminDevices: GarminDevice[] = devRows.map((d) => ({ id: d.id, name: deviceName(d.model), app: d.app_version, createdAt: d.created_at, lastSeenAt: d.last_seen_at }));
+  return <TreningClient plan={script} planLabel={planLabel} ftp={ftp} firstName={firstName} briefing={briefing} racePacing={racePacing} garminDevices={garminDevices} />;
 }
