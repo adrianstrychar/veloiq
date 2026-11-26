@@ -47,7 +47,8 @@ export function garminStep(o: {
   if (link.recording) {
     return { key: 'riding', tone: 'ok', title: 'Jazda trwa na liczniku', text: 'Dane płyną na żywo, Enzo mówi w słuchawkach.' };
   }
-  const noAccount = link.edgeAccount === false || !!link.pairCode;
+  // konto na liczniku potwierdzone (hi acct:1) wygrywa ze starym kodem w stanie mostu
+  const noAccount = link.edgeAccount === false || (!!link.pairCode && link.edgeAccount !== true);
   if (noAccount || account?.state === 'linking' || (account?.state === 'error' && link.edgeAccount !== true)) {
     if (account?.state === 'error') {
       return { key: 'account', tone: 'wait', title: 'Licznik bez konta VeloIQ', text: account.text, action: { label: 'Spróbuj ponownie', run: 'pair' } };

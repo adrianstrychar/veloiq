@@ -222,6 +222,8 @@ ok('karta licznika: jeden stan → jeden krok (od zera do „wciśnij START”)'
   const err = step({ paired: true, connected: true, streaming: true, edgeAccount: false }, 0, { state: 'error', text: 'Za dużo prób.', at: 0 });
   assert.equal(err.action?.run, 'pair');
   assert.equal(err.text, 'Za dużo prób.');
+  // stary kod w stanie (zdarzenia łączą się …g, …d), ale licznik już ma konto → gotowe
+  assert.equal(step({ paired: true, connected: true, streaming: true, edgeAccount: true, pairCode: '482913' }, 1).key, 'ready');
   // połączone: gotowe; jazda trwa
   assert.equal(step({ paired: true, connected: true, streaming: true, edgeAccount: true }, 1).key, 'ready');
   assert.equal(step({ paired: true, connected: true, streaming: true, edgeAccount: true }, 0).key, 'ready');

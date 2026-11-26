@@ -137,7 +137,8 @@ final class GarminLink: NSObject {
         if let v = edgeVersion { d["edgeVersion"] = v }
         if let a = edgeAccount { d["edgeAccount"] = a }
         if let n = edgeAthlete, !n.isEmpty { d["edgeAthlete"] = n }
-        if let c = pairCode, Date().timeIntervalSince(pairCodeAt) < 540 { d["pairCode"] = c }   // kod żyje 10 min
+        // zawsze z kluczem: strona łączy kolejne stany (…g, …d) – brak klucza zostawiłby stary kod na ekranie
+        if let c = pairCode, Date().timeIntervalSince(pairCodeAt) < 540 { d["pairCode"] = c } else { d["pairCode"] = "" }   // kod żyje 10 min
         if lastMessageAt != .distantPast { d["lastMessageAgo"] = Int(Date().timeIntervalSince(lastMessageAt)) }
         d["log"] = Array(log.suffix(16))
         return d
