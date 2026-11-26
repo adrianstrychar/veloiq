@@ -1,6 +1,7 @@
 import Toybox.Application;
 import Toybox.Graphics;
 import Toybox.Lang;
+import Toybox.System;
 import Toybox.WatchUi;
 
 //! VeloIQ na Garmin Edge – aplikacja urządzenia: prowadzi trening z planu VeloIQ (silnik elastyczny jak
@@ -34,6 +35,9 @@ class RootView extends WatchUi.View {
     var rideScr as RideScreen;
     var summary as SummaryScreen;
     hidden var _lastState as Number = 0;
+    var inputAt as Number = 0;          // ostatnie dotknięcie / przycisk na tym widoku (RootDelegate)
+    hidden var _hiddenAt as Number = 0;
+    hidden var _byUser as Boolean = false;
 
     function initialize() {
         View.initialize();
@@ -53,6 +57,24 @@ class RootView extends WatchUi.View {
         return rideScr;
     }
 
+    //! Zasłonięcie widoku: nasze menu (tuż po dotknięciu / przycisku) albo okno systemu (powiadomienie z telefonu,
+    //! komunikat licznika) – to drugie pojawia się bez wejścia od zawodnika.
+    function onHide() as Void {
+        var now = System.getTimer();
+        _hiddenAt = now;
+        _byUser = now - inputAt < 1500;
+    }
+
+    function onShow() as Void {
+        if (_hiddenAt > 0) {
+            var gone = System.getTimer() - _hiddenAt;
+            var r = getRide();
+            if (!_byUser && gone >= 8000 && r.active()) { r.coveredBySystem(gone / 1000); }
+            _hiddenAt = 0;
+        }
+        WatchUi.requestUpdate();
+    }
+
     function onUpdate(dc as Graphics.Dc) as Void {
         var r = getRide();
         if (r.uiPage >= 0) { var pi = rideScr.indexOf(r.uiPage); rideScr.page = pi < 0 ? 0 : pi; r.uiPage = -1; }
@@ -70,6 +92,7 @@ class RootDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onTap(evt as WatchUi.ClickEvent) as Boolean {
+        _v.inputAt = System.getTimer();
         var xy = evt.getCoordinates();
         _v.current().tap(xy[0], xy[1]);
         WatchUi.requestUpdate();
@@ -77,6 +100,7 @@ class RootDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onKey(evt as WatchUi.KeyEvent) as Boolean {
+        _v.inputAt = System.getTimer();
         var used = _v.current().key(evt.getKey());
         if (used) { WatchUi.requestUpdate(); }
         return used;
@@ -100,11 +124,13 @@ class RootDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onMenu() as Boolean {
+        _v.inputAt = System.getTimer();
         _v.current().menu();
         return true;
     }
 
     function onBack() as Boolean {
+        _v.inputAt = System.getTimer();
         var r = getRide();
         if (r.state == RideState.IDLE) { return false; }            // ekran startowy: wyjście z aplikacji
         if (r.state == RideState.DONE) { r.reset(); WatchUi.requestUpdate(); return true; }

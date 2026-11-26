@@ -1,6 +1,7 @@
 import Toybox.Application;
 import Toybox.Lang;
 import Toybox.System;
+import Toybox.WatchUi;
 
 // Tryb demonstracyjny do zrzutów ekranu w symulatorze (CI: garmin/ci/screens.sh, monkey.demo.jungle).
 // W zwykłym buildzie moduł jest pusty – adnotacja (:demo) jest wykluczona w monkey.jungle.
@@ -15,6 +16,8 @@ module Demo {
 module Demo {
     var stage as Number = 0;
     var wait as Number = 3;
+    var _pairShown as Boolean = false;
+    var _codeShown as Boolean = false;
     var t as Number = 0;
 
     function plan() {
@@ -34,6 +37,8 @@ module Demo {
         Cfg.put("token", "demo"); Cfg.put("athlete", "Adrian"); Cfg.put("ftp", 305); Cfg.put("hrmax", 189);
         Cfg.put("autoPause", false); Cfg.put("tones", false); Cfg.put("link", false);
         Cfg.put("apiBase", "https://localhost");     // demo nie rozmawia z prawdziwym serwerem
+        // zrzuty wszystkich stron, także domyślnie wyłączonych
+        Cfg.put("pgEffort", true); Cfg.put("pgFuel", true); Cfg.put("pgEnzo", true);
         Cfg.load();
         r.plan = plan();
     }
@@ -71,6 +76,29 @@ module Demo {
         var s = stage;
         stage++;
         if (s == 0) { r.hub.power = 0; r.hub.hr = 68; shot("01-start"); }
+        // licznik bez konta: łączenie samo przez telefon, potem ekran z kodem (MENU → Połącz z kontem)
+        else if (s == 1 && !_pairShown) {
+            _pairShown = true;
+            stage = 1;
+            Cfg.put("token", ""); Cfg.load();
+            r.pairing.active = true; r.pairing.auto = true; r.pairing.status = "Łączę konto przez telefon...";
+            shot("01a-bez-konta");
+        }
+        else if (s == 1 && _pairShown && !_codeShown) {
+            _codeShown = true;
+            stage = 1;
+            r.pairing.code = "482913"; r.pairing.status = "Czekam na wpisanie kodu";
+            var v = new PairView(null);
+            WatchUi.pushView(v, new PairDelegate(v), WatchUi.SLIDE_IMMEDIATE);
+            shot("01b-kod");
+        }
+        else if (s == 1 && _codeShown && Cfg.token.length() == 0) {
+            stage = 1;
+            WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
+            r.pairing.cancel(); r.pairing.status = "";
+            Cfg.put("token", "demo"); Cfg.load();
+            wait = 1;
+        }
         else if (s == 1) { r.plan = plan(); r.startRide(false); ff(r, 95, 176, 121, 88); r.uiPage = Pg.MAIN; shot("02-rozgrzewka"); }
         else if (s == 2) { ff(r, 146, 180, 124, 88); shot("03-zapowiedz"); }
         else if (s == 3) { ff(r, 66, 182, 126, 88); ff(r, 9, 306, 139, 93); shot("04-start-interwalu"); }
@@ -128,6 +156,17 @@ module Demo {
         else if (s == 31) { r.banner = null; r.uiPage = Pg.CLIMB; shot("21a-podjazd"); }
         else if (s == 32) { r.uiPage = Pg.NAV; r.uiZoom = 4; shot("22-trasa-cala"); }
         else if (s == 33) { drive(r, 76, 289, 163, 83); r.uiZoom = 0; shot("23-trasa-w-lewo"); }
-        else if (s == 34) { r.finish(false); r.reset(); System.println("SHOT END"); }
+        // okno systemu (powiadomienie z telefonu) zasłaniało ekran – podpowiedź raz na jazdę
+        else if (s == 34) { r.uiPage = Pg.MAIN; r.banner = null; r.coveredBySystem(23); shot("23a-zasloniete"); }
+        // menu: jazda → Enzo → Prowadź do
+        else if (s == 35) {
+            r.banner = null;
+            var root = WatchUi.getCurrentView()[0] as RootView;
+            WatchUi.pushView(Menus.ride(root.rideScr), new RideMenuDelegate(root.rideScr), WatchUi.SLIDE_IMMEDIATE);
+            shot("24-menu-jazdy");
+        }
+        else if (s == 36) { WatchUi.switchToView(Menus.enzo(), new EnzoMenuDelegate(), WatchUi.SLIDE_IMMEDIATE); shot("25-menu-enzo"); }
+        else if (s == 37) { WatchUi.switchToView(Menus.goTo(), new GoMenuDelegate(), WatchUi.SLIDE_IMMEDIATE); shot("26-prowadz-do"); }
+        else if (s == 38) { WatchUi.popView(WatchUi.SLIDE_IMMEDIATE); r.finish(false); r.reset(); System.println("SHOT END"); }
     }
 }

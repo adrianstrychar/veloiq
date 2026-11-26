@@ -36,7 +36,7 @@ class HomeScreen {
         Ui.text(dc, pad, y, fTitle, "VeloIQ", Ui.L, Th.accent);
         Ui.text(dc, w - pad, y + 4, Graphics.FONT_XTINY, Ui.clockNow(), Ui.R, Th.dim);
         y += dc.getFontHeight(fTitle);
-        var who = Cfg.paired() ? (Cfg.athlete.length() > 0 ? Cfg.athlete : "Połączono z VeloIQ") + ", FTP " + Cfg.ftp + " W" : "Nie sparowano z VeloIQ";
+        var who = Cfg.paired() ? (Cfg.athlete.length() > 0 ? Cfg.athlete : "Połączono z VeloIQ") + ", FTP " + Cfg.ftp + " W" : "Bez konta VeloIQ";
         Ui.text(dc, pad, y, Graphics.FONT_XTINY, who, Ui.L, Cfg.paired() ? Th.dim : Th.warn);
         y += dc.getFontHeight(Graphics.FONT_XTINY) + h / 80;
 
@@ -86,7 +86,8 @@ class HomeScreen {
         } else {
             Ui.text(dc, 2 * pad, cy, Graphics.FONT_XTINY, "DZIŚ", Ui.L, Th.accent);
             cy += dc.getFontHeight(Graphics.FONT_XTINY) + pad / 2;
-            var msg = Cfg.paired() ? "Brak treningu w planie.\nJazda swobodna: wysiłki i lapy zapiszę automatycznie." : "Sparuj licznik z kontem VeloIQ (MENU), żeby pobrać plan.\nBez tego działa jazda swobodna.";
+            var msg = Cfg.paired() ? "Brak treningu w planie.\nJazda swobodna: wysiłki i lapy zapiszę automatycznie."
+                : "Otwórz VeloIQ w telefonie – konto połączy się samo i pobiorę plan.\nBez telefonu: MENU, Połącz z kontem.\nJazda swobodna działa od razu.";
             if (r.course != null && !Cfg.indoor && Cfg.navOn) {
                 msg = "Trasa: " + r.course.name + "\n" + (r.course.total / 1000.0).format("%.1f") + " km, +" + r.course.gain + " m, podjazdy: " + r.course.climbs.size() + "\nSTART poprowadzi po śladzie.";
             }
@@ -112,6 +113,7 @@ class HomeScreen {
 
         // --- komunikat / stan wysyłki
         var line = note;
+        if (line == null) { line = r.pairing.homeLine(); }
         if (line == null && r.up.pending() > 0) { line = r.up.status.length() > 0 ? r.up.status : "Jazda czeka na wysyłkę"; }
         if (line == null && r.up.status.length() > 0 && (r.up.doneKey == null || r.up.recentDone())) { line = r.up.status; }
         if (line == null && Cfg.phoneLink && !r.link.active && System.getDeviceSettings().phoneConnected) { line = "Otwórz VeloIQ w telefonie"; }
@@ -124,7 +126,8 @@ class HomeScreen {
         var by = h - 2 * (btnH + pad);
         if (line != null) {
             // jazda w VeloIQ: zielony znak i tekst, żeby było jasne, że wysyłka się skończyła
-            var ok = r.up.pending() == 0 && r.up.doneKey != null && line.equals(r.up.status);
+            var ok = (r.up.pending() == 0 && r.up.doneKey != null && line.equals(r.up.status))
+                || (Cfg.paired() && r.pairing.doneAt > 0 && line.equals(r.pairing.status));
             var ly = by - dc.getFontHeight(Graphics.FONT_XTINY) - 2;
             if (ok) {
                 var tw = dc.getTextWidthInPixels(line, Graphics.FONT_XTINY);

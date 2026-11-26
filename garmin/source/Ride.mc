@@ -25,6 +25,7 @@ class Ride {
     var api as Api;
     var up as Uploader;
     var link as PhoneLink;
+    var pairing as Pairing;
 
     var course = null;          // trasa GPX z VeloIQ (Course) albo null
     var nav = null;             // nawigacja bieżącej jazdy (Nav) albo null
@@ -120,6 +121,7 @@ class Ride {
     var uiPage as Number = -1;  // prośba o przełączenie strony ekranu jazdy – identyfikator Pg (głos, tryb demo)
     var uiZoom as Number = -1;  // jw. – skala mapy na stronie TRASA
     var saved as Boolean = false;
+    var quiet as Boolean = false;      // testy: bez wibracji (symulator bez ekranu zawiesza się na Attention.vibrate)
     hidden var _timer = null;
     hidden var _tickNo as Number = 0;
 
@@ -129,6 +131,7 @@ class Ride {
         api = new Api();
         up = new Uploader(api);
         link = new PhoneLink();
+        pairing = new Pairing();
         cues = [];
         link.owner = self;
         up.onDone = method(:onUploaded);
@@ -137,7 +140,7 @@ class Ride {
     //! Jazda dotarła do VeloIQ: wyraźny sygnał (dźwięk + wibracja), a telefon dostaje potwierdzenie do karty jazdy.
     function onUploaded() as Void {
         tone("save");
-        if (Attention has :vibrate) { Attention.vibrate([new Attention.VibeProfile(60, 250)]); }
+        if (!quiet && (Attention has :vibrate)) { Attention.vibrate([new Attention.VibeProfile(60, 250)]); }
         link.event({ "t" => "up", "k" => up.doneKey, "ok" => 1 });
     }
 
@@ -337,6 +340,7 @@ class Ride {
     function startRide(free as Boolean) as Boolean {
         if (state != RideState.IDLE && state != RideState.DONE) { return false; }
         if (interrupted != null || resumePct >= 0) { return false; }     // najpierw decyzja o przerwanej jeździe
+        coveredN = 0;
         if (free || plan == null) {
             var w = new Workout();
             w.ftp = Cfg.ftp;
@@ -416,6 +420,16 @@ class Ride {
         return state == RideState.RECORDING || state == RideState.PAUSED || state == RideState.AUTOPAUSED;
     }
 
+    //! Ekran jazdy był zasłonięty przez okno systemu (np. powiadomienie z telefonu, które na Edge wisi do
+    //! zamknięcia ręką – aplikacja nie może wtedy rysować ani go zamknąć). Raz na jazdę: skąd to i jak wyłączyć.
+    var coveredN as Number = 0;
+    function coveredBySystem(sec as Number) as Void {
+        coveredN++;
+        if (coveredN > 1) { return; }
+        showBanner("Ekran zasłonięty " + sec + " s, jazda szła dalej.\nPowiadomienia z telefonu wyłączysz w ustawieniach licznika.", "info", 12);
+        WatchUi.requestUpdate();
+    }
+
     //! Kończy jazdę. save = false → odrzuć (bez zapisu FIT i bez wysyłki).
     function finish(save as Boolean) as Void {
         if (!active() || eng == null) { return; }
@@ -482,6 +496,7 @@ class Ride {
         }
         if (state == RideState.RECORDING && !hub.simulated) { rideTick(); }
         link.tick();
+        pairing.tick();
         // pauza (ręczna albo postój): telefon dalej widzi jazdę – inaczej po 5 s uznałby, że most zerwany
         if ((state == RideState.PAUSED || state == RideState.AUTOPAUSED) && eng != null && !hub.simulated && Cfg.phoneLink) {
             link.live(liveVec(state == RideState.PAUSED ? 1 : 2));
@@ -655,9 +670,21 @@ class Ride {
         WatchUi.requestUpdate();
     }
 
+    //! Strona na życzenie (głos, menu): wyłączona w „Ekranach jazdy” – zawodnik chce ją widzieć, więc ją włączamy.
     function showPageById(name as String) as Void {
         var id = Pg.byName(name);
-        if (id >= 0) { uiPage = id; WatchUi.requestUpdate(); }
+        if (id < 0) { return; }
+        var k = null;
+        var on = true;
+        if (id == Pg.CHART) { k = "pgChart"; on = Cfg.pgChart; }
+        else if (id == Pg.EFFORT) { k = "pgEffort"; on = Cfg.pgEffort; }
+        else if (id == Pg.F2) { k = "pgF2"; on = Cfg.pgF2; }
+        else if (id == Pg.FUEL) { k = "pgFuel"; on = Cfg.pgFuel; }
+        else if (id == Pg.ENZO) { k = "pgEnzo"; on = Cfg.pgEnzo; }
+        else if (id == Pg.CLIMB) { k = "pgClimb"; on = Cfg.pgClimb; }
+        if (!on && k != null) { Cfg.save(k, true); }
+        uiPage = id;
+        WatchUi.requestUpdate();
     }
 
     hidden function flushSample(force as Boolean) as Void {
@@ -1085,7 +1112,7 @@ class Ride {
     }
 
     function tone(name as String) as Void {
-        if (!Cfg.tones || !(Attention has :playTone)) { return; }
+        if (quiet || !Cfg.tones || !(Attention has :playTone)) { return; }
         var t = Attention.TONE_MSG;
         if (name.equals("start")) { t = Attention.TONE_START; }
         else if (name.equals("stop")) { t = Attention.TONE_STOP; }
@@ -1233,8 +1260,24 @@ class Ride {
 
     function onPhoneHello(first as Boolean) as Void {
         if (first) { showBanner("Telefon połączony\nEnzo mówi w słuchawkach", "enzo", 6); }
-        link.event({ "t" => "hi", "v" => Cfg.VERSION, "rec" => (active() ? 1 : 0) });
+        link.event(hiMsg());
         if (active()) { link.event(startMsg(true)); }
+        // licznik bez konta VeloIQ: kod prosto do zalogowanej aplikacji w telefonie – bez przepisywania
+        if (!Cfg.paired()) { pairing.start(true); }
+    }
+
+    //! Odpowiedź na powitanie telefonu: wersja aplikacji, czy trwa jazda, czy licznik ma konto VeloIQ.
+    function hiMsg() {
+        return { "t" => "hi", "v" => Cfg.VERSION, "rec" => (active() ? 1 : 0), "acct" => (Cfg.paired() ? 1 : 0), "who" => Cfg.athlete };
+    }
+
+    //! Licznik połączony z kontem (przez telefon albo kodem): sygnał, plan z VeloIQ, telefon wie, że konto jest.
+    function onPaired() as Void {
+        tone("good");
+        if (!quiet && (Attention has :vibrate)) { Attention.vibrate([new Attention.VibeProfile(50, 200)]); }
+        link.event(hiMsg());
+        sync(null);
+        WatchUi.requestUpdate();
     }
 
     //! Sekunda jazdy dla telefonu. pauseFlag: 0 jazda, 1 pauza ręczna, 2 postój (auto-pauza).
@@ -1279,6 +1322,7 @@ class Ride {
         else if (cmd.find("eat:") == 0) { fuel(Util.clamp(Util.int(cmd.substring(4, cmd.length()).toNumber(), 25), 5, 120)); }
         else if (cmd.equals("talk")) { if (eng != null) { talkToPhone(); } }
         else if (cmd.equals("report")) { if (eng != null) { askPhone("raport"); } }
+        else if (cmd.equals("pair")) { pairing.start(true); }
         else if (cmd.equals("sync")) { link.event(active() ? startMsg(true) : { "t" => "state", "s" => "idle" }); }
         else if (cmd.equals("resync")) { courseNow(); }
         else if (cmd.equals("route:start")) { reroute("start"); }

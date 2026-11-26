@@ -27,6 +27,13 @@ class FakeLink extends PhoneLink {
         var x = lst[lst.size() - 1];
         if (ok) { x.onComplete(); } else { x.onError(); }
     }
+    //! Ostatnia wysłana wiadomość danego typu (albo null).
+    function sent(t as String) {
+        for (var i = out.size() - 1; i >= 0; i--) {
+            if (out[i].get("t").toString().equals(t)) { return out[i]; }
+        }
+        return null;
+    }
     function lastType() as String {
         if (out.size() == 0) { return "-"; }
         return out[out.size() - 1].get("t").toString();
@@ -142,4 +149,77 @@ function testUploadConfirmation(logger as Test.Logger) as Boolean {
     up.onDone = cb;
     Smoke.cleanup();
     return ok && calls[0] == 0;
+}
+
+(:test)
+function testAutoPairing(logger as Test.Logger) as Boolean {
+    // licznik bez konta + telefon z aplikacją VeloIQ: kod idzie mostem, telefon go potwierdza, licznik dostaje token
+    Smoke.cleanup();
+    Cfg.put("link", true); Cfg.load();
+    var r = getRide();
+    r.quiet = true;
+    var oldLink = r.link;
+    var l = new FakeLink();
+    l.start();
+    l.owner = r;
+    r.link = l;
+    r.pairing = new Pairing();
+    var p = r.pairing;
+    r.onPhoneHello(true);
+    var hi = l.sent("hi");
+    var ok = p.active && p.auto && hi != null && hi.get("acct") == 0;
+    p.onBegin(200, { "code" => "482913", "device" => "0b8f0b1e-1111-2222-3333-444455556666", "secret" => "s" });
+    for (var i = 0; i < 4; i++) { l.ack(true); l.ageForTest(1000); l.tick(); }
+    var pm = l.sent("pair");
+    ok = ok && pm != null && pm.get("c").equals("482913") && p.code.equals("482913");
+    p.onPoll(200, { "status" => "pending" });
+    ok = ok && p.active && !Cfg.paired();
+    // ekran startowy w trakcie łączenia i ekran z kodem rysują się bez błędu
+    var g = Smoke.dc();
+    new HomeScreen().draw(g);
+    new PairView(null).onUpdate(g);
+    p.onPoll(200, { "status" => "ok", "token" => "tok-1", "name" => "Adrian" });
+    for (var j = 0; j < 4; j++) { l.ack(true); l.ageForTest(1000); l.tick(); }
+    hi = l.sent("hi");
+    logger.debug("paired=" + Cfg.paired() + " athlete=" + Cfg.athlete + " line=" + p.homeLine() + " hi=" + hi);
+    ok = ok && Cfg.paired() && Cfg.athlete.equals("Adrian") && !p.active && p.homeLine() != null && hi != null && hi.get("acct") == 1;
+    new HomeScreen().draw(g);
+    // kolejne powitanie: konto jest – bez nowego łączenia
+    r.onPhoneHello(false);
+    ok = ok && !p.active;
+    // ręczne łączenie na liczniku z kontem nic nie psuje
+    p.start(false);
+    ok = ok && !p.active;
+    l.stop();
+    r.link = oldLink;
+    r.quiet = false;
+    Smoke.cleanup();
+    return ok;
+}
+
+(:test)
+function testAutoPairingGivesUp(logger as Test.Logger) as Boolean {
+    // telefon nie potwierdza (np. inne konto): najwyżej 3 próby na uruchomienie aplikacji, kod wygasa po 10 min
+    Smoke.cleanup();
+    Cfg.put("link", true); Cfg.load();
+    var r = getRide();
+    r.quiet = true;
+    r.pairing = new Pairing();
+    var p = r.pairing;
+    var starts = 0;
+    for (var k = 0; k < 5; k++) {
+        p.start(true);
+        if (p.active) { starts++; }
+        p.onBegin(200, { "code" => "11111" + k, "device" => "0b8f0b1e-1111-2222-3333-44445555666" + k, "secret" => "s" });
+        p.onPoll(200, { "status" => "expired" });
+    }
+    logger.debug("próby=" + starts + " status=" + p.status + " failed=" + p.failed);
+    var ok = starts == 3 && p.failed && !p.active && p.status.equals("Kod wygasł");
+    // ręcznie (MENU) można zawsze
+    p.start(false);
+    ok = ok && p.active && !p.auto;
+    p.cancel();
+    r.quiet = false;
+    Smoke.cleanup();
+    return ok;
 }

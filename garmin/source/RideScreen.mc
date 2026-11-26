@@ -33,6 +33,7 @@ class RideScreen {
     var hits;
     var zoom as Number = 1;      // strona TRASA: 0 = 400 m, 1 = 1 km, 2 = 3 km, 3 = 10 km, 4 = cała trasa
     var chartZoom as Number = 0; // strona WYKRES: 0 = cały trening, 1 = najbliższe 20 min
+    hidden var _dataBottom as Number = -1;   // TRENING: dół rzędu tętno / kadencja / km/h (baner go nie zasłania)
 
     //! Aktywne strony (identyfikatory Pg) w kolejności przewijania.
     function pages() {
@@ -42,10 +43,10 @@ class RideScreen {
         if (Cfg.pgChart && e != null && !e.wk.isFree()) { out.add(Pg.CHART); }
         if (Cfg.pgEffort) { out.add(Pg.EFFORT); }
         out.add(Pg.F1);
-        out.add(Pg.F2);
+        if (Cfg.pgF2) { out.add(Pg.F2); }
         if (Cfg.pgFuel) { out.add(Pg.FUEL); }
         out.add(Pg.LAPS);
-        out.add(Pg.ENZO);
+        if (Cfg.pgEnzo) { out.add(Pg.ENZO); }
         if (r.nav != null && r.nav.enabled && Cfg.pgClimb && r.nav.course.climbs.size() > 0) { out.add(Pg.CLIMB); }
         if (r.nav != null) { out.add(Pg.NAV); }
         return out;
@@ -83,6 +84,7 @@ class RideScreen {
         var w = dc.getWidth();
         var h = dc.getHeight();
         var pid = pageId();
+        _dataBottom = -1;
         var top = drawBar(dc, r, w, h);
         if (pid == Pg.MAIN) { drawMain(dc, r, e, top, w, h); if (Cfg.edges) { Pages2.edges(dc, r, e, top, w, h); } }
         else if (pid == Pg.NAV) { drawNav(dc, r, e, top, w, h); }
@@ -260,6 +262,7 @@ class RideScreen {
             if (i > 0) { dc.setColor(Th.line, Th.line); dc.fillRectangle(cw * i, y + 4, 1, mh - 8); }
         }
         y += mh;
+        _dataBottom = y;
 
         // --- F. profil treningu / liczniki jazdy
         var btnH = Util.round(H * 0.13);
@@ -775,6 +778,21 @@ class RideScreen {
         if (bh > maxH) { bh = maxH; }
         // baner nad przyciskami, moc i czas zostają widoczne
         var by = h - bh - h / 6;
+        // TRENING: baner na dole (profil i przyciski), żeby tętno, kadencja i prędkość zostały widoczne;
+        // dotknięcie banera go zamyka (przyciski ENZO / LAP wracają od razu)
+        var room = h - _dataBottom - pad;
+        if (_dataBottom > 0 && room >= 2 * dc.getFontHeight(Graphics.FONT_TINY) + 2 * pad) {
+            for (var j = 0; j < fonts.size(); j++) {
+                ls = Ui.wrap(dc, text, fonts[j], bw - 2 * pad);
+                f = fonts[j];
+                if (ls.size() * dc.getFontHeight(f) <= room - 2 * pad) { break; }
+            }
+            bh = ls.size() * dc.getFontHeight(f) + 2 * pad;
+            if (bh > room) { bh = room; }
+            by = h - bh - pad / 2;
+            if (by < _dataBottom + 4) { by = _dataBottom + 4; bh = h - pad / 2 - by; }
+            hits.add(["banner", pad, by, bw, bh]);
+        }
         dc.setColor(col, col);
         dc.fillRoundedRectangle(pad - 3, by - 3, bw + 6, bh + 6, 10);
         dc.setColor(Th.bg, Th.bg);
@@ -841,7 +859,8 @@ class RideScreen {
             if (!Ui.inside(hit, x, y)) { continue; }
             var id = hit[0];
             if (r.state == RideState.PAUSED && !(id.equals("resume") || id.equals("end"))) { continue; }
-            if (id.equals("enzo")) { enzo(); }
+            if (id.equals("banner")) { r.banner = null; WatchUi.requestUpdate(); }
+            else if (id.equals("enzo")) { enzo(); }
             else if (id.equals("lap")) { r.lapButton(); }
             else if (id.equals("fs")) { if (r.eng != null) { r.eng.cancelStart(); } }
             else if (id.equals("resume")) { r.resume(); }
