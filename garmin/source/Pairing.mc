@@ -49,6 +49,12 @@ class Pairing {
         WatchUi.requestUpdate();
     }
 
+    //! Prośba z telefonu („Spróbuj ponownie” w aplikacji): limit prób automatycznych nie obowiązuje.
+    function retry() as Void {
+        _autoTries = 0;
+        start(true);
+    }
+
     function cancel() as Void {
         active = false;
         code = null;

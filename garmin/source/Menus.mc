@@ -56,7 +56,7 @@ module Menus {
     function linkSub() as String {
         var r = getRide();
         if (!Cfg.phoneLink) { return "wyłączony"; }
-        if (r.link.active) { return "VeloIQ w telefonie słucha"; }
+        if (r.link.active) { return "słucha · wysłane " + r.link.okN + ", błędy " + r.link.failN; }
         return System.getDeviceSettings().phoneConnected ? "otwórz VeloIQ w telefonie" : "brak telefonu";
     }
 

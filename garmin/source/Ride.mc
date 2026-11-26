@@ -1350,7 +1350,7 @@ class Ride {
         else if (cmd.find("eat:") == 0) { fuel(Util.clamp(Util.int(cmd.substring(4, cmd.length()).toNumber(), 25), 5, 120)); }
         else if (cmd.equals("talk")) { if (eng != null) { talkToPhone(); } }
         else if (cmd.equals("report")) { if (eng != null) { askPhone("raport"); } }
-        else if (cmd.equals("pair")) { pairing.start(true); }
+        else if (cmd.equals("pair")) { pairing.retry(); }
         else if (cmd.equals("sync")) { link.event(active() ? startMsg(true) : { "t" => "state", "s" => "idle" }); }
         else if (cmd.equals("resync")) { courseNow(); }
         else if (cmd.equals("route:start")) { reroute("start"); }

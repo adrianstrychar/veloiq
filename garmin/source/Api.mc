@@ -20,7 +20,6 @@ class Api {
     function busy() as Boolean { return _busy || _queue.size() > 0; }
 
     //! Testy: czysty stan (bez zapytań z poprzednich testów, na które odpowiedź jeszcze nie przyszła).
-    (:test)
     function resetForTest() as Void { _queue = []; _busy = false; _cb = null; _sentToken = ""; }
 
     //! cb: Method(code as Number, data) – data to słownik z JSON albo null.

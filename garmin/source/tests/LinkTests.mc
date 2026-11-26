@@ -221,6 +221,10 @@ function testAutoPairingGivesUp(logger as Test.Logger) as Boolean {
     }
     logger.debug("próby=" + starts + " status=" + p.status + " failed=" + p.failed);
     var ok = starts == 3 && p.failed && !p.active && p.status.equals("Kod wygasł");
+    // „Spróbuj ponownie” z aplikacji w telefonie (cmd pair) – mimo limitu
+    r.onPhoneCommand("pair");
+    ok = ok && p.active && p.auto;
+    p.cancel();
     // ręcznie (MENU) można zawsze
     p.start(false);
     ok = ok && p.active && !p.auto;
