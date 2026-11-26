@@ -112,6 +112,11 @@ class Ride {
     hidden var _vSpeed as Float = 0.0;     // wirtualna prędkość na trenażerze (m/s)
     hidden var _vDist as Float = 0.0;      // wirtualny dystans tej jazdy (m)
     hidden var _vDistOn as Boolean = false;
+    //! Tryb „na zewnątrz”, a przez minutę kręcisz bez GPS i bez czujnika prędkości = trenażer: prędkość i dystans
+    //! z mocy do końca jazdy (zapomniany przełącznik trybu nie kończy się zerową prędkością).
+    var autoIndoor as Boolean = false;
+    hidden var _noGpsPow as Number = 0;
+    hidden var _gpsThisRide as Boolean = false;   // po pierwszym GPS w tej jeździe nie zgadujemy (tunel ≠ trenażer)
     hidden var _ascBase as Number = 0;
     hidden var _ckS as Number = 0;      // pierwszy blok próbek, który trzeba (ponownie) zapisać
     hidden var _ckG as Number = 0;
@@ -377,6 +382,7 @@ class Ride {
         dist = 0.0; ascent = 0; speed = null;
         _distBase = 0.0; _ascBase = 0;
         _vSpeed = 0.0; _vDist = 0.0; _vDistOn = false;
+        autoIndoor = false; _noGpsPow = 0; _gpsThisRide = false;
         lapNo = 1; lapStartS = 0; lapSumP = 0; lapN = 0; lapSumHr = 0; lapHrN = 0; lapMaxP = 0; lapStartDist = 0.0; prevLap = null;
         _lapTarget = wk.isFree() ? 0 : (wk.steps[0].lo + wk.steps[0].hi) / 2;
         _lapType = wk.isFree() ? StepType.FREE : wk.steps[0].type;
@@ -484,14 +490,16 @@ class Ride {
         if (state == RideState.RECORDING || state == RideState.AUTOPAUSED) {
             var ai = hub.simulated ? null : Activity.getActivityInfo();
             if (ai != null) {
-                if (ai.elapsedDistance != null && ai.elapsedDistance > 0) { dist = _distBase + ai.elapsedDistance; _vDistOn = false; }
+                // dystans z czujnika / GPS – chyba że trenażer wykryty sam liczy już dystans z mocy (późny GPS w budynku)
+                if (ai.elapsedDistance != null && ai.elapsedDistance > 0 && !(autoIndoor && _vDistOn)) { dist = _distBase + ai.elapsedDistance; _vDistOn = false; }
                 if (ai.totalAscent != null) { ascent = _ascBase + ai.totalAscent; }
                 speed = ai.currentSpeed != null ? ai.currentSpeed : hub.speed;
             } else {
                 speed = hub.speed;
             }
             // trenażer bez czujnika prędkości: prędkość i dystans z mocy (jak w Zwift) – płasko, bez wiatru
-            if (Cfg.indoor && !hub.simulated && (speed == null || speed <= 0.1)) { virtualSpeedTick(); }
+            if (!Cfg.indoor && !autoIndoor && !hub.simulated && state == RideState.RECORDING) { detectTrainer(); }
+            if ((Cfg.indoor || autoIndoor) && !hub.simulated && (speed == null || speed <= 0.1)) { virtualSpeedTick(); }
             if (!hub.simulated) { autoPauseTick(); }
         }
         if (state == RideState.RECORDING && !hub.simulated) { rideTick(); }
@@ -516,6 +524,18 @@ class Ride {
         }
         Demo.tick(self);
         WatchUi.requestUpdate();
+    }
+
+    hidden function detectTrainer() as Void {
+        if (hub.hasGps()) { _gpsThisRide = true; }
+        if (_gpsThisRide || (speed != null && speed > 0.1)) { _noGpsPow = 0; return; }
+        if (hub.power == null || hub.power < 30) { return; }
+        _noGpsPow++;
+        if (_noGpsPow >= 60) {
+            autoIndoor = true;
+            showBanner("Brak GPS, a kręcisz – trenażer?\nPrędkość i dystans liczę z mocy.", "info", 8);
+            tone("msg");
+        }
     }
 
     //! Wirtualna prędkość na trenażerze bez czujnika prędkości: z mocy, masy zawodnika (+8 kg roweru), pozycji na

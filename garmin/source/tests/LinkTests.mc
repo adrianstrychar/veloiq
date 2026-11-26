@@ -155,7 +155,7 @@ function testUploadConfirmation(logger as Test.Logger) as Boolean {
 function testAutoPairing(logger as Test.Logger) as Boolean {
     // licznik bez konta + telefon z aplikacją VeloIQ: kod idzie mostem, telefon go potwierdza, licznik dostaje token
     Smoke.cleanup();
-    Cfg.put("link", true); Cfg.load();
+    Cfg.put("link", true); Cfg.put("apiBase", "https://localhost"); Cfg.load();     // bez zapytań do prawdziwego serwera
     var r = getRide();
     r.quiet = true;
     var oldLink = r.link;
@@ -201,9 +201,15 @@ function testAutoPairing(logger as Test.Logger) as Boolean {
 function testAutoPairingGivesUp(logger as Test.Logger) as Boolean {
     // telefon nie potwierdza (np. inne konto): najwyżej 3 próby na uruchomienie aplikacji, kod wygasa po 10 min
     Smoke.cleanup();
-    Cfg.put("link", true); Cfg.load();
+    Cfg.put("link", true); Cfg.put("apiBase", "https://localhost"); Cfg.load();     // bez zapytań do prawdziwego serwera
     var r = getRide();
     r.quiet = true;
+    // kod idzie mostem – podmieniony, bo prawdziwy Communications.transmit w symulatorze bez telefonu zawiesza testy
+    var oldLink = r.link;
+    var l = new FakeLink();
+    l.start();
+    l.owner = r;
+    r.link = l;
     r.pairing = new Pairing();
     var p = r.pairing;
     var starts = 0;
@@ -219,6 +225,8 @@ function testAutoPairingGivesUp(logger as Test.Logger) as Boolean {
     p.start(false);
     ok = ok && p.active && !p.auto;
     p.cancel();
+    l.stop();
+    r.link = oldLink;
     r.quiet = false;
     Smoke.cleanup();
     return ok;

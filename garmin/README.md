@@ -25,7 +25,7 @@ Układ ekranów jest liczony z rozmiaru ekranu i wysokości czcionek, więc ten 
 | **Nawigacja po trasie GPX** | Trasa wybrana w „Jedź” (przycisk „Wyślij tę trasę na licznik”) trafia na licznik przy synchronizacji: uproszczony ślad (do 1496 punktów), skręty wyliczone z geometrii, podjazdy z wysokości. Strona TRASA: strzałka i dystans do skrętu, mapa śladu (kierunkiem jazdy do góry; dotknięcie zmienia skalę 400 m → 1 km → 3 km → 10 km → cała trasa), profil wysokości przed nami, najbliższy podjazd, moc / prędkość / do mety. Komunikaty: skręt (500 lub 300 m wcześniej i „teraz”), podjazd za kilometr, start podjazdu, szczyt, kilometry do mety, zjechanie z trasy i powrót. Bez mapy drogowej i bez wyznaczania trasy – to prowadzenie po śladzie. |
 | **Podjazdy z celem mocy** | W trybie startowym (strategia wyścigu) podjazdy trasy mają cel mocy i taktykę. W jeździe swobodnej ekran TRENING na takim podjeździe zachowuje się jak krok planu: „PODJAZD 2/5”, cel, pasek celu, kolor mocy względem celu, „DO SZCZYTU”. |
 | **Przerwana jazda** | Co minutę (i przy pauzie) licznik zapisuje punkt kontrolny: próbki, ślad GPS, liczniki. Po wyłączeniu licznika albo awarii ekran startowy proponuje WZNÓW (silnik odtwarza zapisane próbki – krok planu, serie, NP i TSS wracają – i jazda toczy się dalej w tej samej aktywności VeloIQ) albo ZAKOŃCZ (zapis i wysyłka tego, co było). Punkt starszy niż 12 h jest domykany i wysyłany sam. Plik FIT w historii licznika ma wtedy dwie części: przed przerwą i po niej. |
-| **Most do telefonu** | Czujniki sparowane tylko z licznikiem (ANT+), a aplikacja VeloIQ na iPhonie dostaje z niego co sekundę moc, tętno i kadencję oraz komunikaty silnika i nawigacji – i mówi je głosem Enzo. Przycisk ENZO na liczniku uruchamia pytanie głosowe w telefonie, odpowiedź wraca też na ekran licznika; polecenia głosowe (następny lap, pauza, falstart, zjadłem) sterują licznikiem. Włącza się sam, gdy telefon się przedstawi (albo MENU → Ustawienia → Most do telefonu). Szczegóły i ograniczenia: `mobile/GARMIN-LINK.md`. |
+| **Most do telefonu** | Czujniki sparowane tylko z licznikiem (ANT+), a aplikacja VeloIQ na iPhonie dostaje z niego co sekundę moc, tętno i kadencję oraz komunikaty silnika i nawigacji – i mówi je głosem Enzo. Przycisk ENZO na liczniku uruchamia pytanie głosowe w telefonie, odpowiedź wraca też na ekran licznika; polecenia głosowe (następny lap, pauza, falstart, zjadłem) sterują licznikiem. Włącza się sam, gdy telefon się przedstawi (albo MENU → Ustawienia → Telefon). Licznik bez konta łączy się przez most z kontem zalogowanym w telefonie (bez kodu). Szczegóły i ograniczenia: `mobile/GARMIN-LINK.md`. |
 
 ## Sterowanie
 
@@ -34,17 +34,31 @@ Układ ekranów jest liczony z rozmiaru ekranu i wysokości czcionek, więc ten 
 | **Start/Stop** | start treningu z planu (albo jazdy swobodnej) | pauza + menu: Wznów / Zapisz / Odrzuć |
 | **Lap** | menu | następny krok / okrążenie |
 | **Przesunięcie w bok** (albo góra/dół) | – | zmiana strony |
-| **Menu** (☰ albo przycisk menu) | synchronizacja, wybór treningu, parowanie, ustawienia | Enzo, falstart, następny krok, zjadłem / wypiłem, pola danych, zakończ |
+| **ENZO** (przycisk na ekranie) | – | Mów do Enzo (głos przez telefon), Zapytaj Enzo, Zjadłem żel / baton, Wypiłem, Prowadź do… (kawiarnia, woda, serwis, powrót na trasę, start), Zmień plan |
+| **Menu** (☰ albo przycisk menu) | synchronizacja, wybór treningu, tryb trenażer / na zewnątrz, połączenie z kontem, ustawienia | Pauza, Następny lap / Falstart, Enzo…, nawigacja, pola danych tej strony, Zakończ |
 | **Wstecz** | wyjście z aplikacji | menu jazdy (nie zamyka aplikacji w trakcie nagrywania) |
+
+Strony jazdy domyślnie: TRENING, WYKRES (z planem), pola danych 1 i 2, OKRĄŻENIA, a na trasie PODJAZD i TRASA.
+WYSIŁEK, PALIWO i historię ENZO włącza się w Ustawienia → Ekrany jazdy (głosowe „pokaż paliwo” włącza stronę samo).
+
+**Trenażer:** kafelek TRYB na ekranie startowym (albo MENU → Tryb) – bez GPS, prędkość i dystans z mocy. Gdy tryb
+został „na zewnątrz”, a przez minutę kręcisz bez GPS i bez czujnika prędkości, licznik sam przechodzi na prędkość z mocy.
+
+**Powiadomienia z telefonu** (Smart Notifications) zasłaniają na Edge ekran aplikacji Connect IQ, dopóki ich nie
+zamkniesz – aplikacja nie może ich zamknąć ani wyłączyć. Jazda nagrywa się dalej; po zasłonięciu dłuższym niż 8 s
+VeloIQ raz na jazdę podpowiada, jak je wyłączyć (ustawienia licznika → Telefon → powiadomienia).
 
 ## Instalacja na liczniku (wersja testowa)
 
 1. Pobierz `veloiq-edge1030.prg` z artefaktów ostatniego przebiegu **Garmin Connect IQ** (zakładka Actions w GitHubie → `veloiq-garmin`). Ten sam plik jest też w logu przebiegu (linie `PRGB64`, suma kontrolna w `PRGSHA`).
 2. Podłącz Edge kablem USB do komputera i skopiuj plik do katalogu `GARMIN/APPS` na liczniku.
 3. Odłącz licznik. Aplikacja jest w **IQ → VeloIQ** (na Edge 1030: ekran główny → ikona Connect IQ).
-4. W VeloIQ na liczniku: **MENU → Sparuj z VeloIQ**. Licznik pokaże 6 cyfr.
-5. W aplikacji VeloIQ (telefon albo przeglądarka): **Jedź → Czujniki → Licznik Garmin Edge → Połącz licznik Garmin** i wpisz kod.
-6. Licznik pokaże „Sparowano!” i pobierze plan. Od tej chwili synchronizuje się przy każdym uruchomieniu aplikacji.
+4. W aplikacji VeloIQ na iPhonie: **Jedź → Licznik Garmin Edge → Wybierz licznik** (Garmin Connect, raz).
+5. Otwórz VeloIQ na liczniku. Konto łączy się samo: licznik wysyła mostem kod, a zalogowana aplikacja go potwierdza
+   (od 0.4.0). Licznik pokaże „Połączono: <imię>” i pobierze plan.
+   Bez iPhone'a: na liczniku **MENU → Połącz z kontem VeloIQ** pokazuje 6 cyfr, a w VeloIQ (przeglądarka):
+   **Jedź → Licznik Garmin Edge → Ustawienia licznika → Wpisz kod z licznika**.
+6. Od tej chwili licznik synchronizuje się przy każdym uruchomieniu aplikacji, a jazdy wysyła sam.
 
 Parowanie i synchronizacja idą przez internet telefonu (Garmin Connect musi być połączony z licznikiem) albo przez Wi-Fi licznika.
 Wersję do sklepu Connect IQ trzeba podpisać własnym kluczem dewelopera Garmin (`DEVELOPER_KEY=… ci/build.sh`).
@@ -55,7 +69,7 @@ Wersję do sklepu Connect IQ trzeba podpisać własnym kluczem dewelopera Garmin
 |---|---|---|
 | `POST /api/garmin/pair` | licznik | prośba o kod parowania |
 | `GET /api/garmin/pair?device=&secret=` | licznik | czy kod został wpisany → token urządzenia |
-| `POST /api/garmin/pair/confirm` | zalogowany zawodnik | wpisanie kodu z licznika |
+| `POST /api/garmin/pair/confirm` | zalogowany zawodnik | kod z licznika – wpisany ręcznie albo potwierdzony sam przez aplikację w telefonie (kod przychodzi mostem); przy 5 licznikach odłącza najdawniej używany |
 | `GET / DELETE /api/garmin/devices` | zalogowany zawodnik | lista i odłączanie liczników |
 | `GET /api/garmin/sync` | licznik (token) | zawodnik, treningi na 7 dni, odprawa, identyfikator trasy, token rozmowy z trenerem dla mostu |
 | `GET / POST / DELETE /api/garmin/course` | zalogowany zawodnik | trasa GPX dla licznika: podgląd, wysyłka (RideRoute z „Jedź”), usunięcie |

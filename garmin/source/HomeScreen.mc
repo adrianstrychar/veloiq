@@ -101,7 +101,8 @@ class HomeScreen {
         // trzecia kolumna to tryb jazdy: dotknięcie przełącza trenażer ⇄ na zewnątrz
         var labels = ["MOC", "TĘTNO", Cfg.indoor ? "TRYB" : "GPS", "TELEFON"];
         var vals = [hub.power == null ? "--" : hub.power.format("%d") + " W", hub.hr == null ? "--" : hub.hr.format("%d"),
-            Cfg.indoor ? "trenaż." : (hub.hasGps() ? "OK" : "szukam"), r.link.active ? "VeloIQ" : (System.getDeviceSettings().phoneConnected ? "czeka" : "--")];
+            Cfg.indoor ? "trenaż." : (hub.hasGps() ? "OK" : "szukam"),
+            !Cfg.phoneLink ? "wył." : (r.link.active ? "VeloIQ" : (System.getDeviceSettings().phoneConnected ? "czeka" : "--"))];
         // TELEFON na zielono dopiero, gdy odezwała się aplikacja VeloIQ w telefonie (samo Garmin Connect to za mało)
         var oks = [hub.power != null, hub.hr != null, Cfg.indoor || hub.hasGps(), r.link.active];
         for (var k = 0; k < 4; k++) {

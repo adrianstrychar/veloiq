@@ -8,6 +8,7 @@ import Toybox.WatchUi;
 //! w telefonie), nagrywa jazdę do FIT, pokazuje własne pola danych, rozmawia z Enzo i wysyła jazdę do VeloIQ.
 class VeloIQApp extends Application.AppBase {
     var ride as Ride;
+    var root = null;        // główny widok (tryb demo: menu jazdy potrzebuje ekranu jazdy)
 
     function initialize() {
         AppBase.initialize();
@@ -24,6 +25,7 @@ class VeloIQApp extends Application.AppBase {
 
     function getInitialView() as [Views] or [Views, InputDelegates] {
         var v = new RootView();
+        root = v;
         return [v, new RootDelegate(v)];
     }
 }

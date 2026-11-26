@@ -161,7 +161,7 @@ module Demo {
         // menu: jazda → Enzo → Prowadź do
         else if (s == 35) {
             r.banner = null;
-            var root = WatchUi.getCurrentView()[0] as RootView;
+            var root = (Application.getApp() as VeloIQApp).root as RootView;
             WatchUi.pushView(Menus.ride(root.rideScr), new RideMenuDelegate(root.rideScr), WatchUi.SLIDE_IMMEDIATE);
             shot("24-menu-jazdy");
         }
