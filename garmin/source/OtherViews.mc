@@ -164,7 +164,7 @@ class PairView extends WatchUi.View {
         y += dc.getFontHeight(Graphics.FONT_SMALL) + pad;
         var done = Cfg.paired();
         var info = done ? "Licznik pobiera plan i będzie sam wysyłał jazdy do VeloIQ."
-            : "Otwarta aplikacja VeloIQ w telefonie połączy konto sama. Albo wpisz kod w aplikacji: Jedź, karta Garmin Edge, Wpisz kod.";
+            : "Otwarta aplikacja VeloIQ w telefonie połączy konto sama. Albo wpisz kod w VeloIQ: Jedź, Licznik Garmin Edge, Ustawienia licznika, Wpisz kod.";
         y = Ui.lines(dc, Ui.wrap(dc, info, xt, w - 2 * pad), w / 2, y, xt, Th.fg, 6) + pad;
         if (!done && p.code != null) {
             // dwie trójki cyfr osobno – czcionka cyfr nie ma znaku spacji
