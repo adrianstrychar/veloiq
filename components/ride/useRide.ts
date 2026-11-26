@@ -76,6 +76,7 @@ export function useRide() {
   // konto na liczniku: licznik bez konta przysyła kod, a zalogowana aplikacja potwierdza go sama (bez przepisywania)
   const [garminAccount, setGarminAccount] = useState<{ state: 'linking' | 'ok' | 'error'; text: string; at: number } | null>(null);
   const pairTried = useRef<string | null>(null);
+  const [pairRetry, setPairRetry] = useState(0);
   const cueId = useRef(0);
   const lastElapsed = useRef(0);
 
@@ -171,10 +172,12 @@ export function useRide() {
         // kod użyty albo nieważny: następny przyjdzie z licznika (po ponownym powitaniu)
       })
       .catch(() => {
-        pairTried.current = null;          // bez internetu – spróbujemy przy następnym stanie mostu
+        // bez internetu – ten sam kod jeszcze raz za 15 s (kod jest ważny 10 minut)
+        pairTried.current = null;
         setGarminAccount({ state: 'error', text: 'Brak internetu – połączę licznik z kontem, gdy wróci.', at: Date.now() });
+        setTimeout(() => setPairRetry((n) => n + 1), 15_000);
       });
-  }, [garminLink.pairCode]);
+  }, [garminLink.pairCode, pairRetry]);
 
   const run = useCallback(async (fn: () => Promise<unknown>) => {
     try { setError(null); await fn(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
